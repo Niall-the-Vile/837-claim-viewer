@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Defense-in-depth CSP (the authoritative copy is set in main via
+      session.onHeadersReceived — see electron/main.ts installOfflineKillSwitch).
+      No Google Fonts / CDN links here — see style.css's top comment for why
+      this app uses a system-font stack instead of self-hosted font files.
+      No inline script/style beyond the 'unsafe-inline' allowance style.css's
+      CSS variables need; every event listener is attached in main.ts, never
+      via an inline on* attribute, so script-src 'self' is never violated.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'"
+    />
+    <title>837 Claim Viewer</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Title bar -->
+      <div id="titlebar">
+        <span id="titlebarAppName">Claim Viewer</span>
+        <span id="titlebarDash" aria-hidden="true">&mdash;</span>
+        <span id="titlebarFileName" class="mono">no file open</span>
+      </div>
+
+      <!-- Menu bar: visual + a small set of wired dropdown actions (mirrors the toolbar/keyboard actions; File/View/Help per the design). -->
+      <nav id="menubar" aria-label="Application menu">
+        <div class="menu" data-menu="file">
+          <button type="button" class="menuTrigger" data-menu-trigger="file" aria-haspopup="true" aria-expanded="false">File</button>
+          <div class="menuPanel" data-menu-panel="file" role="menu" hidden>
+            <button type="button" role="menuitem" data-action="open">Open a claim file&hellip;<kbd>Ctrl+O</kbd></button>
+            <button type="button" role="menuitem" data-action="export" data-menu-disable="export">Export PDF&hellip;<kbd>Ctrl+E</kbd></button>
+            <button type="button" role="menuitem" data-action="exportSkipDialog" data-menu-disable="export">Export this claim (skip dialog)<kbd>Ctrl+Shift+E</kbd></button>
+            <button type="button" role="menuitem" data-action="close" data-menu-disable="export">Close file<kbd>Ctrl+W</kbd></button>
+          </div>
+        </div>
+        <div class="menu" data-menu="view">
+          <button type="button" class="menuTrigger" data-menu-trigger="view" aria-haspopup="true" aria-expanded="false">View</button>
+          <div class="menuPanel" data-menu-panel="view" role="menu" hidden>
+            <button type="button" role="menuitem" data-action="zoomIn">Zoom in<kbd>Ctrl++</kbd></button>
+            <button type="button" role="menuitem" data-action="zoomOut">Zoom out<kbd>Ctrl+&minus;</kbd></button>
+            <button type="button" role="menuitem" data-action="zoomReset">Actual size<kbd>Ctrl+0</kbd></button>
+            <button type="button" role="menuitem" data-action="fitPage">Fit page<kbd>Ctrl+9</kbd></button>
+            <button type="button" role="menuitem" data-action="fitWidth">Fit width<kbd>Ctrl+8</kbd></button>
+            <button type="button" role="menuitem" data-action="toggleInspector">Toggle inspector<kbd>Ctrl+D</kbd></button>
+            <button type="button" role="menuitem" data-action="toggleTheme">Light / dark<kbd>Ctrl+Shift+L</kbd></button>
+          </div>
+        </div>
+        <div class="menu" data-menu="help">
+          <button type="button" class="menuTrigger" data-menu-trigger="help" aria-haspopup="true" aria-expanded="false">Help</button>
+          <div class="menuPanel" data-menu-panel="help" role="menu" hidden>
+            <button type="button" role="menuitem" data-action="shortcuts">Keyboard shortcuts<kbd>F1</kbd></button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Toolbar -->
+      <div id="toolbar">
+        <div class="toolGroup">
+          <button id="openBtn" class="btn btnGhost" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 7h6l2 2h10v11H3z" /></svg>
+            Open
+          </button>
+          <button id="exportBtn" class="btn btnPrimary" type="button" disabled>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5M4 20h16" /></svg>
+            Export PDF
+          </button>
+        </div>
+
+        <span class="toolSep" id="zoomSep" hidden></span>
+
+        <div class="toolGroup toolGroupLabeled" id="zoomGroup" hidden>
+          <span class="groupLabel">Zoom</span>
+          <div class="navGroup">
+            <button id="zoomOutBtn" class="iconBtn" type="button" aria-label="Zoom out">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 12h14" /></svg>
+            </button>
+            <span id="zoomLabel" class="navValue mono">100%</span>
+            <button id="zoomInBtn" class="iconBtn" type="button" aria-label="Zoom in">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <span class="navDivider" aria-hidden="true"></span>
+            <button id="fitPageBtn" class="textBtn" type="button">Fit page</button>
+            <button id="fitWidthBtn" class="textBtn" type="button">Fit width</button>
+          </div>
+        </div>
+
+        <div class="toolGroup toolGroupLabeled" id="pageGroup" hidden>
+          <span class="groupLabel">Pages of this claim</span>
+          <div class="navGroup">
+            <button id="prevPageBtn" class="iconBtn" type="button" aria-label="Previous page">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <span id="pageLabel" class="navValue mono">Page 1 of 1</span>
+            <button id="nextPageBtn" class="iconBtn" type="button" aria-label="Next page">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="toolGroup toolGroupLabeled" id="claimGroup" hidden>
+          <span class="groupLabel">Claim in this 837 file</span>
+          <div class="navGroup">
+            <button id="prevClaimBtn" class="iconBtn" type="button" aria-label="Previous claim">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <span id="claimStepLabel" class="navValue mono">Claim 1 of 1</span>
+            <button id="nextClaimBtn" class="iconBtn" type="button" aria-label="Next claim">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="toolSpacer"></div>
+
+        <button id="inspectorToggleBtn" class="btn btnGhost" type="button" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 4h18v16H3z" /><path d="M15 4v16" /></svg>
+          <span id="inspectorToggleLabel">Hide inspector</span>
+          <kbd>Ctrl+D</kbd>
+        </button>
+
+        <button id="themeToggleBtn" class="btn btnGhost" type="button" aria-label="Toggle light/dark theme">
+          <span id="themeToggleLabel">Light</span>
+        </button>
+      </div>
+
+      <!-- Data-warnings banner -->
+      <div id="warnBanner" class="warnBanner" hidden role="status" aria-live="polite">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="warnIcon">
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4.5M12 17h.01" />
+        </svg>
+        <span id="warnCount" class="warnCount"></span>
+        <span class="warnSep" aria-hidden="true"></span>
+        <span id="warnMessages" class="warnMessages"></span>
+        <div class="toolSpacer"></div>
+        <button id="warnReviewBtn" class="linkBtn" type="button">Review in inspector</button>
+      </div>
+
+      <!-- Body: preview + inspector -->
+      <div id="body">
+        <div id="previewPane">
+          <!-- Welcome / no file -->
+          <div id="welcomeScreen" class="stateScreen">
+            <div class="welcomeCard">
+              <div class="welcomeTitle">Claim Viewer</div>
+              <div class="welcomeSubtitle">Open one claim file to view it as its paper form and export a PDF.</div>
+              <div class="welcomeOpenBox">
+                <button id="welcomeOpenBtn" class="btn btnPrimaryLg" type="button">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 7h6l2 2h10v11H3z" /></svg>
+                  Open a claim file&hellip;
+                  <kbd>Ctrl+O</kbd>
+                </button>
+                <div class="welcomeHint">or use <span class="mono">File &rarr; Open</span></div>
+              </div>
+              <div class="welcomeOffline">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                Runs fully offline. Nothing leaves this machine.
+              </div>
+              <div class="welcomeScripture">
+                <div class="welcomeVerse">&ldquo;Bear ye one another&rsquo;s burdens, and so fulfil the law of Christ.&rdquo;</div>
+                <div class="welcomeCite">GALATIANS 6:2</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div id="loadingScreen" class="stateScreen" hidden>
+            <div class="loadingBar"><div class="loadingBarFill"></div></div>
+            <div id="loadingLabel" class="loadingLabel">Reading file&hellip;</div>
+            <div class="loadingSkeleton">
+              <div class="skelLine skelLine1"></div>
+              <div class="skelLine skelLine2"></div>
+              <div class="skelLine skelLine3"></div>
+              <div class="skelRule"></div>
+              <div class="skelLine skelLine4"></div>
+              <div class="skelLine skelLine5"></div>
+              <div class="skelLine skelLine6"></div>
+            </div>
+          </div>
+
+          <!-- Parse error -->
+          <div id="errorScreen" class="stateScreen" hidden>
+            <div class="errorCard">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--clay)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="errorIcon">
+                <circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 16.5h.01" />
+              </svg>
+              <div class="errorBody">
+                <div class="errorTitle">This file isn&rsquo;t a valid claim JSON or 837 interchange</div>
+                <div class="errorMessage">Nothing was opened, and nothing was changed on this machine. You can try another file, or send this one back to the clearinghouse to be re-exported.</div>
+                <div class="errorDetailBox">
+                  <div class="errorDetailLabel">What we found</div>
+                  <div id="errorDetail" class="errorDetail mono"></div>
+                </div>
+                <div class="errorActions">
+                  <button id="errorOpenBtn" class="btn btnPrimary" type="button">Open another file&hellip;</button>
+                  <button id="errorCopyBtn" class="btn btnGhost" type="button">Copy details</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workspace: the current claim's form preview -->
+          <div id="workspaceScreen" class="stateScreen" hidden>
+            <div id="chipRow">
+              <span id="provenanceChip" class="chip"><span class="chipDot"></span><span id="provenanceChipText"></span></span>
+              <span id="sampleChip" class="chip chipGold" hidden>Sample data</span>
+            </div>
+            <div id="unsupportedNote" class="unsupportedNote" hidden>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-3)" stroke-width="1.4" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /></svg>
+              <span>We can&rsquo;t show this claim as its real paper form &mdash; its form type has no facsimile in this version, so the page below is a placeholder. Every field is still readable in the inspector.</span>
+            </div>
+            <!-- tabindex="-1": not a normal Tab stop, but a deliberate
+                 programmatic focus target for F6 region-cycling (toolbar ->
+                 preview -> inspector, spec §8) — the form preview itself is
+                 a bare <canvas>, which is never focusable. -->
+            <div id="pdfScroll" tabindex="-1">
+              <canvas id="pdfCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inspector drawer -->
+        <aside id="inspector" hidden>
+          <div id="inspectorHeader">
+            <span class="inspectorTitle">Inspector</span>
+            <span class="inspectorSub">every field, as parsed</span>
+            <div class="toolSpacer"></div>
+            <button id="expandAllBtn" class="linkBtn" type="button">Expand all</button>
+          </div>
+          <div id="inspectorBody"></div>
+        </aside>
+      </div>
+
+      <!-- Status bar -->
+      <div id="statusBar">
+        <span id="statusFileGroup" class="statusFileGroup" hidden>
+          <span id="statusFileName" class="mono"></span>
+          <span class="statusSep" aria-hidden="true"></span>
+          <span id="statusFormType"></span>
+          <span class="statusSep" aria-hidden="true"></span>
+          <button id="statusWarnBtn" class="statusWarnBtn" type="button"></button>
+          <span class="statusSep" aria-hidden="true"></span>
+          <span id="statusTotals"></span>
+        </span>
+        <span id="statusNoFile" class="dim">No file open</span>
+        <div class="toolSpacer"></div>
+        <span class="offlineIndicator">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l16 16" /><path d="M2.5 9.5a15 15 0 0 1 6-3.6M15.5 6a15 15 0 0 1 6 3.5M6 13a10 10 0 0 1 3-1.9M15 11.2a10 10 0 0 1 3 1.8M9.5 16.5a5 5 0 0 1 5 0M12 20h.01" /></svg>
+          Offline &mdash; no network access
+        </span>
+      </div>
+
+      <!-- Export dialog -->
+      <div id="exportOverlay" class="overlay" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="exportDialogTitle">Export claim as PDF</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="export" aria-label="Close">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div class="dialogBody">
+            <p id="exportIntro" class="exportIntro"></p>
+            <div class="manifest">
+              <span class="manifestLabel">Form</span><span id="manifestForm"></span>
+              <span class="manifestLabel">Service lines</span><span id="manifestLines" class="mono"></span>
+              <span class="manifestLabel">Billed total</span><span id="manifestTotal" class="mono"></span>
+              <span class="manifestLabel">Sheet size</span><span>US Letter, 8.5 &times; 11 in</span>
+              <span class="manifestLabel">Warnings carried</span><span id="manifestWarnings"></span>
+            </div>
+            <div class="phiNotice">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+              <span><b>This PDF is unencrypted PHI.</b> Store it on a BitLocker volume only, and delete it when the negotiation is closed.</span>
+            </div>
+          </div>
+          <div class="dialogFooter">
+            <button class="btn btnGhost" type="button" data-close="export">Cancel</button>
+            <button id="exportConfirmBtn" class="btn btnPrimary" type="button">Export</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyboard shortcuts dialog -->
+      <div id="shortcutsOverlay" class="overlay" hidden>
+        <div class="dialog dialogWide" role="dialog" aria-modal="true" aria-labelledby="shortcutsDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="shortcutsDialogTitle">Keyboard shortcuts</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="shortcuts" aria-label="Close">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div id="shortcutsGrid" class="shortcutsGrid"></div>
+          <div class="shortcutsFootnote">F6 cycles the toolbar, the form preview and the inspector. Every control is reachable by keyboard.</div>
+        </div>
+      </div>
+
+      <!-- Toast (export success / non-fatal notices). After a successful
+           export, toastActions surfaces the "open containing folder" /
+           "open PDF" done-state actions (design ClaimViewer_v2.dc.html:
+           776-777 / spec §7) alongside the "Exported to <path>" message. -->
+      <div id="toast" class="toast" hidden role="status" aria-live="polite">
+        <div class="toastBody">
+          <span id="toastMessage"></span>
+          <div id="toastActions" class="toastActions" hidden>
+            <button id="toastOpenFolderBtn" class="linkBtn" type="button">Open containing folder</button>
+            <button id="toastOpenPdfBtn" class="linkBtn" type="button">Open PDF</button>
+          </div>
+        </div>
+        <button id="toastCloseBtn" class="iconBtn toastClose" type="button" aria-label="Dismiss">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

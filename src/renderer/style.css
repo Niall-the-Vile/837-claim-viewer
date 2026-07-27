@@ -1,0 +1,1494 @@
+/*
+ * Brotherhood chrome for the Claim Viewer, matching
+ * docs/design/ClaimViewer_v2.dc.html (see that file's Component.themeVars()
+ * for the canonical color tokens this file mirrors as CSS custom
+ * properties).
+ *
+ * FONTS: the design calls for Source Serif 4 / Open Sans / IBM Plex Mono
+ * loaded from Google Fonts. This app is offline-only — electron/main.ts's
+ * installOfflineKillSwitch blocks every non-file/blob/data request, so a
+ * Google Fonts <link> would simply fail to load (and the renderer's CSP has
+ * no font-src for a remote host either). No font files are bundled in this
+ * repo/checkout to embed as @font-face instead (see task notes), so this
+ * file uses a tasteful SYSTEM-FONT STACK standing in for each of the three
+ * design fonts:
+ *   --font-serif (Source Serif 4 stand-in) -> Georgia/Cambria serif, used
+ *     only for the app identity title and the welcome-screen scripture
+ *     callout, same as the design's usage.
+ *   --font-sans (Open Sans stand-in)       -> the OS UI font stack.
+ *   --font-mono (IBM Plex Mono stand-in)   -> Consolas/Cascadia Mono, the
+ *     closest common Windows monospace grotesque, for codes/dollars/IDs.
+ * If font files are ever bundled under src/renderer/assets, swap these
+ * three var() values for @font-face families — nothing else needs to
+ * change, every rule below already reads through these variables.
+ */
+
+@font-face {
+  /* Placeholder for a future bundled Source Serif 4 — intentionally
+     unused (see file header) until an actual font file is bundled. */
+  font-family: 'SourceSerif4Local';
+  src: local('Source Serif 4');
+  font-display: swap;
+}
+
+/*
+ * The HTML `hidden` attribute must ALWAYS hide. Several elements (the four
+ * .stateScreen panels, the File/View/Help .menuPanel dropdowns, side panels)
+ * are toggled via `hidden`, but each state screen also carries an ID-selector
+ * `display` rule (#welcomeScreen, #loadingScreen, …) that out-specifies a
+ * plain `.stateScreen[hidden]` rule — which let all four screens render
+ * stacked at once, and left the menu dropdowns intercepting toolbar clicks.
+ * This enforces the attribute's semantic regardless of any other `display`.
+ */
+[hidden] {
+  display: none !important;
+}
+
+:root {
+  --font-serif: Georgia, Cambria, 'Times New Roman', serif;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: Consolas, 'Cascadia Mono', 'Cascadia Code', 'DejaVu Sans Mono', monospace;
+
+  /* Light theme (default). */
+  --bg-page: #e6e5e1;
+  --surface: #ffffff;
+  --surface-inset: #f4f3f0;
+  --titlebar: #eceae6;
+  --border: #dcdad4;
+  --border-strong: #bfbcb4;
+  --ink: #1c1b19;
+  --ink-2: #4f4c46;
+  --ink-3: #6d6960;
+  --matte: #6f6d68;
+  --matte-line: #5a5854;
+  --chip-bg: #ffffff;
+  --chip-border: #8d8b85;
+  --chip-ink: #2a2926;
+  --accent: #006e47;
+  --accent-hover: #005839;
+  --accent-ink: #ffffff;
+  --accent-tint: #e0efe8;
+  --warn-bg: #f1efe9;
+  --warn-border: #d6d1c4;
+  --gold: #8a6216;
+  --clay: #8c4a32;
+  --field: #ffffff;
+  --code-bg: #f7f6f3;
+  --skeleton: #ffffff;
+  --skeleton-2: #e9e7e2;
+  --skeleton-shimmer: rgba(255, 255, 255, 0.75);
+  --overlay-scrim: rgba(12, 12, 11, 0.42);
+}
+
+:root[data-theme='dark'] {
+  --bg-page: #141514;
+  --surface: #212220;
+  --surface-inset: #1a1b19;
+  --titlebar: #191a18;
+  --border: #34352f;
+  --border-strong: #4a4b44;
+  --ink: #e9e8e3;
+  --ink-2: #b6b3ab;
+  --ink-3: #95928a;
+  --matte: #0e0f0e;
+  --matte-line: #2a2b28;
+  --chip-bg: #1d1e1c;
+  --chip-border: #3d3e38;
+  --chip-ink: #c9c6bf;
+  --accent: #3d9a70;
+  --accent-hover: #4bab7f;
+  --accent-ink: #0c1a13;
+  --accent-tint: #1d3229;
+  --warn-bg: #26251f;
+  --warn-border: #3c3a30;
+  --gold: #c39a4a;
+  --clay: #c07a5e;
+  --field: #191a18;
+  --code-bg: #191a18;
+  --skeleton: #1c1d1b;
+  --skeleton-2: #2a2b28;
+  --skeleton-shimmer: rgba(255, 255, 255, 0.09);
+}
+
+/* Respect the OS theme when the user hasn't chosen one yet (main.ts stamps
+   data-theme once a theme is picked/persisted, per the artifact-theme
+   convention of prefers-color-scheme as the default signal). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-page: #141514;
+    --surface: #212220;
+    --surface-inset: #1a1b19;
+    --titlebar: #191a18;
+    --border: #34352f;
+    --border-strong: #4a4b44;
+    --ink: #e9e8e3;
+    --ink-2: #b6b3ab;
+    --ink-3: #95928a;
+    --matte: #0e0f0e;
+    --matte-line: #2a2b28;
+    --chip-bg: #1d1e1c;
+    --chip-border: #3d3e38;
+    --chip-ink: #c9c6bf;
+    --accent: #3d9a70;
+    --accent-hover: #4bab7f;
+    --accent-ink: #0c1a13;
+    --accent-tint: #1d3229;
+    --warn-bg: #26251f;
+    --warn-border: #3c3a30;
+    --gold: #c39a4a;
+    --clay: #c07a5e;
+    --field: #191a18;
+    --code-bg: #191a18;
+    --skeleton: #1c1d1b;
+    --skeleton-2: #2a2b28;
+    --skeleton-shimmer: rgba(255, 255, 255, 0.09);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg-page);
+}
+
+button {
+  font-family: var(--font-sans);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: auto;
+  background: var(--surface-inset);
+  white-space: nowrap;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/*
+ * Focus rings, hover/active states: a shared, low-specificity `button` rule
+ * (rather than repeating `transition` on every .btn/.iconBtn/.textBtn/…
+ * variant below) so one declaration covers all of them — CSS `transition`
+ * is a shorthand that fully replaces, never merges with, another
+ * `transition` declaration on the same element, so per-variant rules below
+ * only ever set the *target* colors, never `transition` itself.
+ * The focus outline is always present at `transparent` (never `none`) so
+ * that flipping it to --accent on :focus-visible is a color change the
+ * `outline-color` transition can animate, rather than a non-animatable
+ * outline-style toggle appearing instantly either way.
+ */
+button,
+[tabindex],
+a {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    outline-color 140ms ease,
+    transform 110ms ease;
+}
+button:focus-visible,
+[tabindex]:focus-visible,
+a:focus-visible {
+  outline-color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--surface);
+  position: relative;
+  overflow: hidden;
+}
+
+/* --- Title bar ----------------------------------------------------- */
+
+#titlebar {
+  height: 32px;
+  flex: 0 0 auto;
+  background: var(--titlebar);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+#titlebarAppName {
+  font: 600 12px var(--font-sans);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+#titlebarDash {
+  color: var(--ink-3);
+}
+#titlebarFileName {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Menu bar -------------------------------------------------------- */
+
+#menubar {
+  height: 28px;
+  flex: 0 0 auto;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  position: relative;
+}
+.menu {
+  position: relative;
+}
+.menuTrigger {
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink);
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.menuTrigger:hover,
+.menuTrigger[aria-expanded='true'] {
+  background: var(--surface-inset);
+}
+.menuTrigger:active {
+  transform: scale(0.97);
+}
+/* Fades/scales in on open (spec requirement 8) — closes instantly via
+   main.ts's closeAllMenus() setting `hidden` directly, matching every other
+   `hidden`-driven element in this file (see the [hidden] reset's comment
+   at the top of this file): a dropdown menu is dismissed constantly (every
+   outside click, every Escape, every item pick) and animating that exit
+   would fight the a11y/click-through fix `[hidden]{display:none!important}`
+   exists for. */
+.menuPanel {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 230px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+  padding: 4px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transform-origin: top left;
+  animation: menuPanelEnter 140ms ease-out;
+}
+@keyframes menuPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.menuPanel button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 12.5px var(--font-sans);
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.menuPanel button:hover:not(:disabled) {
+  background: var(--surface-inset);
+}
+.menuPanel button:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+.menuPanel kbd {
+  margin-left: auto;
+}
+
+/* --- Toolbar --------------------------------------------------------- */
+
+#toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border);
+  min-height: 52px;
+  flex-wrap: wrap;
+}
+.toolGroup {
+  display: flex;
+  gap: 7px;
+}
+.toolGroupLabeled {
+  flex-direction: column;
+  gap: 3px;
+}
+.toolSep {
+  width: 1px;
+  height: 34px;
+  background: var(--border);
+  align-self: center;
+}
+.toolSpacer {
+  flex: 1;
+}
+.groupLabel {
+  font: 600 9.5px var(--font-sans);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.navGroup {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  gap: 2px;
+}
+.navValue {
+  font: 500 12px var(--font-mono);
+  color: var(--ink);
+  min-width: 46px;
+  text-align: center;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.navDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 3px;
+}
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.iconBtn:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+.iconBtn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.iconBtn:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.textBtn {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 12px var(--font-sans);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.textBtn:hover {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+.textBtn:active {
+  transform: scale(0.96);
+}
+.textBtn.isActive {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+.linkBtn {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 12px var(--font-sans);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.linkBtn:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.linkBtn:active {
+  transform: scale(0.96);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 4px;
+  font: 600 12.5px var(--font-sans);
+  cursor: pointer;
+  border: 1px solid;
+}
+.btn kbd {
+  margin-left: 2px;
+  opacity: 0.85;
+}
+.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btnPrimary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btnGhost {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.btnGhost:hover:not(:disabled) {
+  background: var(--accent-tint);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  background: var(--surface-inset);
+  border-color: var(--border);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+.btnPrimaryLg {
+  height: 42px;
+  padding: 0 20px;
+  font-size: 14px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btnPrimaryLg:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+#inspectorToggleBtn.isActive {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+/* --- Data-warnings banner --------------------------------------------- */
+
+.warnBanner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn-border);
+  /* Slides/fades down on appearance (spec requirement 6) — enter-only, same
+     reasoning as .stateScreen above: renderWarnBanner()/showScreen() only
+     ever flip `hidden` synchronously, never delay it. */
+  animation: warnBannerEnter 200ms ease-out;
+}
+@keyframes warnBannerEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.warnIcon {
+  flex: none;
+}
+.warnCount {
+  font: 600 12.5px var(--font-sans);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.warnSep {
+  width: 1px;
+  height: 14px;
+  background: var(--warn-border);
+}
+.warnMessages {
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.warnMessages .mono {
+  font-family: var(--font-mono);
+}
+
+/* --- Body / preview / inspector --------------------------------------- */
+
+#body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+#previewPane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--matte);
+  position: relative;
+}
+/* Drag-and-drop open target (welcome screen + workspace preview, spec §4):
+   a visible drop affordance while a .json/.dat/.edi/.837 file is dragged
+   over the pane — see main.ts's setupDragAndDrop(). */
+#previewPane.isDragOver::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  background: var(--accent-tint);
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.stateScreen[hidden] {
+  display: none;
+}
+/*
+ * Gentle cross-fade + slight rise between welcome/loading/error/workspace
+ * (spec requirement 2). Deliberately an enter-only `animation`, not a
+ * `transition`: main.ts's showScreen() flips all four `hidden` attributes
+ * in the same synchronous call, and `[hidden]{display:none!important}` (top
+ * of this file) makes the outgoing screen disappear that same instant —
+ * exactly the behavior the e2e state-screen-visibility assertions require
+ * (see e2e/app.spec.ts's header comment). An `animation` on `.stateScreen`
+ * plays automatically every time the browser takes the element from
+ * `display:none` back to `display:flex` (i.e. every time `hidden` is
+ * removed), for free, with no JS timing to keep in sync — the outgoing
+ * screen never gets a matching exit animation because it's already gone.
+ */
+.stateScreen {
+  animation: stateScreenEnter 200ms ease-out;
+}
+@keyframes stateScreenEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Welcome */
+#welcomeScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: var(--surface);
+  overflow: auto;
+}
+.welcomeCard {
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+}
+.welcomeTitle {
+  font: 600 26px var(--font-serif);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.welcomeSubtitle {
+  font: 400 13.5px var(--font-sans);
+  color: var(--ink-2);
+  margin-top: 6px;
+}
+.welcomeOpenBox {
+  margin-top: 26px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  padding: 34px 28px;
+}
+.welcomeHint {
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-3);
+  margin-top: 14px;
+}
+.welcomeOffline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 20px;
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-2);
+}
+.welcomeScripture {
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.welcomeVerse {
+  font: italic 400 14px var(--font-serif);
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+.welcomeCite {
+  font: 400 11.5px var(--font-sans);
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+
+/* Loading */
+#loadingScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--matte);
+}
+.loadingBar {
+  width: 240px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  position: relative;
+}
+.loadingBarFill {
+  position: absolute;
+  inset: 0 62% 0 0;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: loadingSlide 1.1s ease-in-out infinite;
+}
+@keyframes loadingSlide {
+  0% {
+    transform: translateX(-30%);
+  }
+  50% {
+    transform: translateX(120%);
+  }
+  100% {
+    transform: translateX(-30%);
+  }
+}
+.loadingLabel {
+  font: 400 13px var(--font-sans);
+  color: var(--chip-ink);
+}
+.loadingSkeleton {
+  width: 520px;
+  max-width: calc(100vw - 120px);
+  height: 300px;
+  border: 1px solid var(--matte-line);
+  background: var(--skeleton);
+  border-radius: 2px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+/*
+ * Shimmer sweep (spec requirement 1 — "give the existing skeleton a smooth
+ * shimmer/pulse"): a ::after highlight band translateX-slides across each
+ * bar on a loop, rather than animating `background-position` on a gradient
+ * fill directly — translateX is compositor-friendly (transform/opacity
+ * only, per the hard constraints), a plain background-position sweep isn't.
+ * `overflow:hidden` on the bar clips the band to its own width so each line
+ * reads as an independent shimmer rather than one sweep crossing the whole
+ * skeleton.
+ */
+.skelLine {
+  position: relative;
+  height: 10px;
+  background: var(--skeleton-2);
+  overflow: hidden;
+}
+.skelLine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--skeleton-shimmer), transparent);
+  animation: skeletonShimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+.skelLine1 {
+  height: 14px;
+  width: 55%;
+}
+.skelLine2 {
+  width: 82%;
+}
+.skelLine2::after {
+  animation-delay: 90ms;
+}
+.skelLine3 {
+  width: 74%;
+}
+.skelLine3::after {
+  animation-delay: 180ms;
+}
+.skelLine4 {
+  width: 90%;
+}
+.skelLine4::after {
+  animation-delay: 270ms;
+}
+.skelLine5 {
+  width: 66%;
+}
+.skelLine5::after {
+  animation-delay: 360ms;
+}
+.skelLine6 {
+  width: 88%;
+}
+.skelLine6::after {
+  animation-delay: 450ms;
+}
+.skelRule {
+  height: 1px;
+  background: var(--matte-line);
+  margin: 4px 0;
+}
+
+/* Parse error */
+#errorScreen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: var(--surface);
+  overflow: auto;
+}
+.errorCard {
+  width: 100%;
+  max-width: 560px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  padding: 26px 26px 22px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.errorIcon {
+  flex: none;
+  margin-top: 2px;
+}
+.errorTitle {
+  font: 600 15px var(--font-sans);
+  color: var(--ink);
+}
+.errorMessage {
+  font: 400 13px var(--font-sans);
+  color: var(--ink-2);
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.errorDetailBox {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.errorDetailLabel {
+  font: 600 10.5px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.errorDetail {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 6px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.errorActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Workspace / form preview */
+#workspaceScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#chipRow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--matte);
+  border-bottom: 1px solid var(--matte-line);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--chip-border);
+  border-radius: 12px;
+  background: var(--chip-bg);
+  font: 400 11.5px var(--font-sans);
+  color: var(--chip-ink);
+}
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.chipGold {
+  font: 600 11px var(--font-sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.unsupportedNote {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border);
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.unsupportedNote svg {
+  flex: none;
+  margin-top: 2px;
+}
+#pdfScroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 24px 24px 40px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+#pdfCanvas {
+  background: #fff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  flex: 0 0 auto;
+}
+#pdfCanvas[hidden] {
+  display: none;
+}
+/*
+ * Subtle fade-in on a claim/page change (spec requirement 7) so stepping
+ * pages/claims doesn't hard-cut the preview. main.ts only adds this class
+ * for an actual page/claim change, never for a Ctrl+wheel zoom redraw (zoom
+ * re-renders the same canvas continuously; fading on every step would
+ * flicker instead of read as polish) — see renderPdfPageNow()'s `fade`
+ * parameter. Kept fast (150ms, within the 120-180ms the spec asks for)
+ * since this sits in the middle of an already-interactive scroll/zoom
+ * surface.
+ */
+#pdfCanvas.isFadingIn {
+  animation: pdfCanvasFadeIn 150ms ease-out;
+}
+@keyframes pdfCanvasFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Inspector drawer */
+#inspector {
+  width: 372px;
+  /* flex-basis: auto (not a px value) on purpose — see the comment below on
+     why the collapse/expand needs `width` itself to drive the box size. */
+  flex: 0 0 auto;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  opacity: 1;
+  /*
+   * Animates the collapse/expand (spec requirement 5). This used to declare
+   * `flex: 0 0 372px` / `.collapsed { flex: 0 0 0; }`, which silently made
+   * the pre-existing `transition: width` a no-op: an explicit `flex-basis`
+   * (the "372px"/"0" in that shorthand) determines a flex item's main-axis
+   * size and overrides `width` for layout purposes, so nothing was ever
+   * actually animating. Using `flex: 0 0 auto` instead lets `width` itself
+   * drive the box size, which the transition below can then genuinely
+   * interpolate. `border-left-width` (not the `border-left` shorthand, so
+   * only the width component transitions and the style/color stay put) and
+   * `opacity` are listed too so the content visibly recedes together with
+   * the drawer narrowing, rather than the text just getting clipped.
+   */
+  transition:
+    width 200ms ease-out,
+    border-left-width 200ms ease-out,
+    opacity 160ms ease-out;
+}
+#inspector[hidden] {
+  display: none;
+}
+/*
+ * Ctrl+D ("toggle inspector") must only ever collapse the drawer VISUALLY —
+ * UI req §6: "Always present in the DOM/accessibility tree even when
+ * visually collapsed". main.ts's updateInspectorVisibility() therefore
+ * toggles this class, never the `hidden` attribute, while a claim is loaded
+ * (the [hidden]{display:none!important} rule near the top of this file
+ * would remove the <aside> from the a11y tree entirely, which is exactly
+ * what this is fixing). `hidden` is still used for "no workspace at all" —
+ * that case has no claim data to represent either way.
+ */
+#inspector.collapsed {
+  width: 0;
+  min-width: 0;
+  border-left-width: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+#inspectorHeader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.inspectorTitle {
+  font: 600 12.5px var(--font-sans);
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.inspectorSub {
+  font: 400 11.5px var(--font-sans);
+  color: var(--ink-3);
+}
+#inspectorBody {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.inspGroup {
+  border-bottom: 1px solid var(--border);
+}
+.inspGroup > summary {
+  list-style: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.inspGroup > summary::-webkit-details-marker {
+  display: none;
+}
+.inspGroupCaret {
+  width: 12px;
+  flex: none;
+  font: 400 10px var(--font-sans);
+  color: var(--ink-3);
+}
+.inspGroupLabel {
+  font: 600 12.5px var(--font-sans);
+  color: var(--ink);
+  flex: 1;
+}
+.inspGroupTag {
+  font: 500 10.5px var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  color: var(--ink-3);
+}
+.inspGroupTag.isWarn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--gold);
+}
+.inspGroupBody {
+  padding: 2px 12px 12px 26px;
+}
+.inspRow {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3.5px 0;
+}
+.inspRowKey {
+  width: 118px;
+  flex: none;
+  font: 400 11.5px var(--font-sans);
+  color: var(--ink-3);
+  line-height: 1.45;
+}
+.inspRowVal {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  line-height: 1.45;
+  font: 400 11.5px var(--font-mono);
+  color: var(--ink);
+}
+.inspRowVal.isDim {
+  color: var(--ink-3);
+}
+.inspRowVal.isWarn {
+  color: var(--gold);
+}
+.inspRowVal.isOk {
+  color: var(--accent);
+}
+.inspEmpty {
+  padding: 3.5px 0;
+  font: 400 11.5px var(--font-sans);
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+.inspRaw {
+  margin: 0;
+  padding: 10px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 400 11px var(--font-mono);
+  color: var(--ink-2);
+  line-height: 1.55;
+  overflow: auto;
+  max-height: 260px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- Status bar -------------------------------------------------------- */
+
+#statusBar {
+  height: 26px;
+  flex: 0 0 auto;
+  background: var(--surface-inset);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font: 400 11.5px var(--font-sans);
+  color: var(--ink-2);
+}
+.statusFileGroup {
+  display: flex;
+  align-items: center;
+}
+.statusFileGroup[hidden] {
+  display: none;
+}
+.statusSep {
+  width: 1px;
+  height: 12px;
+  background: var(--border-strong);
+  margin: 0 12px;
+}
+.statusWarnBtn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font: 600 11.5px var(--font-sans);
+  color: var(--ink-2);
+}
+.statusWarnBtn.hasWarnings {
+  color: var(--gold);
+}
+.dim {
+  color: var(--ink-3);
+}
+.offlineIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- Overlays / dialogs -------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  animation: overlayScrimEnter 160ms ease-out;
+}
+.overlay[hidden] {
+  display: none;
+}
+@keyframes overlayScrimEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/*
+ * Close reverses the enter animation instead of vanishing (spec requirement
+ * 4) — unlike every other `hidden`-driven element in this file, main.ts's
+ * closeOverlay() genuinely delays setting `hidden` until this finishes (see
+ * its comment): a modal dialog's close is a single, deliberate user action
+ * (not a hot path like the menu dropdowns above), so the brief delay is
+ * worth the polish and doesn't strain the `hidden`-is-the-only-source-of-
+ * truth contract — `hidden` still flips exactly once, just a beat later.
+ */
+.overlay.isClosing {
+  animation: overlayScrimExit 150ms ease-in forwards;
+}
+@keyframes overlayScrimExit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.dialog {
+  width: 600px;
+  max-width: calc(100vw - 48px);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+  animation: dialogEnter 180ms ease-out;
+}
+@keyframes dialogEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.overlay.isClosing .dialog {
+  animation: dialogExit 150ms ease-in forwards;
+}
+@keyframes dialogExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+.dialogWide {
+  width: 720px;
+}
+.dialogTitlebar {
+  height: 34px;
+  background: var(--titlebar);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 12px;
+  font: 600 12.5px var(--font-sans);
+  color: var(--ink);
+}
+.dialogBody {
+  padding: 18px 20px 4px;
+}
+.exportIntro {
+  font: 400 13.5px var(--font-sans);
+  color: var(--ink);
+  margin: 0 0 16px;
+}
+.manifest {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-inset);
+  padding: 11px 13px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-2);
+}
+.manifestLabel {
+  color: var(--ink-3);
+}
+.phiNotice {
+  margin-top: 14px;
+  margin-bottom: 18px;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+}
+.phiNotice svg {
+  flex: none;
+  margin-top: 1px;
+}
+.phiNotice span {
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink);
+  line-height: 1.55;
+}
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px 18px;
+}
+
+.shortcutsGrid {
+  padding: 18px 22px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 34px;
+}
+.shortcutsCol > .shortcutsColTitle {
+  font: 600 11px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+}
+.shortcutLabel {
+  flex: 1;
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink);
+}
+.shortcutsFootnote {
+  padding: 0 22px 18px;
+  font: 400 12px var(--font-sans);
+  color: var(--ink-3);
+}
+
+/* --- Toast --------------------------------------------------------------- */
+
+.toast {
+  position: absolute;
+  right: 20px;
+  bottom: 44px;
+  z-index: 70;
+  /* Message + actions stack on the left; the dismiss button is pinned to the
+     top-right corner (align-items:flex-start) rather than wrapping onto its
+     own row underneath the actions. */
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 460px;
+  padding: 10px 10px 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink);
+  /* Fades/slides up from the bottom-right on show (spec requirement 3). */
+  animation: toastEnter 200ms ease-out;
+}
+.toast.isError {
+  border-color: var(--clay);
+}
+.toast[hidden] {
+  display: none;
+}
+@keyframes toastEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Reverses on dismiss/timeout — main.ts's dismissToast() delays `hidden`
+   by TOAST_EXIT_MS to match, the same close-is-a-deliberate-action
+   reasoning as .overlay.isClosing above. */
+.toast.isClosing {
+  animation: toastExit 150ms ease-in forwards;
+}
+@keyframes toastExit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+/* Message above its actions, both left-aligned; min-width:0 lets a long
+   export path wrap instead of forcing the toast wider. */
+.toastBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#toastMessage {
+  overflow-wrap: anywhere;
+}
+.toastClose {
+  flex: 0 0 auto;
+}
+/* Export "done" state actions (design ClaimViewer_v2.dc.html:776-777 /
+   spec §7) — shown under the "Exported to <path>" toast message. */
+.toastActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toastActions[hidden] {
+  display: none;
+}
+
+/* --- Reduced motion ------------------------------------------------------
+ * Accessibility requirement (spec §9), not optional. Every animation/
+ * transition added above stays purely decorative — every element it's
+ * attached to already flips visibility via `hidden`/a state class exactly
+ * as it did before this pass, so collapsing durations to near-instant here
+ * is enough to satisfy the preference without touching any of the rules
+ * above. 0.001ms rather than a literal 0ms so `animationend`/`transitionend`
+ * still fire for anything that happens to listen for one (some engines
+ * silently skip the event for a genuinely zero-duration run) — main.ts's
+ * prefersReducedMotion() additionally short-circuits the toast/dialog
+ * close delay in JS, so those don't sit through an invisible-but-still-
+ * timed animation either.
+ * NOT covered here, intentionally: the loading screen's ~500ms minimum
+ * visible floor (main.ts's LOADING_MIN_VISIBLE_MS). That floor exists so
+ * the loading state reads as "it's working" instead of a flash/stutter —
+ * a perceived-performance guarantee, not decorative motion — so it's the
+ * one timing behavior the spec says should survive this preference as-is.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

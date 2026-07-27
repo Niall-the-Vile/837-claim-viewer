@@ -1,0 +1,198 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+
+/**
+ * End-to-end test of the actual packaged behavior: a real Electron process,
+ * a real (sandboxed, contextIsolation:true) renderer, a real preload
+ * bridge, and the real offline kill-switch — none of that is exercised by
+ * the vitest unit/invariant suites, which only ever call the renderer
+ * functions and IPC handler logic directly in Node.
+ *
+ * Drives dist/electron/main.js (the `npm run build` output), NOT the
+ * electron-builder --dir package under release/ — same code, same
+ * BrowserWindow/webPreferences/CSP/kill-switch setup (see
+ * electron/main.ts's IS_DEV check, which is keyed off
+ * dist/renderer/index.html existing, exactly what `npm run build` produces)
+ * but without paying for a full asar pack on every run. `npm run verify`
+ * runs `npm run build` immediately before `playwright test` for this
+ * reason — see package.json.
+ *
+ * Never drives the native OS open/save file dialogs (Playwright can't).
+ * Instead this relies on the guarded, env-gated E2E seam already in
+ * electron/main.ts's `dialog:openClaim` / `dialog:exportPdf` handlers:
+ * CLAIM_VIEWER_E2E_OPEN / CLAIM_VIEWER_E2E_SAVE substitute a fixed path for
+ * the dialog result, but every line of code after that point (readFile,
+ * loadClaims, renderClaim, writeFileAtomic) is the exact same path a real
+ * user's Open/Export click runs. Both env vars are `undefined` unless a
+ * test explicitly sets them, so the seam is provably inert for a normal
+ * launch (see the "welcome screen" test below, which launches with neither
+ * set).
+ *
+ * STATE-SCREEN VISIBILITY (was a known failure, now fixed): the
+ * `expect(await visibleStateScreens(page)).toEqual([...])` checks below
+ * assert that exactly one `.stateScreen` is laid out at a time. They used to
+ * fail — confirmed via `getComputedStyle` in the live built app — because
+ * src/renderer/index.html's 4 `.stateScreen` elements
+ * (#welcomeScreen/#loadingScreen/#errorScreen/#workspaceScreen) each had
+ * their own ID-selector rule in src/renderer/style.css
+ * (`#welcomeScreen { display: flex; ... }`, etc.) which, because an ID
+ * selector always outweighs a class+attribute selector in CSS specificity,
+ * beat `.stateScreen[hidden] { display: none; }` regardless of source order.
+ * The practical effect: setting `.hidden = true` (what
+ * src/renderer/main.ts's showScreen() does) never actually hid a state
+ * screen; all 4 stayed laid out (stacked vertically inside #previewPane) at
+ * once. Fixed in src/renderer/style.css by a global
+ * `[hidden] { display: none !important; }` reset that makes the attribute's
+ * semantic win over any author `display` rule (this also cured the sibling
+ * bug where the File/View/Help `.menuPanel` dropdowns stayed hit-testable
+ * while `hidden` and intercepted toolbar clicks). These are now plain
+ * `expect()` and pass; do not loosen them — a regression would re-stack the
+ * screens and this harness exists to catch exactly that.
+ */
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, '..');
+const MAIN_ENTRY = join(repoRoot, 'dist', 'electron', 'main.js');
+const OPEN_FIXTURE = join(repoRoot, 'test', 'fixtures', 'synthetic-1500.json');
+
+function requireBuiltApp(): void {
+  if (!existsSync(MAIN_ENTRY)) {
+    throw new Error(`Built app not found at "${MAIN_ENTRY}". Run "npm run build" before the e2e suite (npm run verify does this for you).`);
+  }
+}
+
+/** `process.env`'s values are `string | undefined` (a var can be declared-but-unset); Playwright's `env` option requires plain strings, so undefined entries are dropped rather than passed through. */
+function definedEnv(source: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+async function launchApp(env: Record<string, string> = {}): Promise<ElectronApplication> {
+  requireBuiltApp();
+  return electron.launch({
+    args: [MAIN_ENTRY],
+    // Merge onto the real process.env (Playwright replaces it outright if
+    // given a partial object) — the app still needs PATH/TEMP/etc. to run
+    // normally; only CLAIM_VIEWER_E2E_OPEN/SAVE are ever added on top.
+    env: { ...definedEnv(process.env), ...env },
+  });
+}
+
+/** The 4 `.stateScreen` ids in src/renderer/index.html's #previewPane. */
+const STATE_SCREEN_IDS = ['welcomeScreen', 'loadingScreen', 'errorScreen', 'workspaceScreen'] as const;
+
+/** Reads which of the 4 state screens are actually visible right now (via the same `[hidden]` attribute src/renderer/main.ts's showScreen() toggles), for an exact "only these are shown" assertion rather than checking each one individually and hoping nothing else slipped through. */
+async function visibleStateScreens(page: Page): Promise<string[]> {
+  const visible: string[] = [];
+  for (const id of STATE_SCREEN_IDS) {
+    if (await page.locator(`#${id}`).isVisible()) visible.push(id);
+  }
+  return visible;
+}
+
+test.describe('837 Claim Viewer — E2E', () => {
+  test('launches to the welcome screen, shows the offline indicator, exposes exactly the frozen claimApi surface, and blocks outbound network requests', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+
+      // Initial launch: exactly #welcomeScreen, nothing else. See this
+      // file's header comment for the state-screen visibility bug this
+      // guards (fixed in src/renderer/style.css).
+      await expect(page.locator('#welcomeScreen')).toBeVisible();
+      expect(await visibleStateScreens(page)).toEqual(['welcomeScreen']);
+
+      // Offline indicator (status bar, always shown regardless of screen).
+      await expect(page.locator('.offlineIndicator')).toBeVisible();
+      await expect(page.locator('.offlineIndicator')).toContainText('Offline');
+
+      // The frozen contextBridge surface — exactly these functions, see
+      // electron/preload.ts's `claimApi`. Anything more would be a bridge
+      // leak; anything less would break the renderer. (getPathForFile drives
+      // drag-and-drop; openExport opens the exported file's folder/PDF.)
+      const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
+      expect(apiKeys).toEqual(['exportPdf', 'getDetail', 'getPathForFile', 'getPdf', 'openClaim', 'openExport']);
+
+      // Offline kill-switch (electron/main.ts's installOfflineKillSwitch):
+      // an outbound fetch to a real external host must never resolve.
+      const fetchOutcome = await page.evaluate(async () => {
+        try {
+          await fetch('http://example.com');
+          return 'resolved';
+        } catch {
+          return 'blocked';
+        }
+      });
+      expect(fetchOutcome).toBe('blocked');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('open -> preview -> export: exactly one state screen is visible after loading a claim, the canvas renders, and the exported file is a real PDF', async () => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'claim-viewer-e2e-'));
+    const savePath = join(saveDir, 'export.pdf');
+
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: OPEN_FIXTURE, CLAIM_VIEWER_E2E_SAVE: savePath });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+
+      // Sanity: still starts on the welcome screen — setting the env vars
+      // alone must not auto-open anything (the seam only fires once the
+      // renderer actually calls claimApi.openClaim()). See this file's
+      // header comment for the state-screen visibility bug this guards
+      // (fixed in src/renderer/style.css).
+      expect(await visibleStateScreens(page)).toEqual(['welcomeScreen']);
+
+      await page.locator('#welcomeOpenBtn').click();
+
+      // After the E2E-seam "open" resolves: exactly #workspaceScreen, and
+      // specifically NOT #welcomeScreen/#loadingScreen/#errorScreen.
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+      expect(await visibleStateScreens(page)).toEqual(['workspaceScreen']);
+
+      // Preview: the pdf.js canvas actually has pixels (a real render, not
+      // just an empty <canvas>).
+      const canvasSize = await page.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
+      expect(canvasSize.width).toBeGreaterThan(0);
+      expect(canvasSize.height).toBeGreaterThan(0);
+
+      // Export: opens the dialog, confirms, and the E2E-seam "save" path
+      // (electron/main.ts's dialog:exportPdf handler) writes straight to
+      // savePath instead of showing a native save dialog.
+      //
+      // A real Playwright .click() here (mouse-event hit-testing, exactly
+      // like a user's click) doubles as regression coverage for the sibling
+      // `.menuPanel` bug: those File/View/Help dropdown panels used to stay
+      // laid out and hit-testable even while `hidden` (their `display: flex`
+      // rule had no `[hidden]` override), so they sat over part of the
+      // toolbar and Playwright refused this click with "intercepts pointer
+      // events" at #exportBtn's coordinates. The global
+      // `[hidden] { display: none !important; }` reset in
+      // src/renderer/style.css removed them from layout, so an unobstructed
+      // real click now lands on #exportBtn — if this ever regresses to the
+      // old `.evaluate(el => el.click())` workaround being necessary, the
+      // menuPanel hiding has broken again.
+      await page.locator('#exportBtn').click();
+      await expect(page.locator('#exportOverlay')).toBeVisible();
+      await page.locator('#exportConfirmBtn').click();
+      // confirmExport() closes the overlay itself once claimApi.exportPdf resolves.
+      await expect(page.locator('#exportOverlay')).toBeHidden();
+
+      await expect.poll(() => existsSync(savePath), { message: `expected a PDF at ${savePath}` }).toBe(true);
+      const exported = readFileSync(savePath);
+      expect(exported.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    } finally {
+      await app.close();
+      rmSync(saveDir, { recursive: true, force: true });
+    }
+  });
+});

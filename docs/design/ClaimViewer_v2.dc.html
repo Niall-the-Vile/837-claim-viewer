@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,600;1,8..60,400&family=Open+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0}
+  *{box-sizing:border-box}
+  button{font-family:'Open Sans',sans-serif}
+  a{color:#006E47;text-decoration:none}
+  a:hover{color:#005839;text-decoration:underline}
+  button:focus-visible,[tabindex]:focus-visible{outline:2px solid #006E47;outline-offset:2px}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#9a978f;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<div style="{{ rootStyle }}">
+
+  <div style="width:1440px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    <span style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-right:2px">Screens</span>
+    <sc-for list="{{ screens }}" as="s" hint-placeholder-count="11">
+      <button onClick="{{ pick }}" data-id="{{ s.id }}" style="{{ s.style }}">{{ s.label }}</button>
+    </sc-for>
+    <div style="flex:1"></div>
+    <button onClick="{{ toggleTheme }}" style="{{ themeBtnStyle }}">{{ themeLabel }}</button>
+  </div>
+
+  <div style="width:1440px;height:980px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.28)">
+
+    <div style="height:32px;flex:0 0 auto;background:var(--titlebar);display:flex;align-items:center;padding:0 0 0 12px;border-bottom:1px solid var(--border);gap:10px">
+      <span style="font:600 12px 'Open Sans',sans-serif;color:var(--ink-2);white-space:nowrap">Claim Viewer</span>
+      <span style="color:var(--ink-3);font:400 12px 'Open Sans',sans-serif">—</span>
+      <span style="font:400 12px 'IBM Plex Mono',monospace;color:var(--ink-2);white-space:nowrap">{{ fileName }}</span>
+      <div style="flex:1"></div>
+      <div style="display:flex;height:100%">
+        <div style="width:46px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 12h14"></path></svg></div>
+        <div style="width:46px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h16v16H4z"></path></svg></div>
+        <div style="width:46px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div>
+      </div>
+    </div>
+
+    <div style="height:28px;flex:0 0 auto;background:var(--surface);display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--border);gap:2px">
+      <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink);padding:3px 9px;border-radius:3px"><u>F</u>ile</span>
+      <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink);padding:3px 9px;border-radius:3px"><u>V</u>iew</span>
+      <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink);padding:3px 9px;border-radius:3px"><u>H</u>elp</span>
+    </div>
+
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:8px 12px;background:var(--surface-inset);border-bottom:1px solid var(--border);min-height:52px">
+      <div style="display:flex;gap:7px">
+        <button style="{{ btnGhost }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 7h6l2 2h10v11H3z"></path></svg>Open</button>
+        <sc-if value="{{ exportOn }}" hint-placeholder-val="{{ true }}">
+        <button onClick="{{ openExport }}" style="{{ btnPrimary }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"></path></svg>Export PDF</button>
+        </sc-if>
+        <sc-if value="{{ exportOff }}" hint-placeholder-val="{{ false }}">
+        <button disabled="true" style="{{ btnDisabled }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"></path></svg>Export PDF</button>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+      <span style="{{ sepStyle }}"></span>
+      </sc-if>
+
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Zoom</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ zoomOut }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 12h14"></path></svg></button>
+          <span style="font:500 12px 'IBM Plex Mono',monospace;color:var(--ink);min-width:46px;text-align:center">{{ zoomLabel }}</span>
+          <button onClick="{{ zoomIn }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></button>
+          <span style="{{ navDivider }}"></span>
+          <button onClick="{{ fitPage }}" style="{{ fitPageStyle }}">Fit page</button>
+          <button onClick="{{ fitWidth }}" style="{{ fitWidthStyle }}">Fit width</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isCms }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Long claims</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ setPaginate }}" style="{{ paginateStyle }}">Paginate</button>
+          <button onClick="{{ setOnePage }}" style="{{ onePageStyle }}">Fit to one letter page</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isSheetForm }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Sheet</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ setCompact }}" style="{{ compactStyle }}">Compact</button>
+          <button onClick="{{ setLetter }}" style="{{ letterStyle }}">Letter page</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ multiPage }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Pages of this claim</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ prevPage }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></button>
+          <span style="font:500 12px 'IBM Plex Mono',monospace;color:var(--ink);padding:0 6px;white-space:nowrap">Page {{ pageNo }} of {{ pageCount }}</span>
+          <button onClick="{{ nextPage }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isBatch }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Claim in this 837 file</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ prevClaim }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></button>
+          <span style="font:500 12px 'IBM Plex Mono',monospace;color:var(--ink);padding:0 6px;white-space:nowrap">{{ claimStepLabel }}</span>
+          <button onClick="{{ nextClaim }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></button>
+        </div>
+      </div>
+      </sc-if>
+
+      <div style="flex:1"></div>
+
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ toggleInspector }}" style="{{ inspectorBtnStyle }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><path d="M15 4v16"></path></svg>{{ inspectorBtnLabel }}<span style="font:400 11px 'IBM Plex Mono',monospace;color:var(--ink-3);margin-left:2px">Ctrl+D</span></button>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ showWarnBanner }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--warn-bg);border-bottom:1px solid var(--warn-border)">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4.5M12 17h.01"></path></svg>
+      <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink);white-space:nowrap">2 data warnings</span>
+      <span style="width:1px;height:14px;background:var(--warn-border)"></span>
+      <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-2)">Line charges (<span style="font-family:'IBM Plex Mono',monospace">$760.66</span>) don't match the claim total (<span style="font-family:'IBM Plex Mono',monospace">$760.65</span>) · Diagnosis pointer <span style="font-family:'IBM Plex Mono',monospace">E</span> on line 8 has no matching diagnosis</span>
+      <div style="flex:1"></div>
+      <button onClick="{{ goToLine8 }}" style="{{ linkBtn }}">Go to line 8</button>
+      <button onClick="{{ showRecon }}" style="{{ linkBtn }}">Review in inspector</button>
+    </div>
+    </sc-if>
+
+    <div style="flex:1 1 auto;display:flex;min-height:0;position:relative">
+
+      <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;background:var(--matte)">
+
+        <sc-if value="{{ isForm }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 12px;background:var(--matte);border-bottom:1px solid var(--matte-line)">
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border:1px solid var(--chip-border);border-radius:12px;background:var(--chip-bg);font:400 11.5px 'Open Sans',sans-serif;color:var(--chip-ink)">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--ink-3)"></span>{{ provenance }}
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--chip-border);border-radius:12px;background:var(--chip-bg);font:600 11px 'Open Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--gold)">Sample data</span>
+        </div>
+
+        <div style="flex:1 1 auto;overflow:auto;padding:24px 24px 40px;display:flex;justify-content:center;align-items:flex-start">
+          <div style="transform:{{ formTransform }};transform-origin:top center;flex:0 0 auto">
+
+            <sc-if value="{{ isCms }}" hint-placeholder-val="{{ true }}">
+            <div style="width:816px;min-height:1056px;display:flex;flex-direction:column;background:#fff;color:#000;padding:16px 18px 14px;font-family:'Open Sans',sans-serif">
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:5px;gap:24px">
+                <div>
+                  <div style="display:inline-block;border:1.5px solid #000;padding:0 5px;font:700 12px 'Open Sans',sans-serif;letter-spacing:.06em">1500</div>
+                  <div style="font:700 11px 'Open Sans',sans-serif;letter-spacing:.02em;margin-top:3px">HEALTH INSURANCE CLAIM FORM</div>
+                  <div style="font:400 6px 'Open Sans',sans-serif;letter-spacing:.05em;margin-top:1px">APPROVED BY NATIONAL UNIFORM CLAIM COMMITTEE (NUCC) 02/12</div>
+                </div>
+                <div style="text-align:left;flex:0 0 300px">
+                  <span style="font:700 6px 'Open Sans',sans-serif">CARRIER — PAYER NAME AND ADDRESS</span>
+                  <div style="font:500 9.5px 'IBM Plex Mono',monospace;line-height:1.4;margin-top:2px">ANABAPTIST BROTHERHOOD<br>MEDICAL AID &amp; ALMS PLAN<br>P.O. BOX 144<br>GUYS MILLS, PA 16327&nbsp;&nbsp;<span style="font-size:7px">ID</span> 88104</div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:2px">
+                <div style="border:1px solid #000;padding:0 4px;font:700 8px 'Open Sans',sans-serif;letter-spacing:.35em">PICA</div>
+                <div style="border:1px solid #000;padding:0 4px;font:700 8px 'Open Sans',sans-serif;letter-spacing:.35em">PICA</div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000">
+                <div style="width:14px;border-left:1px solid #000;order:2;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;transform:rotate(180deg);font:700 6px 'Open Sans',sans-serif;letter-spacing:.14em">CARRIER</span></div>
+                <div style="flex:1">
+                  <div style="display:flex;border-bottom:1px solid #000;min-height:34px">
+                    <div style="flex:1 1 0;border-right:1px solid #000;padding:2px 4px 3px">
+                      <span style="font:700 6px 'Open Sans',sans-serif">1. MEDICARE   MEDICAID   TRICARE   CHAMPVA   GROUP HEALTH PLAN   FECA BLK LUNG   OTHER</span>
+                      <div style="display:flex;gap:14px;margin-top:3px;font:400 6px 'Open Sans',sans-serif">
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>Medicare</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>Medicaid</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>Tricare</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>ChampVA</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>Group</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block"></span>FECA</span>
+                        <span style="display:inline-flex;gap:3px;align-items:center"><span style="width:7px;height:7px;border:1px solid #000;display:inline-block;position:relative"><span style="position:absolute;inset:-2px 0 0 0;text-align:center;font:700 8px 'Open Sans',sans-serif;line-height:9px">X</span></span>Other</span>
+                      </div>
+                    </div>
+                    <div style="width:250px;padding:2px 4px 3px">
+                      <span style="font:700 6px 'Open Sans',sans-serif">1a. INSURED'S I.D. NUMBER  (For Program in Item 1)</span>
+                      <div style="font:500 9.5px 'IBM Plex Mono',monospace;margin-top:3px">ABMP-4471902</div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="width:14px;border-left:1px solid #000;order:2;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;transform:rotate(180deg);font:700 6px 'Open Sans',sans-serif;letter-spacing:.14em">PATIENT AND INSURED INFORMATION</span></div>
+                <div style="flex:1;display:flex">
+                  <div style="flex:1 1 0;border-right:1px solid #000">
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">2. PATIENT'S NAME (Last, First, Middle Initial)</span><div style="{{ cmsVal }}">YODER, MIRIAM S</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">5. PATIENT'S ADDRESS (No., Street)</span><div style="{{ cmsVal }}">4482 SUGAR CREEK RD</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">CITY / STATE / ZIP / TELEPHONE</span><div style="{{ cmsVal }}">GUYS MILLS  PA  16327   (814) 555-0147</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">9. OTHER INSURED'S NAME (Last, First, Middle Initial)</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">9a. OTHER INSURED'S POLICY OR GROUP NUMBER</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">9b. RESERVED FOR NUCC USE</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">9d. INSURANCE PLAN NAME OR PROGRAM NAME</span><div style="{{ cmsValDim }}">—</div></div>
+                  </div>
+                  <div style="width:196px;border-right:1px solid #000">
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">3. PATIENT'S BIRTH DATE / SEX</span><div style="{{ cmsVal }}">03 14 1979&nbsp;&nbsp;&nbsp;M <span style="border:1px solid #000;padding:0 2px">&nbsp;</span>&nbsp; F <span style="border:1px solid #000;padding:0 2px">X</span></div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">6. PATIENT RELATIONSHIP TO INSURED</span><div style="{{ cmsVal }}">SELF <span style="border:1px solid #000;padding:0 2px">X</span>&nbsp; SPOUSE <span style="border:1px solid #000;padding:0 2px">&nbsp;</span>&nbsp; CHILD <span style="border:1px solid #000;padding:0 2px">&nbsp;</span></div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">10. IS PATIENT'S CONDITION RELATED TO:</span><div style="{{ cmsVal }}">a. EMPLOYMENT  NO</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">10b. AUTO ACCIDENT?  (PLACE)</span><div style="{{ cmsVal }}">NO</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">10c. OTHER ACCIDENT?</span><div style="{{ cmsVal }}">NO</div></div>
+                    <div style="{{ cmsCellLast }}" >
+                      <span style="{{ cmsLbl }}">10d. CLAIM CODES (Designated by NUCC)</span><div style="{{ cmsValDim }}">—</div></div>
+                  </div>
+                  <div style="width:250px">
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">4. INSURED'S NAME (Last, First, Middle Initial)</span><div style="{{ cmsVal }}">YODER, MIRIAM S</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">7. INSURED'S ADDRESS (No., Street)</span><div style="{{ cmsVal }}">4482 SUGAR CREEK RD</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">CITY / STATE / ZIP / TELEPHONE</span><div style="{{ cmsVal }}">GUYS MILLS  PA  16327</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">11. INSURED'S POLICY GROUP OR FECA NUMBER</span><div style="{{ cmsVal }}">AB-PLAN-01</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">11a. INSURED'S DATE OF BIRTH / SEX</span><div style="{{ cmsVal }}">03 14 1979&nbsp;&nbsp; F</div></div>
+                    <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">11b. OTHER CLAIM ID (Designated by NUCC)</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">11d. IS THERE ANOTHER HEALTH BENEFIT PLAN?</span><div style="{{ cmsVal }}">NO</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="border-left:1px solid #000;border-right:1px solid #000;padding:2px 4px;text-align:center;font:700 6px 'Open Sans',sans-serif">READ BACK OF FORM BEFORE COMPLETING &amp; SIGNING THIS FORM</div>
+              <div style="display:flex;border:1px solid #000;border-top:0;min-height:30px">
+                <div style="width:14px;border-left:1px solid #000;order:2"></div>
+                <div style="flex:1 1 0;border-right:1px solid #000;padding:2px 4px 3px"><span style="{{ cmsLbl }}">12. PATIENT'S OR AUTHORIZED PERSON'S SIGNATURE</span><div style="{{ cmsVal }}">SIGNATURE ON FILE&nbsp;&nbsp;&nbsp;DATE 07 06 2026</div></div>
+                <div style="width:250px;padding:2px 4px 3px"><span style="{{ cmsLbl }}">13. INSURED'S OR AUTHORIZED PERSON'S SIGNATURE</span><div style="{{ cmsVal }}">SIGNATURE ON FILE</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="width:14px;border-left:1px solid #000;order:2;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;transform:rotate(180deg);font:700 6px 'Open Sans',sans-serif;letter-spacing:.14em">PHYSICIAN OR SUPPLIER INFORMATION</span></div>
+                <div style="flex:1">
+
+                  <div style="display:flex;border-bottom:1px solid #000">
+                    <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">14. DATE OF CURRENT ILLNESS, INJURY, or PREGNANCY (LMP)</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="width:196px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">15. OTHER DATE</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="width:250px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">16. DATES PATIENT UNABLE TO WORK</span><div style="{{ cmsValDim }}">—</div></div>
+                  </div>
+
+                  <div style="display:flex;border-bottom:1px solid #000">
+                    <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">17. NAME OF REFERRING PROVIDER OR OTHER SOURCE</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="width:196px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">17a. OTHER ID  ·  17b. NPI</span><div style="{{ cmsValDim }}">—</div></div>
+                    <div style="width:250px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">18. HOSPITALIZATION DATES RELATED TO CURRENT SERVICES</span><div style="{{ cmsValDim }}">—</div></div>
+                  </div>
+
+                  <div style="display:flex;border-bottom:1px solid #000">
+                    <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">19. ADDITIONAL CLAIM INFORMATION (Designated by NUCC)</span><div style="{{ cmsVal }}">ROUTINE FOLLOW-UP; LABS DRAWN IN OFFICE</div></div>
+                    <div style="width:250px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">20. OUTSIDE LAB?  ·  $ CHARGES</span><div style="{{ cmsVal }}">NO</div></div>
+                  </div>
+
+                  <div style="display:flex;border-bottom:1px solid #000">
+                    <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000">
+                      <span style="{{ cmsLbl }}">21. DIAGNOSIS OR NATURE OF ILLNESS OR INJURY  ·  ICD Ind. 0</span>
+                      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px 8px;margin-top:3px">
+                        <sc-for list="{{ diagnoses }}" as="d" hint-placeholder-count="12">
+                          <div style="font:500 9px 'IBM Plex Mono',monospace;display:flex;gap:4px"><span style="font-weight:700">{{ d.letter }}.</span><span>{{ d.code }}</span></div>
+                        </sc-for>
+                      </div>
+                    </div>
+                    <div style="width:250px">
+                      <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">22. RESUBMISSION CODE / ORIGINAL REF. NO.</span><div style="{{ cmsValDim }}">—</div></div>
+                      <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">23. PRIOR AUTHORIZATION NUMBER</span><div style="{{ cmsValDim }}">—</div></div>
+                    </div>
+                  </div>
+
+                  <div style="border-bottom:1px solid #000">
+                    <div style="display:flex;background:#e3e3e3;border-bottom:1px solid #000">
+                      <div style="width:150px;border-right:1px solid #000;padding:2px 3px;text-align:center"><span style="{{ cmsLbl }}">24. A. DATE(S) OF SERVICE<br>From — To</span></div>
+                      <div style="width:34px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">B.<br>POS</span></div>
+                      <div style="width:28px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">C.<br>EMG</span></div>
+                      <div style="width:168px;border-right:1px solid #000;padding:2px 3px;text-align:center"><span style="{{ cmsLbl }}">D. PROCEDURES, SERVICES, OR SUPPLIES<br>CPT/HCPCS  |  MODIFIER</span></div>
+                      <div style="width:40px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">E.<br>DX PTR</span></div>
+                      <div style="width:92px;border-right:1px solid #000;padding:2px 3px;text-align:center"><span style="{{ cmsLbl }}">F.<br>$ CHARGES</span></div>
+                      <div style="width:44px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">G.<br>DAYS/UNITS</span></div>
+                      <div style="width:32px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">H.<br>EPSDT</span></div>
+                      <div style="width:30px;border-right:1px solid #000;padding:2px 2px;text-align:center"><span style="{{ cmsLbl }}">I.<br>ID QL</span></div>
+                      <div style="flex:1;padding:2px 3px;text-align:center"><span style="{{ cmsLbl }}">J. RENDERING<br>PROVIDER ID #</span></div>
+                    </div>
+                    <sc-for list="{{ pageLines }}" as="ln" hint-placeholder-count="6">
+                      <div style="{{ ln.rowStyle }}">
+                        <div style="{{ ln.shadeRow }}">
+                          <div style="width:150px;border-right:1px solid #000;height:100%;padding:0 3px;display:flex;align-items:center"><span style="font:400 7px 'IBM Plex Mono',monospace;color:#444">{{ ln.shaded }}</span></div>
+                          <div style="width:34px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:28px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:168px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:40px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:92px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:44px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:32px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:30px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="font:500 7px 'IBM Plex Mono',monospace">NPI</span></div>
+                          <div style="flex:1;height:100%"></div>
+                        </div>
+                        <div style="{{ ln.mainRow }}">
+                          <div style="width:150px;border-right:1px solid #000;height:100%;display:flex;align-items:center;padding:0 4px"><span style="{{ cmsGridVal }}">{{ ln.dates }}</span></div>
+                          <div style="width:34px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ ln.pos }}</span></div>
+                          <div style="width:28px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ ln.emg }}</span></div>
+                          <div style="width:168px;border-right:1px solid #000;height:100%;display:flex;align-items:center;padding:0 4px;gap:10px"><span style="{{ cmsGridVal }}">{{ ln.proc }}</span><span style="{{ cmsGridVal }}">{{ ln.mods }}</span></div>
+                          <div style="width:40px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ ln.ptrStyle }}">{{ ln.ptr }}</span></div>
+                          <div style="width:92px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="{{ cmsGridVal }}">{{ ln.charge }}</span></div>
+                          <div style="width:44px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ ln.units }}</span></div>
+                          <div style="width:32px;border-right:1px solid #000;height:100%"></div>
+                          <div style="width:30px;border-right:1px solid #000;height:100%"></div>
+                          <div style="flex:1;height:100%;display:flex;align-items:center;padding:0 5px"><span style="{{ cmsGridVal }}">{{ ln.npi }}</span></div>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+
+                  <div style="display:flex;border-bottom:1px solid #000">
+                    <div style="width:150px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">25. FEDERAL TAX I.D. NUMBER</span><div style="{{ cmsVal }}">25-1884073 <span style="font-size:7px">EIN</span></div></div>
+                    <div style="width:150px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">26. PATIENT'S ACCOUNT NO.</span><div style="{{ cmsVal }}">MR-2026-01188</div></div>
+                    <div style="width:96px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">27. ACCEPT ASSIGNMENT?</span><div style="{{ cmsVal }}">YES</div></div>
+                    <div style="width:112px;{{ cmsCellPad }};border-right:1px solid #000;text-align:right"><span style="{{ cmsLbl }}">28. TOTAL CHARGE</span><div style="{{ cmsVal }}">$ 760.65</div></div>
+                    <div style="width:104px;{{ cmsCellPad }};border-right:1px solid #000;text-align:right"><span style="{{ cmsLbl }}">29. AMOUNT PAID</span><div style="{{ cmsVal }}">$ 0.00</div></div>
+                    <div style="flex:1;{{ cmsCellPad }};text-align:right"><span style="{{ cmsLbl }}">30. RSVD FOR NUCC USE</span><div style="{{ cmsValDim }}">—</div></div>
+                  </div>
+
+                  <div style="display:flex;min-height:52px">
+                    <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">31. SIGNATURE OF PHYSICIAN OR SUPPLIER</span><div style="{{ cmsVal }}">ELAM J BEILER MD<br>DATE 07 14 2026</div></div>
+                    <div style="width:230px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">32. SERVICE FACILITY LOCATION INFORMATION</span><div style="{{ cmsVal }}">MEADOW RUN FAMILY PRACTICE<br>118 TOWNSHIP RD 402<br>MEADVILLE, PA 16335<br><span style="font-size:7px">a.</span> 1730258417</div></div>
+                    <div style="width:250px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">33. BILLING PROVIDER INFO &amp; PH #  (814) 555-0110</span><div style="{{ cmsVal }}">MEADOW RUN FAMILY PRACTICE<br>118 TOWNSHIP RD 402<br>MEADVILLE, PA 16335<br><span style="font-size:7px">a.</span> 1730258417&nbsp;&nbsp;<span style="font-size:7px">b.</span> 207Q00000X</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>NUCC Instruction Manual available at: www.nucc.org</span>
+                <span>{{ formFooter }}</span>
+                <span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+            </sc-if>
+
+            <sc-if value="{{ isUb }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ sheetStyle }}">
+              <div style="display:flex;border:1px solid #000">
+                <div style="flex:1 1 0;border-right:1px solid #000">
+                  <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">1  BILLING PROVIDER NAME / ADDRESS / PHONE</span><div style="{{ cmsVal }}">MEADVILLE MEDICAL CENTER<br>751 LIBERTY ST, MEADVILLE PA 16335<br>(814) 555-0300</div></div>
+                  <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">2  PAY-TO NAME / ADDRESS</span><div style="{{ cmsVal }}">SAME AS FL1</div></div>
+                </div>
+                <div style="width:170px;border-right:1px solid #000">
+                  <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">3a  PAT. CNTL #</span><div style="{{ cmsVal }}">MMC-778213</div></div>
+                  <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">3b  MED. REC. #</span><div style="{{ cmsVal }}">0091447</div></div>
+                  <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">5  FED. TAX NO.</span><div style="{{ cmsVal }}">25-0968711</div></div>
+                </div>
+                <div style="width:220px">
+                  <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">4  TYPE OF BILL</span><div style="{{ cmsVal }}">0131</div></div>
+                  <div style="{{ cmsCell }}"><span style="{{ cmsLbl }}">6  STATEMENT COVERS PERIOD  FROM — THROUGH</span><div style="{{ cmsVal }}">060426 — 060426</div></div>
+                  <div style="{{ cmsCellLast }}"><span style="{{ cmsLbl }}">7</span><div style="{{ cmsValDim }}">—</div></div>
+                </div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">8  PATIENT NAME</span><div style="{{ cmsVal }}">a 4471902&nbsp;&nbsp;b TROYER, SAMUEL H</div></div>
+                <div style="width:270px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">9  PATIENT ADDRESS</span><div style="{{ cmsVal }}">a 1180 STATE HWY 27  b SAEGERTOWN  c PA  d 16433</div></div>
+                <div style="width:80px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">10 BIRTHDATE</span><div style="{{ cmsVal }}">05121968</div></div>
+                <div style="width:36px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">11 SEX</span><div style="{{ cmsVal }}">M</div></div>
+                <div style="width:100px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">12–15 ADMIT DT/HR/TYPE/SRC</span><div style="{{ cmsVal }}">060426 14 1 7</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">18–28  CONDITION CODES</span><div style="{{ cmsValDim }}">—</div></div>
+                <div style="width:200px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">31–34  OCCURRENCE CODE / DATE</span><div style="{{ cmsVal }}">A1 060426</div></div>
+                <div style="width:200px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">39–41  VALUE CODES / AMOUNTS</span><div style="{{ cmsVal }}">80  1</div></div>
+              </div>
+
+              <div style="border:1px solid #000;border-top:0">
+                <div style="display:flex;background:#e3e3e3;border-bottom:1px solid #000">
+                  <div style="width:34px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">LN</span></div>
+                  <div style="width:54px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">42 REV CD</span></div>
+                  <div style="flex:1;border-right:1px solid #000;padding:2px 4px"><span style="{{ cmsLbl }}">43 DESCRIPTION</span></div>
+                  <div style="width:110px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">44 HCPCS / RATE / HIPPS</span></div>
+                  <div style="width:66px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">45 SERV. DATE</span></div>
+                  <div style="width:52px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">46 SERV. UNITS</span></div>
+                  <div style="width:92px;border-right:1px solid #000;padding:2px;text-align:right"><span style="{{ cmsLbl }}">47 TOTAL CHARGES</span></div>
+                  <div style="width:84px;padding:2px;text-align:right"><span style="{{ cmsLbl }}">48 NON-COVERED</span></div>
+                </div>
+                <sc-for list="{{ ubLines }}" as="u" hint-placeholder-count="8">
+                  <div style="display:flex;height:19px;align-items:center;border-bottom:1px dotted #aaa">
+                    <div style="width:34px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ u.n }}</span></div>
+                    <div style="width:54px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ u.rev }}</span></div>
+                    <div style="flex:1;border-right:1px solid #000;height:100%;display:flex;align-items:center;padding:0 5px"><span style="{{ cmsGridVal }}">{{ u.desc }}</span></div>
+                    <div style="width:110px;border-right:1px solid #000;height:100%;display:flex;align-items:center;padding:0 5px"><span style="{{ cmsGridVal }}">{{ u.hcpcs }}</span></div>
+                    <div style="width:66px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ u.date }}</span></div>
+                    <div style="width:52px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ u.units }}</span></div>
+                    <div style="width:92px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="{{ cmsGridVal }}">{{ u.charge }}</span></div>
+                    <div style="width:84px;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="{{ u.ncStyle }}">{{ u.nc }}</span></div>
+                  </div>
+                </sc-for>
+                <div style="display:flex;height:20px;align-items:center;background:#f0f0f0">
+                  <div style="width:34px;border-right:1px solid #000;height:100%"></div>
+                  <div style="width:54px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">0001</span></div>
+                  <div style="flex:1;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:space-between;padding:0 5px"><span style="{{ cmsGridVal }}">PAGE 1 OF 1&nbsp;&nbsp;&nbsp;CREATION DATE 06/08/26</span><span style="font:700 8px 'Open Sans',sans-serif;letter-spacing:.06em">TOTALS</span></div>
+                  <div style="width:110px;border-right:1px solid #000;height:100%"></div>
+                  <div style="width:66px;border-right:1px solid #000;height:100%"></div>
+                  <div style="width:52px;border-right:1px solid #000;height:100%"></div>
+                  <div style="width:92px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="font:600 9px 'IBM Plex Mono',monospace">4,318.00</span></div>
+                  <div style="width:84px;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="font:600 9px 'IBM Plex Mono',monospace">0.00</span></div>
+                </div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">50 PAYER NAME</span><div style="{{ cmsVal }}">A  ANABAPTIST BROTHERHOOD MEDICAL AID &amp; ALMS PLAN</div></div>
+                <div style="width:120px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">51 HEALTH PLAN ID</span><div style="{{ cmsVal }}">88104</div></div>
+                <div style="width:150px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">54 PRIOR PAYMENTS</span><div style="{{ cmsVal }}">0.00</div></div>
+                <div style="width:150px;{{ cmsCellPad }};text-align:right"><span style="{{ cmsLbl }}">55 EST. AMOUNT DUE</span><div style="{{ cmsVal }}">4,318.00</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">58 INSURED'S NAME</span><div style="{{ cmsVal }}">A  TROYER, SAMUEL H</div></div>
+                <div style="width:56px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">59 P. REL</span><div style="{{ cmsVal }}">18</div></div>
+                <div style="width:170px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">60 INSURED'S UNIQUE ID</span><div style="{{ cmsVal }}">ABMP-4471902</div></div>
+                <div style="width:150px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">62 INSURANCE GROUP NO.</span><div style="{{ cmsVal }}">AB-PLAN-01</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1;{{ cmsCellPad }};border-right:1px solid #000">
+                  <span style="{{ cmsLbl }}">66 DX  ·  67 PRINCIPAL DIAGNOSIS &amp; OTHER DIAGNOSIS CODES</span>
+                  <div style="display:flex;gap:14px;margin-top:3px">
+                    <span style="{{ cmsGridVal }}">0  R07.9</span><span style="{{ cmsGridVal }}">A  I10</span><span style="{{ cmsGridVal }}">B  E78.5</span><span style="{{ cmsGridVal }}">C  Z79.899</span>
+                  </div>
+                </div>
+                <div style="width:230px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">69 ADMIT DX  ·  70 PATIENT REASON DX</span><div style="{{ cmsVal }}">R07.9&nbsp;&nbsp;&nbsp;R07.89</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0;min-height:44px">
+                <div style="width:270px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">76 ATTENDING  NPI / QUAL / NAME</span><div style="{{ cmsVal }}">1487203915<br>MAST, DANIEL R MD</div></div>
+                <div style="width:270px;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">77 OPERATING</span><div style="{{ cmsValDim }}">—</div></div>
+                <div style="flex:1;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">80 REMARKS</span><div style="{{ cmsVal }}">ER VISIT — CHEST PAIN, OBSERVED</div></div>
+              </div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>UB-04  CMS-1450  ·  APPROVED OMB NO. 0938-0997</span>
+                <span>Service lines: 8 of 8 rendered · Page 1 of 1</span>
+                <span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+            </sc-if>
+
+            <sc-if value="{{ isDental }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ sheetStyle }}">
+              <div style="text-align:center;margin-bottom:6px">
+                <div style="font:700 11.5px 'Open Sans',sans-serif">ADA DENTAL CLAIM FORM</div>
+                <div style="font:400 6px 'Open Sans',sans-serif;letter-spacing:.04em">AMERICAN DENTAL ASSOCIATION · © 2024</div>
+              </div>
+
+              <div style="border:1px solid #000;{{ cmsCellPad }}">
+                <span style="{{ cmsLbl }}">HEADER INFORMATION</span>
+                <div style="{{ cmsVal }}">1. Type of Transaction: <span style="border:1px solid #000;padding:0 2px">X</span> Statement of Actual Services&nbsp;&nbsp;<span style="border:1px solid #000;padding:0 2px">&nbsp;</span> Request for Predetermination&nbsp;&nbsp;<span style="border:1px solid #000;padding:0 2px">&nbsp;</span> EPSDT<br>2. Predetermination/Preauthorization Number: —</div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">POLICYHOLDER / SUBSCRIBER INFORMATION</span><div style="{{ cmsVal }}">12. MILLER, JOHN E<br>1442 SHIREY RD, ATLANTIC PA 16111<br>13. DOB 11/02/1981&nbsp;&nbsp;14. SEX M&nbsp;&nbsp;15. ID ABMP-4472118<br>16. PLAN/GROUP AB-PLAN-01&nbsp;&nbsp;17. EMPLOYER SHIREY WOODWORKS</div></div>
+                <div style="width:330px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">DENTAL BENEFIT PLAN INFORMATION</span><div style="{{ cmsVal }}">3. ANABAPTIST BROTHERHOOD<br>&nbsp;&nbsp; MEDICAL AID &amp; ALMS PLAN<br>&nbsp;&nbsp; P.O. BOX 144, GUYS MILLS PA 16327</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">OTHER COVERAGE (4–11)</span><div style="{{ cmsVal }}">4. Dental? NO&nbsp;&nbsp;Medical? NO<br>5–11. —</div></div>
+                <div style="width:330px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">PATIENT INFORMATION (18–23)</span><div style="{{ cmsVal }}">18. REL TO SUBSCRIBER: CHILD<br>20. MILLER, ANNA R<br>&nbsp;&nbsp;&nbsp; 1442 SHIREY RD, ATLANTIC PA 16111<br>21. DOB 04/19/2012&nbsp;&nbsp;22. SEX F&nbsp;&nbsp;23. ID 04</div></div>
+              </div>
+
+              <div style="border:1px solid #000;border-top:0">
+                <div style="display:flex;background:#e3e3e3;border-bottom:1px solid #000">
+                  <div style="width:70px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">24. PROC. DATE</span></div>
+                  <div style="width:40px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">25. AREA</span></div>
+                  <div style="width:38px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">26. SYS</span></div>
+                  <div style="width:60px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">27. TOOTH #</span></div>
+                  <div style="width:54px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">28. SURFACE</span></div>
+                  <div style="width:66px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">29. PROC CODE</span></div>
+                  <div style="width:48px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">29a. DX PTR</span></div>
+                  <div style="width:34px;border-right:1px solid #000;padding:2px;text-align:center"><span style="{{ cmsLbl }}">29b. QTY</span></div>
+                  <div style="flex:1;border-right:1px solid #000;padding:2px 4px"><span style="{{ cmsLbl }}">30. DESCRIPTION</span></div>
+                  <div style="width:74px;padding:2px;text-align:right"><span style="{{ cmsLbl }}">31. FEE</span></div>
+                </div>
+                <sc-for list="{{ dentalLines }}" as="p" hint-placeholder-count="6">
+                  <div style="display:flex;flex:1;min-height:19px;align-items:center;border-bottom:1px dotted #aaa">
+                    <div style="width:70px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ p.date }}</span></div>
+                    <div style="width:40px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ p.areaStyle }}">{{ p.area }}</span></div>
+                    <div style="width:38px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ p.sys }}</span></div>
+                    <div style="width:60px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ p.toothStyle }}">{{ p.tooth }}</span></div>
+                    <div style="width:54px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ p.surfStyle }}">{{ p.surf }}</span></div>
+                    <div style="width:66px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ p.code }}</span></div>
+                    <div style="width:48px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ p.ptrStyle }}">{{ p.ptr }}</span></div>
+                    <div style="width:34px;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:center"><span style="{{ cmsGridVal }}">{{ p.qty }}</span></div>
+                    <div style="flex:1;border-right:1px solid #000;height:100%;display:flex;align-items:center;padding:0 5px"><span style="{{ cmsGridVal }}">{{ p.desc }}</span></div>
+                    <div style="width:74px;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="{{ cmsGridVal }}">{{ p.fee }}</span></div>
+                  </div>
+                </sc-for>
+                <div style="display:flex;height:20px;align-items:center;background:#f0f0f0">
+                  <div style="flex:1;border-right:1px solid #000;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="{{ cmsLbl }}">32. OTHER FEE(S) — &nbsp;&nbsp;&nbsp; 33. TOTAL FEE</span></div>
+                  <div style="width:74px;height:100%;display:flex;align-items:center;justify-content:flex-end;padding:0 6px"><span style="font:600 9px 'IBM Plex Mono',monospace">548.00</span></div>
+                </div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">34. DIAGNOSIS CODE LIST QUALIFIER (AB)  ·  34a. A–D</span><div style="{{ cmsVal }}">A K02.51&nbsp;&nbsp; B K05.10&nbsp;&nbsp; C —&nbsp;&nbsp; D —</div></div>
+                <div style="width:330px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">35. REMARKS</span><div style="{{ cmsVal }}">SEALANTS PLACED SAME VISIT</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000">
+                  <span style="{{ cmsLbl }}">33. MISSING TEETH INFORMATION (permanent — mark an X on each missing tooth)</span>
+                  <div style="display:flex;gap:1px;margin-top:3px">
+                    <sc-for list="{{ teethUpper }}" as="t" hint-placeholder-count="16">
+                      <span style="{{ t.style }}">{{ t.n }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;gap:1px;margin-top:2px">
+                    <sc-for list="{{ teethLower }}" as="t" hint-placeholder-count="16">
+                      <span style="{{ t.style }}">{{ t.n }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="width:280px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">36–38. AUTHORIZATIONS</span><div style="{{ cmsVal }}">36. PATIENT/GUARDIAN SIGNATURE ON FILE<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DATE 07/09/2026<br>37. SUBSCRIBER SIGNATURE ON FILE<br>38. PLACE OF TREATMENT  11 — OFFICE</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">39–43. ANCILLARY CLAIM / TREATMENT INFORMATION</span><div style="{{ cmsVal }}">39. ENCLOSURES  N N N&nbsp;&nbsp; 40. ORTHODONTICS?  NO<br>41. DATE APPLIANCE PLACED —&nbsp;&nbsp; 42. MONTHS OF TREATMENT —<br>43. REPLACEMENT OF PROSTHESIS?  NO</div></div>
+                <div style="width:280px;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">44–47. TREATMENT DETAIL</span><div style="{{ cmsVal }}">44. DATE OF PRIOR PLACEMENT —<br>45. TREATMENT RESULTING FROM  NONE<br>46. DATE OF ACCIDENT —&nbsp;&nbsp; 47. AUTO ACCIDENT STATE —</div></div>
+              </div>
+
+              <div style="display:flex;border:1px solid #000;border-top:0;min-height:46px">
+                <div style="flex:1 1 0;{{ cmsCellPad }};border-right:1px solid #000"><span style="{{ cmsLbl }}">48–52a. BILLING DENTIST OR DENTAL ENTITY</span><div style="{{ cmsVal }}">CONNEAUT VALLEY DENTAL<br>229 MAIN ST, CONNEAUTVILLE PA 16406<br>(814) 555-0184&nbsp;&nbsp;NPI 1265308472&nbsp;&nbsp;TIN 25-2119384</div></div>
+                <div style="flex:1 1 0;{{ cmsCellPad }}"><span style="{{ cmsLbl }}">53–58. TREATING DENTIST AND TREATMENT LOCATION</span><div style="{{ cmsVal }}">LEHMAN, RUTH A DMD&nbsp;&nbsp;DATE 07/09/2026<br>NPI 1902847361&nbsp;&nbsp;LIC PA-DD-118342<br>SPECIALTY 1223G0001X</div></div>
+              </div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>ADA Dental Claim Form (2024) · Anabaptist Brotherhood</span>
+                <span>Service lines: 5 of 5 rendered · Page 1 of 1</span>
+                <span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+            </sc-if>
+
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isWelcome }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;background:var(--surface)">
+          <div style="width:560px;text-align:center">
+            <div style="font:600 26px 'Source Serif 4',serif;color:var(--ink);letter-spacing:-.01em">Claim Viewer</div>
+            <div style="font:400 13.5px 'Open Sans',sans-serif;color:var(--ink-2);margin-top:6px">Open one claim file to view it as its paper form and export a PDF.</div>
+            <div style="margin-top:26px;border:1.5px dashed var(--border-strong);border-radius:6px;background:var(--surface-inset);padding:34px 28px">
+              <button style="{{ btnPrimaryLg }}"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 7h6l2 2h10v11H3z"></path></svg>Open a claim file…<span style="font:400 12px 'IBM Plex Mono',monospace;opacity:.75;margin-left:4px">Ctrl+O</span></button>
+              <div style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:14px">or drop a <span style="font-family:'IBM Plex Mono',monospace">.json</span> or <span style="font-family:'IBM Plex Mono',monospace">.837</span> file here</div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:20px;font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-2)">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z"></path><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+              Runs fully offline. Nothing leaves this machine.
+            </div>
+            <div style="margin-top:34px;padding-top:20px;border-top:1px solid var(--border)">
+              <div style="font:italic 400 14px 'Source Serif 4',serif;color:var(--ink-2);line-height:1.6">“Bear ye one another’s burdens, and so fulfil the law of Christ.”</div>
+              <div style="font:400 11.5px 'Open Sans',sans-serif;letter-spacing:.05em;color:var(--ink-3);margin-top:6px">GALATIANS 6:2</div>
+            </div>
+            <div style="margin-top:26px;text-align:left">
+              <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px">Recent</div>
+              <div style="display:flex;flex-direction:column;gap:1px">
+                <sc-for list="{{ recents }}" as="r" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:4px;background:var(--surface-inset)">
+                    <span style="font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink);flex:1">{{ r.file }}</span>
+                    <span style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3)">{{ r.kind }}</span>
+                    <span style="font:400 11.5px 'IBM Plex Mono',monospace;color:var(--ink-3);width:88px;text-align:right">{{ r.when }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--matte)">
+          <div style="width:240px;height:4px;border-radius:2px;background:var(--border);overflow:hidden;position:relative">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--accent);border-radius:2px"></div>
+          </div>
+          <div style="font:400 13px 'Open Sans',sans-serif;color:var(--chip-ink)">Reading <span style="font-family:'IBM Plex Mono',monospace">808226319.json</span> …</div>
+          <div style="width:520px;height:300px;border:1px solid var(--matte-line);background:var(--skeleton);border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:11px">
+            <div style="height:14px;width:55%;background:var(--skeleton-2)"></div>
+            <div style="height:10px;width:82%;background:var(--skeleton-2)"></div>
+            <div style="height:10px;width:74%;background:var(--skeleton-2)"></div>
+            <div style="height:1px;background:var(--matte-line);margin:4px 0"></div>
+            <div style="height:10px;width:90%;background:var(--skeleton-2)"></div>
+            <div style="height:10px;width:66%;background:var(--skeleton-2)"></div>
+            <div style="height:10px;width:88%;background:var(--skeleton-2)"></div>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:var(--surface)">
+          <div style="width:560px;border:1px solid var(--border);border-radius:6px;background:var(--surface-inset);padding:26px 26px 22px">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--clay)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:2px"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5h.01"></path></svg>
+              <div>
+                <div style="font:600 15px 'Open Sans',sans-serif;color:var(--ink)">This file isn’t a valid claim JSON or 837 interchange</div>
+                <div style="font:400 13px 'Open Sans',sans-serif;color:var(--ink-2);line-height:1.6;margin-top:8px">Nothing was opened, and nothing was changed on this machine. You can try another file, or send this one back to the clearinghouse to be re-exported.</div>
+                <div style="margin-top:14px;border:1px solid var(--border);border-radius:4px;background:var(--surface);padding:10px 12px">
+                  <div style="font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">What we found</div>
+                  <div style="font:400 12px 'IBM Plex Mono',monospace;color:var(--ink-2);margin-top:6px;line-height:1.6">File: 808226319-partial.json<br>Size: 4.1 KB<br>Problem: unexpected end of JSON input at character 4,182</div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:16px">
+                  <button style="{{ btnPrimary }}">Open another file…</button>
+                  <button style="{{ btnGhost }}">Copy details</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isUnsupported }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:var(--matte)">
+          <div style="width:600px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:26px">
+            <div style="font:600 15px 'Open Sans',sans-serif;color:var(--ink)">We can’t show this claim as a form</div>
+            <div style="font:400 13px 'Open Sans',sans-serif;color:var(--ink-2);line-height:1.6;margin-top:8px">The claim parsed correctly, but its form type <span style="font-family:'IBM Plex Mono',monospace;background:var(--surface-inset);padding:1px 5px;border-radius:3px">claim_form: "1450-X"</span> has no facsimile in this version. Every field is still readable in the inspector, and you can copy values from there.</div>
+            <div style="margin-top:18px;border:1px dashed var(--border-strong);border-radius:5px;height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--surface-inset)">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v4h4"></path></svg>
+              <div style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-3)">No form template for this claim type</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:18px;align-items:center">
+              <button style="{{ btnPrimary }}">Open the inspector</button>
+              <span style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3)">PDF export is unavailable for unsupported form types.</span>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+      </div>
+
+      <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ true }}">
+      <div style="width:372px;flex:0 0 372px;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0">
+        <div style="flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)">
+          <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink);letter-spacing:.01em">Inspector</span>
+          <span style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3)">every field, as parsed</span>
+          <div style="flex:1"></div>
+          <button onClick="{{ expandAll }}" style="{{ linkBtn }}">{{ expandLabel }}</button>
+        </div>
+        <div style="flex:1 1 auto;overflow:auto">
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="7">
+            <div style="border-bottom:1px solid var(--border)">
+              <button onClick="{{ toggleGroup }}" data-id="{{ g.id }}" style="{{ g.headStyle }}">
+                <span style="width:12px;font:400 10px 'Open Sans',sans-serif;color:var(--ink-3);flex:none">{{ g.caret }}</span>
+                <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink);text-align:left;flex:1">{{ g.label }}</span>
+                <span style="{{ g.tagStyle }}">{{ g.tag }}</span>
+              </button>
+              <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                <div style="{{ groupBodyStyle }}">
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="4">
+                    <div style="{{ rowWrapStyle }}">
+                      <span style="width:118px;flex:none;font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3);line-height:1.45">{{ r.k }}</span>
+                      <span style="{{ r.vStyle }}">{{ r.v }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <div style="padding:12px">
+            <div style="font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px">{{ rawLabel }}</div>
+            <pre style="margin:0;padding:10px;background:var(--code-bg);border:1px solid var(--border);border-radius:4px;font:400 11px 'IBM Plex Mono',monospace;color:var(--ink-2);line-height:1.55;overflow:auto;max-height:190px">{{ rawJson }}</pre>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+
+    <div style="height:26px;flex:0 0 auto;background:var(--surface-inset);border-top:1px solid var(--border);display:flex;align-items:center;gap:0;padding:0 12px;font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-2)">
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+        <span style="display:flex;align-items:center">
+          <span style="font-family:'IBM Plex Mono',monospace">{{ fileName }}</span>
+          <span style="{{ statusSep }}"></span>
+          <span>{{ formTypeLabel }}</span>
+          <span style="{{ statusSep }}"></span>
+          <button onClick="{{ showRecon }}" style="{{ statusWarnStyle }}">{{ warnLabel }}</button>
+          <span style="{{ statusSep }}"></span>
+          <span>{{ totalsLabel }}</span>
+        </span>
+      </sc-if>
+      <sc-if value="{{ noFile }}" hint-placeholder-val="{{ false }}">
+        <span style="color:var(--ink-3)">No file open</span>
+      </sc-if>
+      <div style="flex:1"></div>
+      <span style="display:inline-flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l16 16"></path><path d="M2.5 9.5a15 15 0 0 1 6-3.6M15.5 6a15 15 0 0 1 6 3.5M6 13a10 10 0 0 1 3-1.9M15 11.2a10 10 0 0 1 3 1.8M9.5 16.5a5 5 0 0 1 5 0M12 20h.01"></path></svg>
+        Offline — no network access
+      </span>
+    </div>
+
+    <sc-if value="{{ showExport }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(12,12,11,.42);display:flex;align-items:center;justify-content:center">
+      <div style="width:600px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 22px 60px rgba(0,0,0,.42);overflow:hidden">
+        <div style="height:34px;background:var(--titlebar);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 6px 0 12px">
+          <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink)">Export claim as PDF</span>
+          <div style="flex:1"></div>
+          <button onClick="{{ closeOverlay }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        </div>
+        <div style="padding:18px 20px 4px">
+          <div style="font:400 13.5px 'Open Sans',sans-serif;color:var(--ink)">Export this claim (<span style="font-family:'IBM Plex Mono',monospace">#808226319</span>) as a PDF.</div>
+
+          <div style="margin-top:16px">
+            <label style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Destination</label>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <div style="flex:1;height:34px;border:1px solid var(--border-strong);border-radius:4px;background:var(--field);display:flex;align-items:center;padding:0 10px;font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink);overflow:hidden;white-space:nowrap">D:\ClaimExports\claim_808226319_cms1500_2026-07-27.pdf</div>
+              <button style="{{ btnGhost }}">Browse…</button>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid var(--warn-border);background:var(--warn-bg);border-radius:4px">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4.5M12 17h.01"></path></svg>
+              <span style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-2);line-height:1.5">Not a synced folder. Choosing a OneDrive, Dropbox or Google Drive path will copy protected health information off this machine.</span>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;border:1px solid var(--border);border-radius:4px;background:var(--surface-inset);padding:11px 13px">
+            <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px">What will be written</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-2)">
+              <span style="color:var(--ink-3)">Form</span><span>CMS-1500 (professional)</span>
+              <span style="color:var(--ink-3)">Service lines</span><span style="font-family:'IBM Plex Mono',monospace">9</span>
+              <span style="color:var(--ink-3)">Sheet size</span><span>US Letter, 8.5 × 11 in — the PDF is always letter, whatever the on-screen sheet</span>
+              <span style="color:var(--ink-3)">Pages</span><span style="font-family:'IBM Plex Mono',monospace">{{ exportPages }}</span>
+              <span style="color:var(--ink-3)">File name</span><span style="font-family:'IBM Plex Mono',monospace">claim_808226319_cms1500_2026-07-27.pdf</span>
+              <span style="color:var(--ink-3)">Warnings carried</span><span>2 data warnings are printed in the page footer</span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border:1px solid var(--border-strong);border-radius:4px;background:var(--surface)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round" style="flex:none;margin-top:1px"><path d="M5 11h14v10H5z"></path><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+            <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink);line-height:1.55"><b style="font-weight:600">This PDF is unencrypted PHI.</b> Store it on a BitLocker volume only, and delete it when the negotiation is closed.</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px 18px">
+          <button onClick="{{ closeOverlay }}" style="{{ btnGhost }}">Cancel</button>
+          <button onClick="{{ goDone }}" style="{{ btnPrimary }}">Export</button>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showDone }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(12,12,11,.42);display:flex;align-items:center;justify-content:center">
+      <div style="width:540px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 22px 60px rgba(0,0,0,.42);overflow:hidden">
+        <div style="height:34px;background:var(--titlebar);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 6px 0 12px">
+          <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink)">Export complete</span>
+          <div style="flex:1"></div>
+          <button onClick="{{ closeOverlay }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        </div>
+        <div style="padding:20px">
+          <div style="display:flex;gap:11px;align-items:flex-start">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:2px"><path d="M4 12.5l5 5 11-11"></path></svg>
+            <div style="flex:1">
+              <div style="font:600 14.5px 'Open Sans',sans-serif;color:var(--ink)">{{ exportDoneLabel }}</div>
+              <div style="font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink-2);margin-top:6px;line-height:1.5;word-break:break-all">D:\ClaimExports\claim_808226319_cms1500_2026-07-27.pdf</div>
+              <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:6px">184 KB · written in 0.4 s · unencrypted PHI on a BitLocker volume</div>
+            </div>
+          </div>
+          <div style="height:5px;border-radius:3px;background:var(--border);margin-top:16px;overflow:hidden"><div style="height:100%;width:100%;background:var(--accent)"></div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:4px 20px 18px">
+          <button onClick="{{ closeOverlay }}" style="{{ btnGhost }}">Close</button>
+          <button style="{{ btnGhost }}">Open PDF</button>
+          <button style="{{ btnPrimary }}">Open containing folder</button>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showKeys }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(12,12,11,.42);display:flex;align-items:center;justify-content:center">
+      <div style="width:720px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 22px 60px rgba(0,0,0,.42);overflow:hidden">
+        <div style="height:34px;background:var(--titlebar);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 6px 0 12px">
+          <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink)">Keyboard shortcuts</span>
+          <div style="flex:1"></div>
+          <button onClick="{{ closeOverlay }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        </div>
+        <div style="padding:18px 22px 22px;display:grid;grid-template-columns:1fr 1fr;gap:22px 34px">
+          <sc-for list="{{ keyGroups }}" as="kg" hint-placeholder-count="4">
+            <div>
+              <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding-bottom:6px;border-bottom:1px solid var(--border)">{{ kg.title }}</div>
+              <sc-for list="{{ kg.items }}" as="k" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:12px;padding:5px 0">
+                  <span style="flex:1;font:400 12.5px 'Open Sans',sans-serif;color:var(--ink)">{{ k.label }}</span>
+                  <span style="font:500 11.5px 'IBM Plex Mono',monospace;color:var(--ink-2);background:var(--surface-inset);border:1px solid var(--border);border-bottom-width:2px;border-radius:3px;padding:2px 7px;white-space:nowrap">{{ k.keys }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:0 22px 18px;font:400 12px 'Open Sans',sans-serif;color:var(--ink-3)">F6 cycles the toolbar, the form preview and the inspector. Every control is reachable by keyboard.</div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1500,&quot;height&quot;:1100},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#006E47&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#006E47&quot;,&quot;#2F5D8C&quot;,&quot;#3E3E3C&quot;],&quot;section&quot;:&quot;Chrome&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;comfortable&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Chrome&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'cms1500', theme: 'light', page: 1, zoom: 1, inspectorOpen: true,
+    open: { prov: true, warn: true, patient: true, dx: false, lines: false, prov2: false, recon: true }
+  };
+
+  themeVars() {
+    const light = {
+      '--bg-page': '#e6e5e1', '--surface': '#ffffff', '--surface-inset': '#f4f3f0',
+      '--titlebar': '#eceae6', '--border': '#dcdad4', '--border-strong': '#bfbcb4',
+      '--ink': '#1c1b19', '--ink-2': '#4f4c46', '--ink-3': '#6d6960',
+      '--matte': '#6f6d68', '--matte-line': '#5a5854', '--chip-bg': '#ffffff', '--chip-border': '#8d8b85', '--chip-ink': '#2a2926',
+      '--accent': '#006E47', '--accent-hover': '#005839', '--accent-ink': '#ffffff', '--accent-tint': '#e0efe8',
+      '--warn-bg': '#f1efe9', '--warn-border': '#d6d1c4', '--gold': '#8a6216', '--clay': '#8C4A32',
+      '--field': '#ffffff', '--code-bg': '#f7f6f3', '--skeleton': '#ffffff', '--skeleton-2': '#e9e7e2'
+    };
+    const dark = {
+      '--bg-page': '#141514', '--surface': '#212220', '--surface-inset': '#1a1b19',
+      '--titlebar': '#191a18', '--border': '#34352f', '--border-strong': '#4a4b44',
+      '--ink': '#e9e8e3', '--ink-2': '#b6b3ab', '--ink-3': '#95928a',
+      '--matte': '#0e0f0e', '--matte-line': '#2a2b28', '--chip-bg': '#1d1e1c', '--chip-border': '#3d3e38', '--chip-ink': '#c9c6bf',
+      '--accent': '#3d9a70', '--accent-hover': '#4bab7f', '--accent-ink': '#0c1a13', '--accent-tint': '#1d3229',
+      '--warn-bg': '#26251f', '--warn-border': '#3c3a30', '--gold': '#c39a4a', '--clay': '#c07a5e',
+      '--field': '#191a18', '--code-bg': '#191a18', '--skeleton': '#1c1d1b', '--skeleton-2': '#2a2b28'
+    };
+    return this.state.theme === 'dark' ? dark : light;
+  }
+
+  lines() {
+    const desc = {
+      '99214': 'Office visit, established patient, moderate complexity',
+      '36415': 'Collection of venous blood by venipuncture',
+      '80053': 'Comprehensive metabolic panel',
+      '85025': 'Complete blood count with differential',
+      '93000': 'Electrocardiogram, routine, with interpretation',
+      '71046': 'Radiologic exam, chest, 2 views',
+      '20610': 'Arthrocentesis, major joint or bursa',
+      '90471': 'Immunization administration, one vaccine',
+      '3008F': 'Category II — body mass index documented'
+    };
+    return [
+      { n: 1, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '99214', mods: '25', ptr: 'AB', charge: '248.00', units: '1', npi: '1861479203', shaded: '' },
+      { n: 2, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '36415', mods: '—', ptr: 'A', charge: '12.00', units: '1', npi: '1861479203', shaded: '' },
+      { n: 3, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '80053', mods: '—', ptr: 'AC', charge: '86.40', units: '1', npi: '1861479203', shaded: 'CLIA 39D2018841' },
+      { n: 4, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '85025', mods: '—', ptr: 'AC', charge: '42.25', units: '1', npi: '1861479203', shaded: 'CLIA 39D2018841' },
+      { n: 5, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '93000', mods: '—', ptr: 'B', charge: '58.00', units: '1', npi: '1861479203', shaded: '' },
+      { n: 6, dates: '07 06 26  07 06 26', pos: '11', emg: '', proc: '71046', mods: '—', ptr: 'D', charge: '124.00', units: '1', npi: '1861479203', shaded: '' },
+      { n: 7, dates: '07 13 26  07 13 26', pos: '11', emg: '', proc: '20610', mods: 'RT', ptr: 'D', charge: '168.00', units: '1', npi: '1861479203', shaded: '' },
+      { n: 8, dates: '07 13 26  07 13 26', pos: '11', emg: '', proc: '90471', mods: '—', ptr: 'E', charge: '22.00', units: '1', npi: '1861479203', shaded: '', bad: true },
+      { n: 9, dates: '07 13 26  07 13 26', pos: '11', emg: '', proc: '3008F', mods: '—', ptr: 'A', charge: '0.01', units: '1', npi: '1861479203', shaded: 'CATEGORY II — QUALITY MEASURE' }
+    ].map(l => ({ ...l, desc: desc[l.proc] || '' }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const v = this.themeVars();
+    const accent = (this.props.accent ?? '#006E47').toLowerCase();
+    const palette = {
+      '#006e47': { light: '#006E47', dark: '#3d9a70', tintL: '#e0efe8', tintD: '#1d3229' },
+      '#2f5d8c': { light: '#2F5D8C', dark: '#79a8d4', tintL: '#e6edf4', tintD: '#1e2a36' },
+      '#3e3e3c': { light: '#3E3E3C', dark: '#b0aca4', tintL: '#eceae6', tintD: '#2b2c29' }
+    };
+    const p = palette[accent];
+    if (p) {
+      const isDark = s.theme === 'dark';
+      v['--accent'] = isDark ? p.dark : p.light;
+      v['--accent-hover'] = isDark ? p.dark : p.light;
+      v['--accent-tint'] = isDark ? p.tintD : p.tintL;
+      v['--accent-ink'] = isDark ? '#0c1a13' : '#ffffff';
+    }
+    const dense = (this.props.density ?? 'comfortable') === 'compact';
+    const rootStyle = Object.entries(v).map(([k, x]) => k + ':' + x).join(';') +
+      ';min-height:100vh;box-sizing:border-box;background:var(--bg-page);padding:26px 26px 60px;display:flex;flex-direction:column;align-items:center;overflow:auto;font-family:\'Open Sans\',sans-serif';
+
+    const overlay = ['export', 'done', 'keys'].includes(s.screen);
+    const isForm = ['cms1500', 'cms1500p2', 'ub04', 'dental'].includes(s.screen) || overlay;
+    const isCms = s.screen === 'cms1500' || s.screen === 'cms1500p2' || overlay;
+    const isUb = s.screen === 'ub04';
+    const isDental = s.screen === 'dental';
+    const hasFile = s.screen !== 'welcome' && s.screen !== 'loading' && s.screen !== 'error';
+
+    const screenDefs = [
+      { id: 'welcome', label: 'Welcome' },
+      { id: 'loading', label: 'Loading' },
+      { id: 'cms1500', label: 'CMS-1500 · page 1' },
+      { id: 'cms1500p2', label: 'CMS-1500 · page 2' },
+      { id: 'ub04', label: 'UB-04' },
+      { id: 'dental', label: 'ADA dental' },
+      { id: 'export', label: 'Export dialog' },
+      { id: 'done', label: 'Export done' },
+      { id: 'unsupported', label: 'Unsupported form' },
+      { id: 'error', label: 'Parse error' },
+      { id: 'keys', label: 'Shortcuts' }
+    ];
+    const tabBase = 'padding:6px 11px;border-radius:4px;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border:1px solid;line-height:1.2;';
+    const screens = screenDefs.map(d => ({
+      ...d,
+      style: tabBase + (s.screen === d.id
+        ? 'background:var(--accent);border-color:var(--accent);color:var(--accent-ink)'
+        : 'background:var(--surface);border-color:var(--border-strong);color:var(--ink-2)')
+    }));
+
+    const all = this.lines();
+    const onePage = !!s.onePage;
+    const pageLines = isCms ? (onePage ? all : (s.page === 2 ? all.slice(6) : all.slice(0, 6))) : [];
+    const rowStyle = 'border-bottom:1px solid #000';
+    const gridVal = 'font:500 ' + (onePage ? '8' : '9') + 'px \'IBM Plex Mono\',monospace;color:#000;white-space:nowrap';
+    const shadeRow = 'display:flex;background:#f0f0f0;border-bottom:1px dotted #999;align-items:center;height:' + (onePage ? '9px' : '13px');
+    const mainRow = 'display:flex;align-items:center;height:' + (onePage ? '15px' : '20px');
+    const decorated = pageLines.map(l => ({
+      ...l,
+      rowStyle, shadeRow, mainRow,
+      ptrStyle: gridVal + (l.bad ? ';text-decoration:underline;text-decoration-style:wavy;text-underline-offset:2px' : '')
+    }));
+
+    const diagnoses = [
+      { letter: 'A', code: 'E11.9' }, { letter: 'B', code: 'I10' }, { letter: 'C', code: 'E78.5' }, { letter: 'D', code: 'M25.561' },
+      { letter: 'E', code: '—' }, { letter: 'F', code: '—' }, { letter: 'G', code: '—' }, { letter: 'H', code: '—' },
+      { letter: 'I', code: '—' }, { letter: 'J', code: '—' }, { letter: 'K', code: '—' }, { letter: 'L', code: '—' }
+    ];
+
+    const ubLines = [
+      { n: '1', rev: '0450', desc: 'EMERGENCY ROOM — LEVEL 4', hcpcs: '99284', date: '060426', units: '1', charge: '1,842.00', nc: '0.00' },
+      { n: '2', rev: '0762', desc: 'OBSERVATION ROOM', hcpcs: 'G0378', date: '060426', units: '6', charge: '1,236.00', nc: '0.00' },
+      { n: '3', rev: '0300', desc: 'LABORATORY — CHEMISTRY', hcpcs: '80053', date: '060426', units: '1', charge: '96.00', nc: '0.00' },
+      { n: '4', rev: '0301', desc: 'LABORATORY — TROPONIN I', hcpcs: '84484', date: '060426', units: '3', charge: '318.00', nc: '0.00' },
+      { n: '5', rev: '0320', desc: 'RADIOLOGY — DX CHEST 2V', hcpcs: '71046', date: '060426', units: '1', charge: '284.00', nc: '0.00' },
+      { n: '6', rev: '0730', desc: 'EKG / ECG — 12 LEAD', hcpcs: '93005', date: '060426', units: '2', charge: '212.00', nc: '0.00' },
+      { n: '7', rev: '0250', desc: 'PHARMACY — GENERAL', hcpcs: '—', date: '060426', units: '1', charge: '188.00', nc: '188.00' },
+      { n: '8', rev: '0270', desc: 'MEDICAL/SURGICAL SUPPLIES', hcpcs: '—', date: '060426', units: '1', charge: '142.00', nc: '0.00' }
+    ].map(u => ({ ...u, ncStyle: gridVal + (u.nc === '0.00' ? ';color:#666' : '') }));
+
+    const dentalLines = [
+      { date: '07/09/2026', area: '—', sys: 'JP', tooth: '—', surf: '—', code: 'D0120', ptr: 'A', qty: '1', desc: 'PERIODIC ORAL EVALUATION', fee: '58.00' },
+      { date: '07/09/2026', area: '—', sys: 'JP', tooth: '—', surf: '—', code: 'D0274', ptr: 'A', qty: '1', desc: 'BITEWINGS — FOUR RADIOGRAPHS', fee: '76.00' },
+      { date: '07/09/2026', area: '—', sys: 'JP', tooth: '—', surf: '—', code: 'D1110', ptr: 'B', qty: '1', desc: 'PROPHYLAXIS — ADULT', fee: '112.00' },
+      { date: '07/09/2026', area: '—', sys: 'JP', tooth: '19', surf: 'MO', code: 'D2391', ptr: 'A', qty: '1', desc: 'RESIN-BASED COMPOSITE — ONE SURFACE, POSTERIOR', fee: '198.00' },
+      { date: '07/09/2026', area: '—', sys: 'JP', tooth: '3', surf: 'O', code: 'D1351', ptr: 'A', qty: '1', desc: 'SEALANT — PER TOOTH', fee: '104.00' }
+    ].map(p => ({ ...p, areaStyle: gridVal, toothStyle: gridVal, surfStyle: gridVal, ptrStyle: gridVal }));
+
+    const toothBox = 'display:inline-flex;align-items:center;justify-content:center;width:19px;height:13px;border:1px solid #000;font:400 6.5px \'IBM Plex Mono\',monospace;color:#000';
+    const missing = ['1', '16', '17', '32'];
+    const teethUpper = Array.from({ length: 16 }, (_, i) => String(i + 1)).map(n => ({ n: missing.includes(n) ? 'X' : n, style: toothBox + (missing.includes(n) ? ';font-weight:700;background:#eee' : '') }));
+    const teethLower = Array.from({ length: 16 }, (_, i) => String(32 - i)).map(n => ({ n: missing.includes(n) ? 'X' : n, style: toothBox + (missing.includes(n) ? ';font-weight:700;background:#eee' : '') }));
+
+    const cmsGroupDefs = [
+      { id: 'prov', label: 'Provenance', tag: 'source', rows: [
+        { k: 'Source file', v: isCms ? '808226319.json' : 'synthetic_837_batch.dat', mono: true },
+        { k: 'Format', v: isCms ? 'Clearinghouse claim JSON' : 'X12 837 interchange' },
+        { k: 'claim_form', v: isCms ? '1500' : (isUb ? '837I' : '837D'), mono: true },
+        { k: 'Claim ID', v: isCms ? '808226319' : (isUb ? 'MMC-778213' : 'CVD-2026-0714'), mono: true },
+        { k: 'Opened', v: '27 Jul 2026, 09:14', mono: true }
+      ] },
+      { id: 'warn', label: 'Data warnings', tag: '2', tagWarn: true, rows: [
+        { k: 'Line total', v: 'Σ charges $760.66 vs claim total $760.65 — delta +$0.01', warn: true },
+        { k: 'Line 8 · pg 2', v: 'Diagnosis pointer E has no matching diagnosis (A–D populated)', warn: true }
+      ] },
+      { id: 'patient', label: 'Patient', tag: 'Box 2', rows: [
+        { k: 'Name', v: 'Yoder, Miriam S' },
+        { k: 'Date of birth', v: '1979-03-14', mono: true },
+        { k: 'Sex', v: 'F', mono: true },
+        { k: 'Address', v: '4482 Sugar Creek Rd, Guys Mills PA 16327' },
+        { k: 'Phone', v: '(814) 555-0147', mono: true },
+        { k: 'Rel. to insured', v: '18 — self (Box 6)', mono: true },
+        { k: 'Account no.', v: 'MR-2026-01188 (Box 26)', mono: true }
+      ] },
+      { id: 'dx', label: 'Diagnoses', tag: 'Box 21', rows: [
+        { k: 'A', v: 'E11.9 — Type 2 diabetes mellitus without complications', mono: true },
+        { k: 'B', v: 'I10 — Essential (primary) hypertension', mono: true },
+        { k: 'C', v: 'E78.5 — Hyperlipidemia, unspecified', mono: true },
+        { k: 'D', v: 'M25.561 — Pain in right knee', mono: true },
+        { k: 'E–L', v: '—', dim: true },
+        { k: 'ICD indicator', v: '0 — ICD-10-CM', mono: true }
+      ] },
+      { id: 'lines', label: 'Service lines', tag: 'Box 24', rows: all.map(l => ({
+        k: 'Line ' + l.n + ' · pg ' + (l.n > 6 ? 2 : 1),
+        v: l.dates.slice(0, 8) + '  ' + l.proc + (l.mods !== '—' ? '-' + l.mods : '') + '  ptr ' + l.ptr + '  ×' + l.units + '  $' + l.charge + '\n' + l.desc,
+        mono: true, warn: !!l.bad
+      })) },
+      { id: 'prov2', label: 'Providers', tag: 'Box 31 / 32 / 33', rows: [
+        { k: 'Rendering', v: 'Beiler, Elam J MD · NPI 1861479203' },
+        { k: 'Billing', v: 'Meadow Run Family Practice · NPI 1730258417' },
+        { k: 'Billing address', v: '118 Township Rd 402, Meadville PA 16335' },
+        { k: 'Tax ID', v: '25-1884073 (EIN)', mono: true },
+        { k: 'Taxonomy', v: '207Q00000X — Family Medicine', mono: true },
+        { k: 'Facility', v: 'Same as billing provider' },
+        { k: 'Referring', v: '—', dim: true }
+      ] },
+      { id: 'recon', label: 'Reconciliation', tag: 'checks', rows: [
+        { k: 'Lines parsed', v: '9', mono: true },
+        { k: 'Lines rendered', v: onePage ? '9 on 1 condensed page' : '9 across 2 pages', mono: true },
+        { k: 'Σ line charges', v: '$760.66', mono: true },
+        { k: 'Claim total (28)', v: '$760.65', mono: true },
+        { k: 'Delta', v: '+$0.01', mono: true, warn: true },
+        { k: 'Amount paid (29)', v: '$0.00', mono: true },
+        { k: 'NPI — billing', v: '1730258417 · length 10, checksum ok', mono: true, ok: true },
+        { k: 'NPI — rendering', v: '1861479203 · length 10, checksum ok', mono: true, ok: true },
+        { k: 'Date sanity', v: 'All dates parse; no 0000-00-00 values', ok: true }
+      ] }
+    ];
+
+    const ubGroupDefs = [
+      { id: 'prov', label: 'Provenance', tag: 'source', rows: [
+        { k: 'Source file', v: 'synthetic_837_batch.dat', mono: true },
+        { k: 'Format', v: 'X12 837 interchange (837I)' },
+        { k: 'Claim in file', v: '3 of 40', mono: true },
+        { k: 'Claim ID', v: 'MMC-778213', mono: true },
+        { k: 'Opened', v: '27 Jul 2026, 09:14', mono: true }
+      ] },
+      { id: 'warn', label: 'Data warnings', tag: '0', rows: [
+        { k: 'Status', v: 'No warnings — line charges reconcile to the claim total', ok: true }
+      ] },
+      { id: 'patient', label: 'Patient', tag: 'FL 8', rows: [
+        { k: 'Name', v: 'Troyer, Samuel H' },
+        { k: 'Date of birth', v: '1968-05-12 (FL 10)', mono: true },
+        { k: 'Sex', v: 'M (FL 11)', mono: true },
+        { k: 'Address', v: '1180 State Hwy 27, Saegertown PA 16433 (FL 9)' },
+        { k: 'Control no.', v: 'MMC-778213 (FL 3a)', mono: true },
+        { k: 'Medical record', v: '0091447 (FL 3b)', mono: true },
+        { k: 'Type of bill', v: '0131 — hospital, outpatient, admit-through-discharge (FL 4)', mono: true }
+      ] },
+      { id: 'dx', label: 'Diagnoses', tag: 'FL 66–70', rows: [
+        { k: 'Principal (67)', v: 'R07.9 — Chest pain, unspecified', mono: true },
+        { k: 'Other (67A)', v: 'I10 — Essential hypertension', mono: true },
+        { k: 'Other (67B)', v: 'E78.5 — Hyperlipidemia, unspecified', mono: true },
+        { k: 'Other (67C)', v: 'Z79.899 — Other long-term drug therapy', mono: true },
+        { k: 'Admitting (69)', v: 'R07.9', mono: true },
+        { k: 'Version (66)', v: '0 — ICD-10-CM', mono: true }
+      ] },
+      { id: 'lines', label: 'Revenue lines', tag: 'FL 42–47', rows: ubLines.map(u => ({
+        k: 'Line ' + u.n + ' · rev ' + u.rev,
+        v: u.desc + '\n' + u.hcpcs + '  ×' + u.units + '  $' + u.charge + (u.nc !== '0.00' ? '  (non-covered $' + u.nc + ')' : ''),
+        mono: true, warn: u.nc !== '0.00'
+      })) },
+      { id: 'prov2', label: 'Providers', tag: 'FL 1 / 76', rows: [
+        { k: 'Billing (FL 1)', v: 'Meadville Medical Center · 751 Liberty St, Meadville PA 16335' },
+        { k: 'Pay-to (FL 2)', v: 'Same as billing provider' },
+        { k: 'Attending (76)', v: 'Mast, Daniel R MD · NPI 1487203915' },
+        { k: 'Operating (77)', v: '—', dim: true },
+        { k: 'Tax ID (FL 5)', v: '25-0968711', mono: true }
+      ] },
+      { id: 'recon', label: 'Reconciliation', tag: 'checks', rows: [
+        { k: 'Lines parsed', v: '8', mono: true },
+        { k: 'Lines rendered', v: '8 on 1 page', mono: true },
+        { k: 'Σ line charges', v: '$4,318.00', mono: true },
+        { k: 'Total charges (0001)', v: '$4,318.00', mono: true },
+        { k: 'Delta', v: '$0.00 — reconciles', mono: true, ok: true },
+        { k: 'Non-covered (48)', v: '$188.00 on line 7', mono: true },
+        { k: 'Prior payments (54)', v: '$0.00', mono: true },
+        { k: 'NPI — attending', v: '1487203915 · length 10, checksum ok', mono: true, ok: true },
+        { k: 'Statement period', v: '2026-06-04 → 2026-06-04 (FL 6)', mono: true, ok: true }
+      ] }
+    ];
+
+    const dentalGroupDefs = [
+      { id: 'prov', label: 'Provenance', tag: 'source', rows: [
+        { k: 'Source file', v: 'synthetic_837_batch.dat', mono: true },
+        { k: 'Format', v: 'X12 837 interchange (837D)' },
+        { k: 'Claim in file', v: '7 of 40', mono: true },
+        { k: 'Claim ID', v: 'CVD-2026-0714', mono: true },
+        { k: 'Opened', v: '27 Jul 2026, 09:14', mono: true }
+      ] },
+      { id: 'warn', label: 'Data warnings', tag: '0', rows: [
+        { k: 'Status', v: 'No warnings — procedure fees reconcile to the total fee', ok: true }
+      ] },
+      { id: 'patient', label: 'Patient', tag: 'Item 20', rows: [
+        { k: 'Name', v: 'Miller, Anna R' },
+        { k: 'Date of birth', v: '2012-04-19 (Item 21)', mono: true },
+        { k: 'Sex', v: 'F (Item 22)', mono: true },
+        { k: 'Address', v: '1442 Shirey Rd, Atlantic PA 16111' },
+        { k: 'Rel. to subscriber', v: 'Child (Item 18)' },
+        { k: 'Subscriber', v: 'Miller, John E · ID ABMP-4472118 (Items 12–15)', mono: true }
+      ] },
+      { id: 'dx', label: 'Diagnoses', tag: 'Item 34a', rows: [
+        { k: 'Qualifier (34)', v: 'AB — ICD-10-CM', mono: true },
+        { k: 'A', v: 'K02.51 — Dental caries on pit and fissure surface', mono: true },
+        { k: 'B', v: 'K05.10 — Chronic gingivitis, plaque induced', mono: true },
+        { k: 'C–D', v: '—', dim: true }
+      ] },
+      { id: 'lines', label: 'Record of services', tag: 'Items 24–31', rows: dentalLines.map((p, i) => ({
+        k: 'Line ' + (i + 1) + ' · ' + p.code,
+        v: p.desc + '\n' + p.date + (p.tooth !== '—' ? '  tooth ' + p.tooth : '') + (p.surf !== '—' ? '  surf ' + p.surf : '') + '  ptr ' + p.ptr + '  ×' + p.qty + '  $' + p.fee,
+        mono: true
+      })) },
+      { id: 'prov2', label: 'Providers', tag: 'Items 48–58', rows: [
+        { k: 'Billing (48)', v: 'Conneaut Valley Dental · 229 Main St, Conneautville PA 16406' },
+        { k: 'Billing NPI (49)', v: '1265308472', mono: true },
+        { k: 'Billing TIN (51)', v: '25-2119384', mono: true },
+        { k: 'Treating (53)', v: 'Lehman, Ruth A DMD' },
+        { k: 'Treating NPI (54)', v: '1902847361', mono: true },
+        { k: 'Specialty (56a)', v: '1223G0001X — General practice', mono: true },
+        { k: 'Place of treatment', v: '11 — Office (Item 38)', mono: true }
+      ] },
+      { id: 'recon', label: 'Reconciliation', tag: 'checks', rows: [
+        { k: 'Procedures parsed', v: '5', mono: true },
+        { k: 'Procedures rendered', v: '5 on 1 page', mono: true },
+        { k: 'Σ procedure fees', v: '$548.00', mono: true },
+        { k: 'Total fee (Item 33)', v: '$548.00', mono: true },
+        { k: 'Delta', v: '$0.00 — reconciles', mono: true, ok: true },
+        { k: 'Missing teeth (33)', v: '1, 16, 17, 32 marked', mono: true },
+        { k: 'NPI — treating', v: '1902847361 · length 10, checksum ok', mono: true, ok: true },
+        { k: 'Tooth / surface', v: 'All surface codes valid for the tooth numbers given', ok: true }
+      ] }
+    ];
+
+    const groupDefs = isUb ? ubGroupDefs : isDental ? dentalGroupDefs : cmsGroupDefs;
+
+    const letter = !!s.letter;
+    const ubGrid = ubLines.concat(
+      Array.from({ length: letter ? 23 - ubLines.length : 0 }, (_, i) => ({
+        n: String(ubLines.length + i + 1), rev: '', desc: '', hcpcs: '', date: '', units: '', charge: '', nc: '', ncStyle: gridVal
+      }))
+    );
+    const dentalGrid = dentalLines.concat(
+      Array.from({ length: letter ? 10 - dentalLines.length : 0 }, () => ({
+        date: '', area: '', sys: '', tooth: '', surf: '', code: '', ptr: '', qty: '', desc: '', fee: '',
+        areaStyle: gridVal, toothStyle: gridVal, surfStyle: gridVal, ptrStyle: gridVal
+      }))
+    );
+
+    const headBase = 'width:100%;display:flex;align-items:center;gap:8px;padding:' + (dense ? '6px 12px' : '9px 12px') + ';background:transparent;border:0;cursor:pointer;text-align:left;';
+    const groups = groupDefs.map(g => ({
+      id: g.id, label: g.label, tag: g.tag, caret: s.open[g.id] ? '▾' : '▸',
+      open: !!s.open[g.id], headStyle: headBase,
+      tagStyle: 'font:500 10.5px \'IBM Plex Mono\',monospace;padding:1px 6px;border-radius:3px;white-space:nowrap;' +
+        (g.tagWarn ? 'background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--gold)' : 'background:var(--surface-inset);border:1px solid var(--border);color:var(--ink-3)'),
+      rows: g.rows.map(r => ({
+        k: r.k,
+        v: r.v,
+        vStyle: 'flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line;line-height:1.45;font:' + (r.mono ? '400 11.5px \'IBM Plex Mono\',monospace' : '400 12px \'Open Sans\',sans-serif') +
+          ';color:' + (r.warn ? 'var(--gold)' : r.dim ? 'var(--ink-3)' : 'var(--ink)')
+      }))
+    }));
+
+    const keyGroups = [
+      { title: 'File', items: [
+        { label: 'Open a claim file', keys: 'Ctrl+O' },
+        { label: 'Export…', keys: 'Ctrl+E' },
+        { label: 'Export this claim (skip dialog)', keys: 'Ctrl+Shift+E' },
+        { label: 'Close file', keys: 'Ctrl+W' },
+        { label: 'Exit', keys: 'Alt+F4' }
+      ] },
+      { title: 'View', items: [
+        { label: 'Zoom in / out', keys: 'Ctrl+ + / Ctrl+ −' },
+        { label: 'Actual size', keys: 'Ctrl+0' },
+        { label: 'Fit page', keys: 'Ctrl+9' },
+        { label: 'Fit width', keys: 'Ctrl+8' },
+        { label: 'Toggle inspector', keys: 'Ctrl+D' },
+        { label: 'Light / dark', keys: 'Ctrl+Shift+L' }
+      ] },
+      { title: 'Navigate', items: [
+        { label: 'Previous / next form page', keys: 'Ctrl+← / Ctrl+→' },
+        { label: 'Previous / next claim (837 file)', keys: 'PgUp / PgDn' },
+        { label: 'Cycle regions', keys: 'F6' },
+        { label: 'Move within a region', keys: 'Tab / Shift+Tab' }
+      ] },
+      { title: 'Help', items: [
+        { label: 'Keyboard shortcuts', keys: 'F1' },
+        { label: 'About Claim Viewer', keys: '—' },
+        { label: 'Dismiss dialog', keys: 'Esc' }
+      ] }
+    ];
+
+    const raw837I = 'ST*837*0003*005010X223A2~\nBHT*0019*00*MMC778213*20260608*1042*CH~\nNM1*85*2*MEADVILLE MEDICAL CENTER*****XX*1487203915~\nCLM*MMC-778213*4318.00***13:A:1*Y*A*Y*Y~\nDTP*434*RD8*20260604-20260604~\nHI*ABK:R079*ABF:I10*ABF:E785~\nLX*1~\nSV2*0450*HC:99284*1842.00*UN*1~\nLX*2~\nSV2*0762*HC:G0378*1236.00*UN*6~\n… 41 more segments';
+    const raw837D = 'ST*837*0007*005010X224A2~\nBHT*0019*00*CVD20260714*20260714*0918*CH~\nNM1*85*2*CONNEAUT VALLEY DENTAL*****XX*1265308472~\nCLM*CVD-2026-0714*548.00***11:B:1*Y*A*Y*Y~\nHI*ABK:K0251*ABF:K0510~\nLX*1~\nSV3*AD:D0120*58.00***1~\nLX*4~\nSV3*AD:D2391*198.00***1~\nTOO*JP*19*MO~\n… 27 more segments';
+    const rawJson = '{\n  "claimid": "808226319",\n  "claim_form": "1500",\n  "pat_name_l": "YODER",\n  "pat_name_f": "MIRIAM",\n  "pat_name_m": "S",\n  "pat_dob": "1979-03-14",\n  "pat_sex": "F",\n  "pat_rel": "18",\n  "ins_number": "ABMP-4471902",\n  "ins_group": "AB-PLAN-01",\n  "payer_name": "ANABAPTIST BROTHERHOOD…",\n  "payerid": "88104",\n  "diag_1": "E119",\n  "diag_2": "I10",\n  "diag_3": "E785",\n  "diag_4": "M25561",\n  "total_charge": "760.65",\n  "amount_paid": "0.00",\n  "charge": [ { "from_date": "2026-07-06", … } ]\n}';
+
+    const btnBase = 'display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:4px;font:600 12.5px \'Open Sans\',sans-serif;cursor:pointer;border:1px solid;';
+    const pageCount = onePage ? 1 : 2;
+
+    return {
+      rootStyle, screens, groups, keyGroups, diagnoses,
+      rawLabel: isUb || isDental ? 'Raw 837 segments' : 'Raw JSON fields',
+      rawJson: isUb ? raw837I : isDental ? raw837D : rawJson, teethUpper, teethLower,
+      ubLines: ubGrid, dentalLines: dentalGrid,
+      pageLines: decorated,
+      isForm, isCms, isUb, isDental, hasFile, noFile: !hasFile,
+      fitPageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (Math.abs(s.zoom - 0.72) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      fitWidthStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (Math.abs(s.zoom - 1.18) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      isWelcome: s.screen === 'welcome',
+      isLoading: s.screen === 'loading',
+      isError: s.screen === 'error',
+      isUnsupported: s.screen === 'unsupported',
+      showExport: s.screen === 'export',
+      showDone: s.screen === 'done',
+      showKeys: s.screen === 'keys',
+      inspectorOpen: s.inspectorOpen && hasFile,
+      exportOn: hasFile && s.screen !== 'unsupported',
+      exportOff: !hasFile || s.screen === 'unsupported',
+      showWarnBanner: isCms,
+      multiPage: isCms && !onePage,
+      paginateStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
+      onePageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      setPaginate: () => this.setState({ onePage: false }),
+      setOnePage: () => this.setState({ onePage: true, page: 1 }),
+      isBatch: isUb || isDental,
+      claimStepLabel: isUb ? 'Claim 3 of 40' : 'Claim 7 of 40',
+      prevClaim: () => this.setState(st => ({ screen: st.screen === 'dental' ? 'ub04' : 'dental' })),
+      nextClaim: () => this.setState(st => ({ screen: st.screen === 'ub04' ? 'dental' : 'ub04' })),
+      pageNo: s.page, pageCount,
+      sheetStyle: 'width:816px;' + (letter ? 'min-height:1056px;' : '') + 'display:flex;flex-direction:column;background:#fff;color:#000;padding:14px 16px;font-family:\'Open Sans\',sans-serif',
+      isSheetForm: isUb || isDental,
+      compactStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (letter ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
+      letterStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (letter ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      setCompact: () => this.setState({ letter: false }),
+      setLetter: () => this.setState({ letter: true }),
+      exportPages: onePage ? '1  (condensed grid)' : '2',
+      exportDoneLabel: onePage ? 'Exported 1 claim · 1 page' : 'Exported 1 claim · 2 pages',
+      zoomLabel: Math.round(s.zoom * 100) + '%',
+      formTransform: 'scale(' + s.zoom + ')',
+      formFooter: isCms
+        ? (onePage
+          ? 'Service lines: 9 of 9 — grid condensed to fit one letter page · Page 1 of 1'
+          : 'Service lines: ' + decorated.length + ' of 9 on this page · Page ' + s.page + ' of ' + pageCount)
+        : '',
+      provenance: isCms ? 'Rendered from JSON claim 808226319' : (isUb ? '837 claim 3 of 40 — institutional' : '837 claim 7 of 40 — dental'),
+      fileName: (s.screen === 'welcome' || s.screen === 'loading') ? 'no file open'
+        : isCms ? '808226319.json' : (s.screen === 'error' ? '808226319-partial.json' : 'synthetic_837_batch.dat'),
+      formTypeLabel: isUb ? 'Institutional — UB-04' : isDental ? 'Dental — ADA 2024' : 'Professional — CMS-1500',
+      warnLabel: isCms ? '2 data warnings' : 'No warnings',
+      groupBodyStyle: dense ? 'padding:0 12px 8px 26px' : 'padding:2px 12px 12px 26px',
+      rowWrapStyle: 'display:flex;gap:10px;align-items:baseline;padding:' + (dense ? '2px 0' : '3.5px 0'),
+      totalsLabel: isCms ? '9 lines · $760.65 billed' : (isUb ? '8 lines · $4,318.00 billed' : '5 lines · $548.00 billed'),
+      recents: [
+        { file: '808226319.json', kind: 'CMS-1500', when: 'today 08:51' },
+        { file: '808219044.json', kind: 'CMS-1500', when: 'yesterday' },
+        { file: 'synthetic_837_batch.dat', kind: '837 · 40 claims', when: '22 Jul' }
+      ],
+      themeLabel: s.theme === 'dark' ? 'Dark' : 'Light',
+      themeBtnStyle: btnBase + 'background:var(--surface);border-color:var(--border-strong);color:var(--ink-2)',
+      inspectorBtnLabel: s.inspectorOpen ? 'Hide inspector' : 'Show inspector',
+      expandLabel: Object.values(s.open).every(Boolean) ? 'Collapse all' : 'Expand all',
+      btnPrimary: btnBase + 'background:var(--accent);border-color:var(--accent);color:var(--accent-ink)',
+      btnPrimaryLg: btnBase + 'height:42px;padding:0 20px;font-size:14px;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)',
+      btnGhost: btnBase + 'background:var(--surface);border-color:var(--border-strong);color:var(--ink)',
+      btnDisabled: btnBase + 'background:var(--surface-inset);border-color:var(--border);color:var(--ink-3);cursor:not-allowed',
+      inspectorBtnStyle: btnBase + (s.inspectorOpen
+        ? 'background:var(--accent-tint);border-color:var(--accent);color:var(--ink)'
+        : 'background:var(--surface);border-color:var(--border-strong);color:var(--ink)'),
+      iconBtn: 'display:inline-flex;align-items:center;justify-content:center;width:28px;height:26px;border:0;background:transparent;color:var(--ink-2);cursor:pointer;border-radius:3px',
+      textBtn: 'height:26px;padding:0 9px;border:0;background:transparent;color:var(--ink-2);font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px',
+      linkBtn: 'border:0;background:transparent;color:var(--accent);font:600 12px \'Open Sans\',sans-serif;cursor:pointer;padding:2px 4px',
+      navGroup: 'display:flex;align-items:center;height:32px;padding:0 4px;background:var(--surface);border:1px solid var(--border-strong);border-radius:4px;gap:2px',
+      navDivider: 'width:1px;height:16px;background:var(--border);margin:0 3px',
+      groupLabel: 'font:600 9.5px \'Open Sans\',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)',
+      sepStyle: 'width:1px;height:34px;background:var(--border);align-self:center',
+      statusSep: 'width:1px;height:12px;background:var(--border-strong);margin:0 12px',
+      statusWarnStyle: 'border:0;background:transparent;cursor:pointer;padding:0;font:600 11.5px \'Open Sans\',sans-serif;color:' + (isCms ? 'var(--gold)' : 'var(--ink-2)'),
+      cmsCell: 'border-bottom:1px solid #000;padding:2px 4px 3px;min-height:26px',
+      cmsCellLast: 'padding:2px 4px 3px;min-height:26px',
+      cmsCellPad: 'padding:2px 4px 3px',
+      cmsLbl: 'font:700 6px \'Open Sans\',sans-serif;letter-spacing:.02em;color:#000;display:block;line-height:1.3',
+      cmsVal: 'font:500 9.5px \'IBM Plex Mono\',monospace;color:#000;line-height:1.35;margin-top:2px',
+      cmsValDim: 'font:500 9.5px \'IBM Plex Mono\',monospace;color:#777;line-height:1.35;margin-top:2px',
+      cmsGridVal: gridVal,
+      pick: e => {
+        const id = e.currentTarget.dataset.id;
+        this.setState(st => ({ screen: id, page: id === 'cms1500p2' ? 2 : 1, zoom: id === 'cms1500p2' ? 0.72 : 1, onePage: false, batchIdx: st.batchIdx ?? 0 }));
+      },
+      toggleTheme: () => this.setState(st => ({ theme: st.theme === 'dark' ? 'light' : 'dark' })),
+      toggleInspector: () => this.setState(st => ({ inspectorOpen: !st.inspectorOpen })),
+      toggleGroup: e => {
+        const id = e.currentTarget.dataset.id;
+        this.setState(st => ({ open: { ...st.open, [id]: !st.open[id] } }));
+      },
+      expandAll: () => this.setState(st => {
+        const allOpen = Object.values(st.open).every(Boolean);
+        const next = {};
+        Object.keys(st.open).forEach(k => { next[k] = !allOpen; });
+        return { open: next };
+      }),
+      goToLine8: () => this.setState(st => ({ screen: 'cms1500', page: 2, inspectorOpen: true, open: { ...st.open, lines: true } })),
+      showRecon: () => this.setState(st => ({ inspectorOpen: true, open: { ...st.open, warn: true, recon: true } })),
+      zoomIn: () => this.setState(st => ({ zoom: Math.min(4, Math.round((st.zoom + 0.1) * 100) / 100) })),
+      zoomOut: () => this.setState(st => ({ zoom: Math.max(0.25, Math.round((st.zoom - 0.1) * 100) / 100) })),
+      fitPage: () => this.setState({ zoom: 0.72 }),
+      fitWidth: () => this.setState({ zoom: 1.18 }),
+      prevPage: () => this.setState(st => ({ page: Math.max(1, st.page - 1), screen: 'cms1500' })),
+      nextPage: () => this.setState(st => ({ page: Math.min(2, st.page + 1), screen: 'cms1500' })),
+      openExport: () => this.setState({ screen: 'export' }),
+      goDone: () => this.setState({ screen: 'done' }),
+      closeOverlay: () => this.setState({ screen: 'cms1500' })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

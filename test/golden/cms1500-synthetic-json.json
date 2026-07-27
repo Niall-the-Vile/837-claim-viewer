@@ -1,0 +1,1059 @@
+[
+  [
+    {
+      "text": "1500",
+      "x": 19,
+      "y": 771
+    },
+    {
+      "text": "HEALTH INSURANCE CLAIM FORM",
+      "x": 14,
+      "y": 759
+    },
+    {
+      "text": "APPROVED BY NATIONAL UNIFORM CLAIM COMMITTEE (NUCC) 02/12",
+      "x": 14,
+      "y": 750
+    },
+    {
+      "text": "CARRIER — PAYER NAME AND ADDRESS",
+      "x": 378,
+      "y": 775.5
+    },
+    {
+      "text": "SAMPLE",
+      "x": 378,
+      "y": 766
+    },
+    {
+      "text": "HEALTH",
+      "x": 407.5,
+      "y": 766
+    },
+    {
+      "text": "PLAN",
+      "x": 437,
+      "y": 766
+    },
+    {
+      "text": "—",
+      "x": 378,
+      "y": 756.5
+    },
+    {
+      "text": "—",
+      "x": 378,
+      "y": 747
+    },
+    {
+      "text": "ID",
+      "x": 394.86,
+      "y": 747
+    },
+    {
+      "text": "TEST01",
+      "x": 407.5,
+      "y": 747
+    },
+    {
+      "text": "PICA",
+      "x": 17,
+      "y": 722
+    },
+    {
+      "text": "PICA",
+      "x": 575,
+      "y": 722
+    },
+    {
+      "text": "1. MEDICARE",
+      "x": 17,
+      "y": 710.5
+    },
+    {
+      "text": "MEDICAID",
+      "x": 56.47,
+      "y": 710.5
+    },
+    {
+      "text": "TRICARE",
+      "x": 87.5,
+      "y": 710.5
+    },
+    {
+      "text": "CHAMPVA",
+      "x": 114.7,
+      "y": 710.5
+    },
+    {
+      "text": "GROUP HEALTH PLAN",
+      "x": 145.52,
+      "y": 710.5
+    },
+    {
+      "text": "FECA BLK LUNG",
+      "x": 208.46,
+      "y": 710.5
+    },
+    {
+      "text": "OTHER",
+      "x": 255.61,
+      "y": 710.5
+    },
+    {
+      "text": "Medicare",
+      "x": 24.5,
+      "y": 703
+    },
+    {
+      "text": "Medicaid",
+      "x": 64.49,
+      "y": 703
+    },
+    {
+      "text": "Tricare",
+      "x": 104.48,
+      "y": 703
+    },
+    {
+      "text": "ChampVA",
+      "x": 141.16,
+      "y": 703
+    },
+    {
+      "text": "Group",
+      "x": 177.84,
+      "y": 703
+    },
+    {
+      "text": "FECA",
+      "x": 207.89,
+      "y": 703
+    },
+    {
+      "text": "Other",
+      "x": 234.64,
+      "y": 703
+    },
+    {
+      "text": "1a. INSURED'S I.D. NUMBER (For Program in Item 1)",
+      "x": 403,
+      "y": 710.5
+    },
+    {
+      "text": "MEMBER001",
+      "x": 403,
+      "y": 702.5
+    },
+    {
+      "text": "CARRIER",
+      "x": 590.9,
+      "y": 691.82
+    },
+    {
+      "text": "PATIENT AND INSURED INFORMATION",
+      "x": 590.9,
+      "y": 555.2
+    },
+    {
+      "text": "PHYSICIAN OR SUPPLIER INFORMATION",
+      "x": 590.9,
+      "y": 288.71
+    },
+    {
+      "text": "2. PATIENT'S NAME (Last, First, Middle Initial)",
+      "x": 17,
+      "y": 684.5
+    },
+    {
+      "text": "SAMPLEPATIENT,",
+      "x": 17,
+      "y": 676.5
+    },
+    {
+      "text": "PAT",
+      "x": 75.7,
+      "y": 676.5
+    },
+    {
+      "text": "Q",
+      "x": 91.35,
+      "y": 676.5
+    },
+    {
+      "text": "5. PATIENT'S ADDRESS (No., Street)",
+      "x": 17,
+      "y": 664.5
+    },
+    {
+      "text": "1",
+      "x": 17,
+      "y": 656.5
+    },
+    {
+      "text": "TEST",
+      "x": 24.83,
+      "y": 656.5
+    },
+    {
+      "text": "ST",
+      "x": 44.39,
+      "y": 656.5
+    },
+    {
+      "text": "CITY / STATE / ZIP / TELEPHONE",
+      "x": 17,
+      "y": 644.5
+    },
+    {
+      "text": "TESTVILLE,",
+      "x": 17,
+      "y": 636.5
+    },
+    {
+      "text": "OH",
+      "x": 60.05,
+      "y": 636.5
+    },
+    {
+      "text": "43000",
+      "x": 71.79,
+      "y": 636.5
+    },
+    {
+      "text": "9. OTHER INSURED'S NAME (Last, First, Middle Initial)",
+      "x": 17,
+      "y": 624.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 616.5
+    },
+    {
+      "text": "9a. OTHER INSURED'S POLICY OR GROUP NUMBER",
+      "x": 17,
+      "y": 604.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 596.5
+    },
+    {
+      "text": "9b. RESERVED FOR NUCC USE",
+      "x": 17,
+      "y": 584.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 576.5
+    },
+    {
+      "text": "9d. INSURANCE PLAN NAME OR PROGRAM NAME",
+      "x": 17,
+      "y": 564.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 556.5
+    },
+    {
+      "text": "10c. OTHER ACCIDENT?",
+      "x": 257,
+      "y": 604.5
+    },
+    {
+      "text": "—",
+      "x": 257,
+      "y": 596.5
+    },
+    {
+      "text": "10d. CLAIM CODES (Designated by NUCC)",
+      "x": 257,
+      "y": 584.5
+    },
+    {
+      "text": "—",
+      "x": 257,
+      "y": 576.5
+    },
+    {
+      "text": "4. INSURED'S NAME (Last, First, Middle Initial)",
+      "x": 403,
+      "y": 684.5
+    },
+    {
+      "text": "SAMPLEPATIENT,",
+      "x": 403,
+      "y": 676.5
+    },
+    {
+      "text": "PAT",
+      "x": 461.7,
+      "y": 676.5
+    },
+    {
+      "text": "7. INSURED'S ADDRESS (No., Street)",
+      "x": 403,
+      "y": 664.5
+    },
+    {
+      "text": "1",
+      "x": 403,
+      "y": 656.5
+    },
+    {
+      "text": "TEST",
+      "x": 410.83,
+      "y": 656.5
+    },
+    {
+      "text": "ST",
+      "x": 430.39,
+      "y": 656.5
+    },
+    {
+      "text": "CITY / STATE / ZIP",
+      "x": 403,
+      "y": 644.5
+    },
+    {
+      "text": "TESTVILLE,",
+      "x": 403,
+      "y": 636.5
+    },
+    {
+      "text": "OH",
+      "x": 446.05,
+      "y": 636.5
+    },
+    {
+      "text": "43000",
+      "x": 457.79,
+      "y": 636.5
+    },
+    {
+      "text": "11. INSURED'S POLICY GROUP OR FECA NUMBER",
+      "x": 403,
+      "y": 624.5
+    },
+    {
+      "text": "GRP1",
+      "x": 403,
+      "y": 616.5
+    },
+    {
+      "text": "11b. INSURED'S EMPLOYER NAME",
+      "x": 403,
+      "y": 584.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 576.5
+    },
+    {
+      "text": "11c. INSURANCE PLAN NAME OR PROGRAM NAME",
+      "x": 403,
+      "y": 564.5
+    },
+    {
+      "text": "TEST",
+      "x": 403,
+      "y": 556.5
+    },
+    {
+      "text": "PLAN",
+      "x": 422.57,
+      "y": 556.5
+    },
+    {
+      "text": "3. PATIENT'S BIRTH DATE / SEX",
+      "x": 257,
+      "y": 684.5
+    },
+    {
+      "text": "01/15/80",
+      "x": 257,
+      "y": 677
+    },
+    {
+      "text": "M",
+      "x": 296.99,
+      "y": 677
+    },
+    {
+      "text": "X",
+      "x": 306.9,
+      "y": 676.6
+    },
+    {
+      "text": "F",
+      "x": 313.8,
+      "y": 677
+    },
+    {
+      "text": "11a. INSURED'S DATE OF BIRTH / SEX",
+      "x": 403,
+      "y": 604.5
+    },
+    {
+      "text": "01/15/80",
+      "x": 403,
+      "y": 597
+    },
+    {
+      "text": "M",
+      "x": 442.99,
+      "y": 597
+    },
+    {
+      "text": "X",
+      "x": 452.9,
+      "y": 596.6
+    },
+    {
+      "text": "F",
+      "x": 459.8,
+      "y": 597
+    },
+    {
+      "text": "6. PATIENT RELATIONSHIP TO INSURED",
+      "x": 257,
+      "y": 664.5
+    },
+    {
+      "text": "X",
+      "x": 257.6,
+      "y": 656.6
+    },
+    {
+      "text": "Self",
+      "x": 264.5,
+      "y": 657
+    },
+    {
+      "text": "Spouse",
+      "x": 291.25,
+      "y": 657
+    },
+    {
+      "text": "Child",
+      "x": 324.61,
+      "y": 657
+    },
+    {
+      "text": "Other",
+      "x": 354.67,
+      "y": 657
+    },
+    {
+      "text": "10a. IS PATIENT'S CONDITION RELATED TO: EMPLOYMENT?",
+      "x": 257,
+      "y": 644.5
+    },
+    {
+      "text": "YES",
+      "x": 264.5,
+      "y": 637
+    },
+    {
+      "text": "X",
+      "x": 281.03,
+      "y": 636.6
+    },
+    {
+      "text": "NO",
+      "x": 287.93,
+      "y": 637
+    },
+    {
+      "text": "10b. AUTO ACCIDENT? (PLACE)",
+      "x": 257,
+      "y": 624.5
+    },
+    {
+      "text": "YES",
+      "x": 264.5,
+      "y": 617
+    },
+    {
+      "text": "X",
+      "x": 281.03,
+      "y": 616.6
+    },
+    {
+      "text": "NO",
+      "x": 287.93,
+      "y": 617
+    },
+    {
+      "text": "11d. IS THERE ANOTHER HEALTH BENEFIT PLAN?",
+      "x": 403,
+      "y": 544.5
+    },
+    {
+      "text": "YES",
+      "x": 410.5,
+      "y": 537
+    },
+    {
+      "text": "X",
+      "x": 427.03,
+      "y": 536.6
+    },
+    {
+      "text": "NO",
+      "x": 433.93,
+      "y": 537
+    },
+    {
+      "text": "27. ACCEPT ASSIGNMENT?",
+      "x": 241,
+      "y": 247.5
+    },
+    {
+      "text": "X",
+      "x": 241.6,
+      "y": 239.6
+    },
+    {
+      "text": "YES",
+      "x": 248.5,
+      "y": 240
+    },
+    {
+      "text": "NO",
+      "x": 271.93,
+      "y": 240
+    },
+    {
+      "text": "READ BACK OF FORM BEFORE COMPLETING & SIGNING THIS FORM",
+      "x": 213.91,
+      "y": 525.75
+    },
+    {
+      "text": "12. PATIENT'S OR AUTHORIZED PERSON'S SIGNATURE",
+      "x": 17,
+      "y": 515.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 507.5
+    },
+    {
+      "text": "13. INSURED'S OR AUTHORIZED PERSON'S SIGNATURE",
+      "x": 403,
+      "y": 515.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 507.5
+    },
+    {
+      "text": "14. DATE OF CURRENT ILLNESS, INJURY, OR PREGNANCY (LMP)",
+      "x": 17,
+      "y": 493.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 485.5
+    },
+    {
+      "text": "15. OTHER DATE",
+      "x": 256,
+      "y": 493.5
+    },
+    {
+      "text": "—",
+      "x": 256,
+      "y": 485.5
+    },
+    {
+      "text": "16. DATES PATIENT UNABLE TO WORK",
+      "x": 403,
+      "y": 493.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 485.5
+    },
+    {
+      "text": "17. NAME OF REFERRING PROVIDER OR OTHER SOURCE",
+      "x": 17,
+      "y": 475.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 467.5
+    },
+    {
+      "text": "17a / 17b. OTHER ID / NPI",
+      "x": 256,
+      "y": 475.5
+    },
+    {
+      "text": "—",
+      "x": 256,
+      "y": 467.5
+    },
+    {
+      "text": "18. HOSPITALIZATION DATES RELATED TO CURRENT SERVICES",
+      "x": 403,
+      "y": 475.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 467.5
+    },
+    {
+      "text": "19. ADDITIONAL CLAIM INFORMATION (Designated by NUCC)",
+      "x": 17,
+      "y": 457.5
+    },
+    {
+      "text": "—",
+      "x": 17,
+      "y": 449.5
+    },
+    {
+      "text": "20. OUTSIDE LAB? / $ CHARGES",
+      "x": 403,
+      "y": 457.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 449.5
+    },
+    {
+      "text": "21. DIAGNOSIS OR NATURE OF ILLNESS OR INJURY",
+      "x": 17,
+      "y": 439.5
+    },
+    {
+      "text": "·",
+      "x": 159.65,
+      "y": 439.5
+    },
+    {
+      "text": "ICD Ind. 0",
+      "x": 164.9,
+      "y": 439.5
+    },
+    {
+      "text": "A.",
+      "x": 16,
+      "y": 427
+    },
+    {
+      "text": "M545",
+      "x": 28.64,
+      "y": 427
+    },
+    {
+      "text": "B.",
+      "x": 112.5,
+      "y": 427
+    },
+    {
+      "text": "M25561",
+      "x": 125.14,
+      "y": 427
+    },
+    {
+      "text": "22. RESUBMISSION CODE / ORIGINAL REF. NO.",
+      "x": 403,
+      "y": 439.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 431.5
+    },
+    {
+      "text": "23. PRIOR AUTHORIZATION NUMBER",
+      "x": 403,
+      "y": 412.5
+    },
+    {
+      "text": "—",
+      "x": 403,
+      "y": 404.5
+    },
+    {
+      "text": "A. DATE(S) OF SERVICE",
+      "x": 17,
+      "y": 381
+    },
+    {
+      "text": "B. POS",
+      "x": 129,
+      "y": 381
+    },
+    {
+      "text": "C. EMG",
+      "x": 155,
+      "y": 381
+    },
+    {
+      "text": "D. PROCEDURES / MODIFIERS",
+      "x": 176,
+      "y": 381
+    },
+    {
+      "text": "E. DX PTR",
+      "x": 302,
+      "y": 381
+    },
+    {
+      "text": "F. $ CHARGES",
+      "x": 332,
+      "y": 381
+    },
+    {
+      "text": "G. DAYS",
+      "x": 401,
+      "y": 381
+    },
+    {
+      "text": "H. EPSDT",
+      "x": 434,
+      "y": 381
+    },
+    {
+      "text": "I. QUAL",
+      "x": 462,
+      "y": 381
+    },
+    {
+      "text": "J. RENDERING PROVIDER ID #",
+      "x": 484,
+      "y": 381
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 372
+    },
+    {
+      "text": "05/07/26",
+      "x": 17,
+      "y": 361.25
+    },
+    {
+      "text": "11",
+      "x": 129,
+      "y": 361.25
+    },
+    {
+      "text": "—",
+      "x": 155,
+      "y": 361.25
+    },
+    {
+      "text": "99213",
+      "x": 176,
+      "y": 361.25
+    },
+    {
+      "text": "A",
+      "x": 302,
+      "y": 361.25
+    },
+    {
+      "text": "$100.00",
+      "x": 367.61,
+      "y": 361.25
+    },
+    {
+      "text": "1",
+      "x": 401,
+      "y": 361.25
+    },
+    {
+      "text": "1234567893",
+      "x": 484,
+      "y": 361.25
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 352
+    },
+    {
+      "text": "05/07/26",
+      "x": 17,
+      "y": 341.25
+    },
+    {
+      "text": "11",
+      "x": 129,
+      "y": 341.25
+    },
+    {
+      "text": "—",
+      "x": 155,
+      "y": 341.25
+    },
+    {
+      "text": "73721",
+      "x": 176,
+      "y": 341.25
+    },
+    {
+      "text": "26",
+      "x": 199.48,
+      "y": 341.25
+    },
+    {
+      "text": "AB",
+      "x": 302,
+      "y": 341.25
+    },
+    {
+      "text": "$40.00",
+      "x": 371.52,
+      "y": 341.25
+    },
+    {
+      "text": "1",
+      "x": 401,
+      "y": 341.25
+    },
+    {
+      "text": "1234567893",
+      "x": 484,
+      "y": 341.25
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 332
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 312
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 292
+    },
+    {
+      "text": "NPI",
+      "x": 465.48,
+      "y": 272
+    },
+    {
+      "text": "25. FEDERAL TAX I.D. NUMBER",
+      "x": 17,
+      "y": 247.5
+    },
+    {
+      "text": "990000000",
+      "x": 17,
+      "y": 239.5
+    },
+    {
+      "text": "(EIN)",
+      "x": 56.13,
+      "y": 239.5
+    },
+    {
+      "text": "26. PATIENT'S ACCOUNT NO.",
+      "x": 129,
+      "y": 247.5
+    },
+    {
+      "text": "ACCT-0001",
+      "x": 129,
+      "y": 239.5
+    },
+    {
+      "text": "28. TOTAL CHARGE",
+      "x": 313,
+      "y": 247.5
+    },
+    {
+      "text": "$140.00",
+      "x": 363.61,
+      "y": 239.5
+    },
+    {
+      "text": "29. AMOUNT PAID",
+      "x": 397,
+      "y": 247.5
+    },
+    {
+      "text": "$0.00",
+      "x": 449.43,
+      "y": 239.5
+    },
+    {
+      "text": "30. BALANCE DUE",
+      "x": 475,
+      "y": 247.5
+    },
+    {
+      "text": "$140.00",
+      "x": 557.61,
+      "y": 239.5
+    },
+    {
+      "text": "31. SIGNATURE OF PHYSICIAN OR SUPPLIER",
+      "x": 17,
+      "y": 226.5
+    },
+    {
+      "text": "SAMPLEDOC,",
+      "x": 17,
+      "y": 218.5
+    },
+    {
+      "text": "DANA",
+      "x": 60.05,
+      "y": 218.5
+    },
+    {
+      "text": "NPI:",
+      "x": 17,
+      "y": 211.5
+    },
+    {
+      "text": "1234567893",
+      "x": 36.57,
+      "y": 211.5
+    },
+    {
+      "text": "TAXONOMY:",
+      "x": 17,
+      "y": 204.5
+    },
+    {
+      "text": "207Q00000X",
+      "x": 56.13,
+      "y": 204.5
+    },
+    {
+      "text": "32 / 32a. SERVICE FACILITY LOCATION INFORMATION",
+      "x": 231,
+      "y": 226.5
+    },
+    {
+      "text": "—",
+      "x": 231,
+      "y": 218.5
+    },
+    {
+      "text": "33 / 33a / 33b. BILLING PROVIDER INFO & PH #",
+      "x": 403,
+      "y": 226.5
+    },
+    {
+      "text": "SAMPLE",
+      "x": 403,
+      "y": 218.5
+    },
+    {
+      "text": "CLINIC",
+      "x": 430.39,
+      "y": 218.5
+    },
+    {
+      "text": "2",
+      "x": 403,
+      "y": 211.5
+    },
+    {
+      "text": "CLINIC",
+      "x": 410.83,
+      "y": 211.5
+    },
+    {
+      "text": "RD",
+      "x": 438.22,
+      "y": 211.5
+    },
+    {
+      "text": "TESTVILLE,",
+      "x": 403,
+      "y": 204.5
+    },
+    {
+      "text": "OH",
+      "x": 446.05,
+      "y": 204.5
+    },
+    {
+      "text": "43000",
+      "x": 457.79,
+      "y": 204.5
+    },
+    {
+      "text": "PH:",
+      "x": 489.09,
+      "y": 204.5
+    },
+    {
+      "text": "5555550100",
+      "x": 504.75,
+      "y": 204.5
+    },
+    {
+      "text": "NPI:",
+      "x": 403,
+      "y": 197.5
+    },
+    {
+      "text": "1234567893",
+      "x": 422.57,
+      "y": 197.5
+    },
+    {
+      "text": "TAXONOMY:",
+      "x": 473.44,
+      "y": 197.5
+    },
+    {
+      "text": "207Q00000X",
+      "x": 512.57,
+      "y": 197.5
+    },
+    {
+      "text": "NUCC Instruction Manual available at: www.nucc.org",
+      "x": 14,
+      "y": 20
+    },
+    {
+      "text": "CLAIM 900000001",
+      "x": 259.22,
+      "y": 20
+    },
+    {
+      "text": "·",
+      "x": 312.99,
+      "y": 20
+    },
+    {
+      "text": "PAGE 1 OF 1",
+      "x": 318.23,
+      "y": 20
+    },
+    {
+      "text": "UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM",
+      "x": 459.6,
+      "y": 20
+    }
+  ]
+]

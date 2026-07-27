@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+*.log
+.DS_Store
+# Playwright E2E run artifacts (screenshots/traces/HTML report) — not source; see playwright.config.ts.
+/test-results/
+/playwright-report/
+# Never commit real claim data (PHI). Only synthetic fixtures live in test/fixtures/.
+/private-samples/
+*.phi.json

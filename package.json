@@ -1,0 +1,66 @@
+{
+  "name": "claim-viewer",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Offline single-machine claim viewer: renders clearinghouse JSON (and X12 837) claims as CMS-1500 / UB-04 / ADA facsimiles and exports to PDF.",
+  "author": "Anabaptist Brotherhood",
+  "type": "module",
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.e2e.json",
+    "render": "tsc && node dist/scripts/render-cli.js",
+    "dev": "node scripts/dev-electron.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "build:preload": "esbuild electron/preload.ts --bundle --format=cjs --platform=node --external:electron --outfile=dist/electron/preload.cjs",
+    "build": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && vite build && electron-builder",
+    "start": "electron dist/electron/main.js",
+    "test:e2e": "playwright test",
+    "verify": "npm run typecheck && npm test && npm run build && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@types/node": "^22.10.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.7.0",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200"
+  },
+  "build": {
+    "appId": "org.anabaptistbrotherhood.claimviewer",
+    "productName": "837 Claim Viewer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/electron/**/*",
+      "!dist/electron/preload.js",
+      "dist/renderer/**/*",
+      "dist/src/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/{electron,electron-builder,vite,vitest,typescript,esbuild,@types}/**/*",
+      "!node_modules/{pdfjs-dist,@napi-rs}/**/*",
+      "!node_modules/**/*.{ts,map}",
+      "!src/**/*",
+      "!test/**/*",
+      "!scripts/**/*",
+      "!docs/**/*"
+    ],
+    "asar": true,
+    "forceCodeSigning": false,
+    "win": {
+      "target": "portable",
+      "signtoolOptions": {},
+      "icon": "build/icon.ico"
+    }
+  }
+}
