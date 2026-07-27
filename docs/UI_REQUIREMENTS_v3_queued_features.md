@@ -3,11 +3,26 @@
 Requirements for the new surfaces in `BUILD_QUEUE.md`. Written so an unattended
 build has a spec to implement against instead of inventing layout at 2am.
 
-**These are requirements, not a visual design.** Build everything from the existing
-design language: the tokens in `src/renderer/style.css`, the chrome established in
-`docs/design/ClaimViewer_v2.dc.html`, and the patterns already in the app (inspector
-field rows, warnings banner, export dialog, toast). Do not introduce a new visual
-idiom, new colours, or new spacing scales.
+**UPDATE 2026-07-27 (evening): most of these surfaces are NOW DESIGNED.**
+`docs/design/ClaimViewer_v2.dc.html` was re-imported from Claude Design and now
+contains screens for **Batch export progress**, **Appended pages**, **Audit log**
+and **Command palette**, plus in-design treatments for **search**, **per-line
+notes**, **UI scale** and **high contrast**.
+
+**Where a screen exists in that design file, the DESIGN IS AUTHORITATIVE for layout
+and this document is authoritative for behaviour** (states, keyboard, edge cases,
+accessibility, what must not regress). Read the matching screen in the design before
+implementing; do not invent a different layout, and do not "improve" on it. Where a
+surface below has no screen in the design, build it from the existing design
+language as originally specified.
+
+**Still NOT designed, and still DESIGN-GATED — do not build:** the side-by-side
+claim diff and the 837 batch triage pane (see `BUILD_QUEUE.md`).
+
+**Everything else here stands.** Build from the existing tokens in
+`src/renderer/style.css` and the patterns already in the app (inspector field rows,
+warnings banner, export dialog, toast). Do not introduce a new visual idiom, new
+colours, or new spacing scales.
 
 **Universal rules for every surface below**
 - Keyboard-complete, visible focus, `prefers-reduced-motion` honored.

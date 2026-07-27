@@ -14,10 +14,13 @@
     "dev": "node scripts/dev-electron.mjs",
     "icon": "node scripts/make-icon.mjs",
     "build:preload": "esbuild electron/preload.ts --bundle --format=cjs --platform=node --external:electron --outfile=dist/electron/preload.cjs",
-    "build": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && vite build && electron-builder",
+    "build": "npm run build:app && npm run build:dist",
     "start": "electron dist/electron/main.js",
     "test:e2e": "playwright test",
-    "verify": "npm run typecheck && npm test && npm run build && npm run test:e2e"
+    "verify": "npm run typecheck && npm test && npm run build:app && npm run test:e2e",
+    "build:app": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && vite build",
+    "build:dist": "electron-builder",
+    "verify:release": "npm run verify && npm run build:dist"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

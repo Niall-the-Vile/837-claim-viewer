@@ -490,10 +490,27 @@ version.
 
 ---
 
+## Design status — UPDATED 2026-07-27 evening
+
+`docs/design/ClaimViewer_v2.dc.html` was re-imported from Claude Design and now
+contains screens for **Batch export progress** (4.1), **Appended pages** (4.2),
+**Audit log** (5.2) and **Command palette** (Build 6), plus in-design treatments for
+search (2.1), per-line notes (5.1), UI scale (2.0) and high contrast (Build 6).
+
+**For those surfaces the design file is AUTHORITATIVE for layout**;
+`UI_REQUIREMENTS_v3_queued_features.md` remains authoritative for behaviour, states,
+keyboard and accessibility. Read the matching design screen before implementing —
+do not invent a layout that already exists, and do not "improve" on it.
+
+This does NOT change tonight's priorities: Build 1 is still the deliverable and
+Builds 4-6 are still stretch. A designed screen you never reach is not a reason to
+rush Build 1.
+
 ## DESIGN-GATED — do NOT build tonight
 
-Niall chose a **Claude Design pass** for these two, so they wait for the design
-artifact. Building them from my own layout judgment would waste the work.
+These two are still **not** in the design file (verified: no triage-pane screen, and
+no side-by-side diff screen). They remain gated. Building them from my own layout
+judgment would waste the work.
 
 - **Side-by-side compare with field-level diff** (22 filings — the most-cited payoff
   of tabs). Needs a model-diff algorithm, a service-line matching key

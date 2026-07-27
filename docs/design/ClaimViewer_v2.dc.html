@@ -35,7 +35,7 @@
     <button onClick="{{ toggleTheme }}" style="{{ themeBtnStyle }}">{{ themeLabel }}</button>
   </div>
 
-  <div style="width:1440px;height:980px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.28)">
+  <div style="{{ windowStyle }}">
 
     <div style="height:32px;flex:0 0 auto;background:var(--titlebar);display:flex;align-items:center;padding:0 0 0 12px;border-bottom:1px solid var(--border);gap:10px">
       <span style="font:600 12px 'Open Sans',sans-serif;color:var(--ink-2);white-space:nowrap">Claim Viewer</span>
@@ -104,6 +104,21 @@
       </div>
       </sc-if>
 
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="{{ groupLabel }}">Display</span>
+        <div style="{{ navGroup }}">
+          <button onClick="{{ cycleUiScale }}" style="{{ textBtn }}">{{ uiScaleLabel }}</button>
+          <span style="{{ navDivider }}"></span>
+          <button onClick="{{ toggleHighContrast }}" style="{{ highContrastStyle }}">High contrast</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ openPalette }}" style="{{ btnGhost }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>Commands<span style="font:400 11px 'IBM Plex Mono',monospace;color:var(--ink-3);margin-left:2px">Ctrl+K</span></button>
+      </sc-if>
+
       <sc-if value="{{ multiPage }}" hint-placeholder-val="{{ true }}">
       <div style="display:flex;flex-direction:column;gap:3px">
         <span style="{{ groupLabel }}">Pages of this claim</span>
@@ -134,14 +149,27 @@
     </div>
 
     <sc-if value="{{ showWarnBanner }}" hint-placeholder-val="{{ true }}">
-    <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--warn-bg);border-bottom:1px solid var(--warn-border)">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4.5M12 17h.01"></path></svg>
-      <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink);white-space:nowrap">2 data warnings</span>
-      <span style="width:1px;height:14px;background:var(--warn-border)"></span>
-      <span style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-2)">Line charges (<span style="font-family:'IBM Plex Mono',monospace">$760.66</span>) don't match the claim total (<span style="font-family:'IBM Plex Mono',monospace">$760.65</span>) · Diagnosis pointer <span style="font-family:'IBM Plex Mono',monospace">E</span> on line 8 has no matching diagnosis</span>
-      <div style="flex:1"></div>
-      <button onClick="{{ goToLine8 }}" style="{{ linkBtn }}">Go to line 8</button>
-      <button onClick="{{ showRecon }}" style="{{ linkBtn }}">Review in inspector</button>
+    <div style="flex:0 0 auto;background:var(--warn-bg);border-bottom:1px solid var(--warn-border)">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4.5M12 17h.01"></path></svg>
+        <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink);white-space:nowrap">{{ warnHeaderText }}</span>
+        <sc-if value="{{ warnCollapsible }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ toggleWarnBanner }}" style="{{ linkBtn }}">{{ warnToggleLabel }}</button>
+        </sc-if>
+        <div style="flex:1"></div>
+        <button data-line="8" onClick="{{ jumpToWarnLine }}" style="{{ linkBtn }}">Go to line 8</button>
+        <button onClick="{{ showRecon }}" style="{{ linkBtn }}">Review in inspector</button>
+      </div>
+      <sc-if value="{{ warnExpanded }}" hint-placeholder-val="{{ true }}">
+      <div style="max-height:190px;overflow:auto;padding:0 14px 10px 42px;display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{ warnRows }}" as="w" hint-placeholder-count="5">
+          <button data-line="{{ w.line }}" onClick="{{ jumpToWarnLine }}" style="display:flex;align-items:baseline;gap:8px;text-align:left;border:0;background:transparent;cursor:pointer;padding:2px 0">
+            <span style="{{ w.sevStyle }}">{{ w.sevWord }}</span>
+            <span style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-2)">{{ w.text }}</span>
+          </button>
+        </sc-for>
+      </div>
+      </sc-if>
     </div>
     </sc-if>
 
@@ -158,7 +186,7 @@
         </div>
 
         <div style="flex:1 1 auto;overflow:auto;padding:24px 24px 40px;display:flex;justify-content:center;align-items:flex-start">
-          <div style="transform:{{ formTransform }};transform-origin:top center;flex:0 0 auto">
+          <div style="transform:{{ formTransform }};transform-origin:top center;flex:0 0 auto;{{ sheetFilter }}">
 
             <sc-if value="{{ isCms }}" hint-placeholder-val="{{ true }}">
             <div style="width:816px;min-height:1056px;display:flex;flex-direction:column;background:#fff;color:#000;padding:16px 18px 14px;font-family:'Open Sans',sans-serif">
@@ -580,6 +608,16 @@
                   </div>
                 </sc-for>
               </div>
+              <sc-if value="{{ purgeConfirm }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;padding:10px 12px;border:1px solid var(--warn-border);background:var(--warn-bg);border-radius:4px">
+                  <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink);line-height:1.5">This clears open tabs, recent files, and any saved line notes for closed claims. It cannot be undone.</div>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <button onClick="{{ cancelPurge }}" style="{{ btnGhost }}">Cancel</button>
+                    <button onClick="{{ confirmPurge }}" style="{{ btnPrimary }}">Forget everything</button>
+                  </div>
+                </div>
+              </sc-if>
+              <button onClick="{{ openPurgeConfirm }}" style="border:0;background:transparent;color:var(--ink-3);font:400 11.5px 'Open Sans',sans-serif;cursor:pointer;padding:8px 2px;text-decoration:underline">Forget open tabs &amp; recent files…</button>
             </div>
           </div>
         </div>
@@ -642,6 +680,98 @@
         </div>
         </sc-if>
 
+        <sc-if value="{{ isAnnex }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;overflow:auto;padding:24px;display:flex;flex-direction:column;align-items:center;gap:18px;background:var(--matte)">
+          <div style="width:680px">
+            <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--chip-ink);padding:0 2px 6px">Appended page 1 · claim at a glance — not part of the original form</div>
+            <div style="background:#fff;color:#000;padding:20px;font-family:'Open Sans',sans-serif;border:1px dashed #999">
+              <div style="font:700 13px 'Open Sans',sans-serif;margin-bottom:10px">Claim at a glance</div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 18px;font:400 11.5px 'IBM Plex Mono',monospace">
+                <span style="color:#555">Claim ID</span><span>808226319</span>
+                <span style="color:#555">Patient account</span><span>MR-2026-01188</span>
+                <span style="color:#555">Dates of service</span><span>2026-07-06 → 2026-07-13</span>
+                <span style="color:#555">Billing provider</span><span>Meadow Run Family Practice · NPI 1730258417</span>
+                <span style="color:#555">Form type</span><span>CMS-1500 (professional)</span>
+                <span style="color:#555">Service lines</span><span>9</span>
+                <span style="color:#555">Total charge</span><span>$760.65</span>
+                <span style="color:#555">Reconciliation</span><span>Reconciles within $0.01 · 1 pointer flagged</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:6px;border-top:1px solid #ccc;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>Page 2 of 5</span><span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+          </div>
+          <div style="width:680px">
+            <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--chip-ink);padding:0 2px 6px">Appended page 2 · field annex</div>
+            <div style="background:#fff;color:#000;padding:20px;font-family:'Open Sans',sans-serif;border:1px dashed #999">
+              <div style="font:700 13px 'Open Sans',sans-serif;margin-bottom:10px">Field annex — inspector groups, in order</div>
+              <div style="display:grid;grid-template-columns:60px 140px 1fr;gap:4px 12px;font:400 11px 'Open Sans',sans-serif">
+                <sc-for list="{{ annexFields }}" as="af" hint-placeholder-count="6">
+                  <span style="font-family:'IBM Plex Mono',monospace;color:#555">{{ af.box }}</span><span>{{ af.label }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ af.val }}</span>
+                </sc-for>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:6px;border-top:1px solid #ccc;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>Page 3 of 5</span><span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+          </div>
+          <div style="width:680px">
+            <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--chip-ink);padding:0 2px 6px">Appended page 3 · revenue-code rollup (UB-04 only)</div>
+            <div style="background:#fff;color:#000;padding:20px;font-family:'Open Sans',sans-serif;border:1px dashed #999">
+              <div style="font:700 13px 'Open Sans',sans-serif;margin-bottom:10px">Revenue-code rollup</div>
+              <div style="display:grid;grid-template-columns:60px 1fr 60px 90px;gap:3px 10px;font:400 11px 'Open Sans',sans-serif">
+                <span style="font-weight:700">Rev</span><span style="font-weight:700">Description</span><span style="font-weight:700">Units</span><span style="font-weight:700;text-align:right">Charges</span>
+                <sc-for list="{{ rollup }}" as="rl" hint-placeholder-count="8">
+                  <span style="font-family:'IBM Plex Mono',monospace">{{ rl.rev }}</span><span>{{ rl.desc }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ rl.units }}</span><span style="font-family:'IBM Plex Mono',monospace;text-align:right">{{ rl.charge }}</span>
+                </sc-for>
+                <span style="font-weight:700">0001</span><span style="font-weight:700">Total</span><span></span><span style="font-family:'IBM Plex Mono',monospace;text-align:right;font-weight:700">4,318.00</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:6px;border-top:1px solid #ccc;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>Page 4 of 5</span><span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+          </div>
+          <div style="width:680px">
+            <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--chip-ink);padding:0 2px 6px">Appended page 4 · warnings</div>
+            <div style="background:#fff;color:#000;padding:20px;font-family:'Open Sans',sans-serif;border:1px dashed #999">
+              <div style="font:700 13px 'Open Sans',sans-serif;margin-bottom:10px">Data warnings — full list</div>
+              <sc-for list="{{ warnRows }}" as="wr" hint-placeholder-count="5">
+                <div style="display:flex;gap:8px;font:400 11.5px 'Open Sans',sans-serif;margin-bottom:5px">
+                  <span style="font-weight:700;text-transform:uppercase;font-size:10px">{{ wr.sevWord }}</span><span>{{ wr.text }}</span>
+                </div>
+              </sc-for>
+              <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:6px;border-top:1px solid #ccc;font:400 7px 'Open Sans',sans-serif;color:#333">
+                <span>Page 5 of 5</span><span>UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;overflow:auto;padding:28px;background:var(--surface)">
+          <div style="max-width:940px;margin:0 auto">
+            <div style="font:600 15px 'Open Sans',sans-serif;color:var(--ink)">Audit log</div>
+            <div style="font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:4px">Reachable from Help → About. Read-only — retained 180 days, then rotated automatically; nothing here can be deleted from this screen.</div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button style="{{ btnGhost }}">Open log folder</button>
+              <button style="{{ btnGhost }}">Copy visible rows</button>
+            </div>
+            <div style="margin-top:14px;border:1px solid var(--border);border-radius:5px;overflow:hidden">
+              <div style="display:grid;grid-template-columns:120px 90px 150px 170px 220px 60px;background:var(--surface-inset);font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);padding:8px 12px">
+                <span>Timestamp</span><span>User</span><span>Action</span><span>Source</span><span>Destination</span><span>Ver.</span>
+              </div>
+              <sc-for list="{{ auditRows }}" as="ar" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:120px 90px 150px 170px 220px 60px;padding:8px 12px;border-top:1px solid var(--border);font:400 11.5px 'IBM Plex Mono',monospace;color:var(--ink-2)">
+                  <span>{{ ar.ts }}</span><span>{{ ar.user }}</span><span>{{ ar.action }}</span><span>{{ ar.src }}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ar.dest }}</span><span>{{ ar.ver }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:8px">No claim content is ever written here — identifiers are hashed and truncated.</div>
+          </div>
+        </div>
+        </sc-if>
+
       </div>
 
       <sc-if value="{{ inspectorOpen }}" hint-placeholder-val="{{ true }}">
@@ -652,6 +782,18 @@
           <div style="flex:1"></div>
           <button onClick="{{ expandAll }}" style="{{ linkBtn }}">{{ expandLabel }}</button>
         </div>
+        <div style="flex:0 0 auto;padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:6px;height:30px;border:1px solid var(--border-strong);border-radius:4px;background:var(--field);padding:0 8px">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+            <input value="{{ searchQuery }}" onChange="{{ updateSearch }}" placeholder="Find in this claim… (Ctrl+F)" style="flex:1;border:0;background:transparent;outline:0;font:400 12.5px 'Open Sans',sans-serif;color:var(--ink)">
+            <sc-if value="{{ searchQuery }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ clearSearch }}" style="border:0;background:transparent;color:var(--ink-3);cursor:pointer;padding:2px">✕</button>
+            </sc-if>
+          </div>
+          <sc-if value="{{ searchQuery }}" hint-placeholder-val="{{ false }}">
+            <div style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3)">{{ searchSummary }}</div>
+          </sc-if>
+        </div>
         <div style="flex:1 1 auto;overflow:auto">
           <sc-for list="{{ groups }}" as="g" hint-placeholder-count="7">
             <div style="border-bottom:1px solid var(--border)">
@@ -661,6 +803,7 @@
                 <span style="{{ g.tagStyle }}">{{ g.tag }}</span>
               </button>
               <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                <sc-if value="{{ g.isGeneric }}" hint-placeholder-val="{{ true }}">
                 <div style="{{ groupBodyStyle }}">
                   <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="4">
                     <div style="{{ rowWrapStyle }}">
@@ -669,6 +812,39 @@
                     </div>
                   </sc-for>
                 </div>
+                </sc-if>
+                <sc-if value="{{ g.isLines }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:2px 12px 12px 12px">
+                  <sc-if value="{{ hasRestoredNote }}" hint-placeholder-val="{{ false }}">
+                    <div style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3);font-style:italic;margin-bottom:8px">Notes restored from a previous session.</div>
+                  </sc-if>
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                    <span style="font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-right:2px">Show</span>
+                    <button onClick="{{ setLineFilterAll }}" style="{{ lineFilterAllStyle }}">All</button>
+                    <button onClick="{{ setLineFilterFlagged }}" style="{{ lineFilterFlaggedStyle }}">Flagged</button>
+                    <button onClick="{{ setLineFilterDisputed }}" style="{{ lineFilterDisputedStyle }}">Disputed</button>
+                    <span style="flex:1"></span>
+                    <span style="font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3)">{{ linesSummary }}</span>
+                  </div>
+                  <sc-for list="{{ g.lineRows }}" as="ln2" hint-placeholder-count="9">
+                    <div style="border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--surface-inset)">
+                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                        <span style="font:600 11.5px 'Open Sans',sans-serif;color:var(--ink);margin-right:4px">Line {{ ln2.n }} · pg {{ ln2.pg }}</span>
+                        <button data-id="{{ ln2.id }}" data-mark="ok" onClick="{{ setMark }}" style="{{ ln2.okStyle }}">OK</button>
+                        <button data-id="{{ ln2.id }}" data-mark="verify" onClick="{{ setMark }}" style="{{ ln2.verifyStyle }}">Verify</button>
+                        <button data-id="{{ ln2.id }}" data-mark="dispute" onClick="{{ setMark }}" style="{{ ln2.disputeStyle }}">Dispute</button>
+                        <span style="flex:1"></span>
+                        <button data-id="{{ ln2.id }}" onClick="{{ toggleNote }}" style="{{ ln2.noteBtnStyle }}">{{ ln2.noteBtnLabel }}</button>
+                      </div>
+                      <div style="font:400 11.5px 'IBM Plex Mono',monospace;color:var(--ink-2);margin-top:5px">{{ ln2.summary }}</div>
+                      <div style="font:400 11px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:1px">{{ ln2.desc }}</div>
+                      <sc-if value="{{ ln2.showNote }}" hint-placeholder-val="{{ false }}">
+                        <textarea data-id="{{ ln2.id }}" onBlur="{{ updateNoteText }}" defaultValue="{{ ln2.noteText }}" placeholder="Add a note about this line…" style="width:100%;margin-top:7px;min-height:52px;border:1px solid var(--border-strong);border-radius:3px;background:var(--field);color:var(--ink);font:400 12px 'Open Sans',sans-serif;padding:6px 8px;resize:vertical"></textarea>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+                </sc-if>
               </sc-if>
             </div>
           </sc-for>
@@ -713,12 +889,41 @@
           <button onClick="{{ closeOverlay }}" style="{{ iconBtn }}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
         </div>
         <div style="padding:18px 20px 4px">
-          <div style="font:400 13.5px 'Open Sans',sans-serif;color:var(--ink)">Export this claim (<span style="font-family:'IBM Plex Mono',monospace">#808226319</span>) as a PDF.</div>
+          <div style="font:400 13.5px 'Open Sans',sans-serif;color:var(--ink)">Export {{ exportManifestLine1 }} as {{ exportFmtLabel }}.</div>
+
+          <div style="margin-top:14px">
+            <label style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Scope</label>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button onClick="{{ setExportThis }}" style="{{ exportScopeThisStyle }}">This claim</button>
+              <button onClick="{{ setExportAll }}" style="{{ exportScopeAllStyle }}">All 40 claims in this file</button>
+            </div>
+          </div>
+
+          <div style="margin-top:14px">
+            <label style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Format</label>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button data-fmt="pdf" onClick="{{ setFmt }}" style="{{ fmtPdfStyle }}">PDF</button>
+              <button data-fmt="csv" onClick="{{ setFmt }}" style="{{ fmtCsvStyle }}">CSV</button>
+              <button data-fmt="xlsx" onClick="{{ setFmt }}" style="{{ fmtXlsxStyle }}">XLSX</button>
+              <button data-fmt="json" onClick="{{ setFmt }}" style="{{ fmtJsonStyle }}">JSON</button>
+            </div>
+          </div>
+
+          <sc-if value="{{ showDataFormatExtras }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:14px">
+            <label style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Column profile</label>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button onClick="{{ setProfileClaim }}" style="{{ profileClaimStyle }}">Claim data only</button>
+              <button onClick="{{ setProfilePatient }}" style="{{ profilePatientStyle }}">Include patient identifiers</button>
+            </div>
+            <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:5px">{{ exportProfileNote }}</div>
+          </div>
+          </sc-if>
 
           <div style="margin-top:16px">
             <label style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Destination</label>
             <div style="display:flex;gap:8px;margin-top:6px">
-              <div style="flex:1;height:34px;border:1px solid var(--border-strong);border-radius:4px;background:var(--field);display:flex;align-items:center;padding:0 10px;font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink);overflow:hidden;white-space:nowrap">D:\ClaimExports\claim_808226319_cms1500_2026-07-27.pdf</div>
+              <div style="flex:1;height:34px;border:1px solid var(--border-strong);border-radius:4px;background:var(--field);display:flex;align-items:center;padding:0 10px;font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink);overflow:hidden;white-space:nowrap">{{ donePath }}</div>
               <button style="{{ btnGhost }}">Browse…</button>
             </div>
             <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid var(--warn-border);background:var(--warn-bg);border-radius:4px">
@@ -730,12 +935,12 @@
           <div style="margin-top:16px;border:1px solid var(--border);border-radius:4px;background:var(--surface-inset);padding:11px 13px">
             <div style="font:600 11px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px">What will be written</div>
             <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font:400 12.5px 'Open Sans',sans-serif;color:var(--ink-2)">
-              <span style="color:var(--ink-3)">Form</span><span>CMS-1500 (professional)</span>
-              <span style="color:var(--ink-3)">Service lines</span><span style="font-family:'IBM Plex Mono',monospace">9</span>
+              <span style="color:var(--ink-3)">Claims</span><span>{{ exportManifestLine1 }}</span>
+              <span style="color:var(--ink-3)">Format</span><span>{{ exportManifestFormat }}</span>
               <span style="color:var(--ink-3)">Sheet size</span><span>US Letter, 8.5 × 11 in — the PDF is always letter, whatever the on-screen sheet</span>
               <span style="color:var(--ink-3)">Pages</span><span style="font-family:'IBM Plex Mono',monospace">{{ exportPages }}</span>
-              <span style="color:var(--ink-3)">File name</span><span style="font-family:'IBM Plex Mono',monospace">claim_808226319_cms1500_2026-07-27.pdf</span>
-              <span style="color:var(--ink-3)">Warnings carried</span><span>2 data warnings are printed in the page footer</span>
+              <span style="color:var(--ink-3)">File</span><span style="font-family:'IBM Plex Mono',monospace">{{ donePath }}</span>
+              <span style="color:var(--ink-3)">Warnings carried</span><span>{{ warnHeaderText }}, printed in the page footer / warnings page</span>
             </div>
           </div>
 
@@ -746,7 +951,7 @@
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px 18px">
           <button onClick="{{ closeOverlay }}" style="{{ btnGhost }}">Cancel</button>
-          <button onClick="{{ goDone }}" style="{{ btnPrimary }}">Export</button>
+          <button onClick="{{ doExport }}" style="{{ btnPrimary }}">Export</button>
         </div>
       </div>
     </div>
@@ -764,9 +969,17 @@
           <div style="display:flex;gap:11px;align-items:flex-start">
             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:2px"><path d="M4 12.5l5 5 11-11"></path></svg>
             <div style="flex:1">
-              <div style="font:600 14.5px 'Open Sans',sans-serif;color:var(--ink)">{{ exportDoneLabel }}</div>
-              <div style="font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink-2);margin-top:6px;line-height:1.5;word-break:break-all">D:\ClaimExports\claim_808226319_cms1500_2026-07-27.pdf</div>
-              <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:6px">184 KB · written in 0.4 s · unencrypted PHI on a BitLocker volume</div>
+              <div style="font:600 14.5px 'Open Sans',sans-serif;color:var(--ink)">{{ doneTitle }}</div>
+              <div style="font:400 12.5px 'IBM Plex Mono',monospace;color:var(--ink-2);margin-top:6px;line-height:1.5;word-break:break-all">{{ donePath }}</div>
+              <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:6px">Written in 0.4 s · unencrypted PHI on a BitLocker volume</div>
+              <sc-if value="{{ doneIsBatch }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:12px;border:1px solid var(--warn-border);background:var(--warn-bg);border-radius:4px;padding:9px 11px">
+                <div style="font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);margin-bottom:6px">Could not be rendered</div>
+                <sc-for list="{{ batchFailRows }}" as="bf" hint-placeholder-count="2">
+                  <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-2);margin-bottom:3px"><span style="font-family:'IBM Plex Mono',monospace;color:var(--ink)">{{ bf.id }}</span> — {{ bf.reason }}</div>
+                </sc-for>
+              </div>
+              </sc-if>
             </div>
           </div>
           <div style="height:5px;border-radius:3px;background:var(--border);margin-top:16px;overflow:hidden"><div style="height:100%;width:100%;background:var(--accent)"></div></div>
@@ -806,6 +1019,49 @@
     </div>
     </sc-if>
 
+    <sc-if value="{{ screenIsBatchProgress }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(12,12,11,.42);display:flex;align-items:center;justify-content:center">
+      <div style="width:520px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 22px 60px rgba(0,0,0,.42);overflow:hidden">
+        <div style="height:34px;background:var(--titlebar);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px">
+          <span style="font:600 12.5px 'Open Sans',sans-serif;color:var(--ink)">Exporting claims…</span>
+        </div>
+        <div style="padding:22px 22px 8px">
+          <div style="font:400 13px 'Open Sans',sans-serif;color:var(--ink)">{{ batchClaimLabel }}</div>
+          <div style="height:8px;border-radius:4px;background:var(--surface-inset);margin-top:12px;overflow:hidden"><div style="height:100%;width:58%;background:var(--accent)"></div></div>
+          <div style="font:400 12px 'Open Sans',sans-serif;color:var(--ink-3);margin-top:8px">Also shown in the taskbar progress indicator. Cancelling stops promptly — no partial files are left behind.</div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px 18px">
+          <button onClick="{{ cancelBatch }}" style="{{ btnGhost }}">Cancel</button>
+          <button onClick="{{ goDone }}" style="{{ btnPrimary }}">View result</button>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showPalette }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(12,12,11,.42);display:flex;align-items:flex-start;justify-content:center;padding-top:120px">
+      <div style="width:560px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:0 22px 60px rgba(0,0,0,.42);overflow:hidden">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+          <input value="{{ paletteQuery }}" onChange="{{ updatePaletteQuery }}" placeholder="Type a command… (Ctrl+K)" style="width:100%;border:0;outline:0;background:transparent;font:400 14px 'Open Sans',sans-serif;color:var(--ink)">
+        </div>
+        <div style="max-height:380px;overflow:auto;padding:6px 0">
+          <div style="padding:6px 14px 2px;font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">File</div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Open a claim file…</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">Ctrl+O</span></div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px;opacity:.5"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Export…<span style="margin-left:8px;font:400 11px 'Open Sans',sans-serif;color:var(--clay)">— no file open</span></span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">Ctrl+E</span></div>
+          <div style="padding:10px 14px 2px;font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">View</div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Toggle inspector</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">Ctrl+D</span></div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">UI scale — cycle 100/125/150/175%</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">—</span></div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Toggle high contrast</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">—</span></div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Light / dark</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">Ctrl+Shift+L</span></div>
+          <div style="padding:10px 14px 2px;font:600 10.5px 'Open Sans',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)">Help</div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Keyboard shortcuts</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">F1</span></div>
+          <div style="display:flex;align-items:center;padding:7px 14px;gap:10px"><span style="flex:1;font:400 13px 'Open Sans',sans-serif;color:var(--ink)">Audit log</span><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">—</span></div>
+        </div>
+        <div style="padding:8px 14px;border-top:1px solid var(--border);font:400 11.5px 'Open Sans',sans-serif;color:var(--ink-3)">Esc closes. Every action here is also on a menu or toolbar — the palette teaches the keyboard, it doesn't replace it.</div>
+      </div>
+    </div>
+    </sc-if>
+
   </div>
 </div>
 
@@ -814,7 +1070,11 @@
 class Component extends DCLogic {
   state = {
     screen: 'cms1500', theme: 'light', page: 1, zoom: 1, inspectorOpen: true,
-    open: { prov: true, warn: true, patient: true, dx: false, lines: false, prov2: false, recon: true }
+    open: { prov: true, warn: true, patient: true, dx: false, lines: false, prov2: false, recon: true },
+    search: '', lineFilter: 'all', warnExpanded: null,
+    notes: { 'cms-5': { mark: 'verify', note: 'Called the billing office 7/20 — confirmed the EKG is not a duplicate of the ECG from the prior visit.' } },
+    noteOpen: {}, exportScope: 'this', exportFormat: 'pdf', exportProfile: 'claim',
+    uiScale: 100, highContrast: false, paletteQuery: '', purgeConfirm: false
   };
 
   themeVars() {
@@ -882,10 +1142,11 @@ class Component extends DCLogic {
       v['--accent-ink'] = isDark ? '#0c1a13' : '#ffffff';
     }
     const dense = (this.props.density ?? 'comfortable') === 'compact';
+    const uiScaleNum = (s.uiScale || 100) / 100;
     const rootStyle = Object.entries(v).map(([k, x]) => k + ':' + x).join(';') +
       ';min-height:100vh;box-sizing:border-box;background:var(--bg-page);padding:26px 26px 60px;display:flex;flex-direction:column;align-items:center;overflow:auto;font-family:\'Open Sans\',sans-serif';
 
-    const overlay = ['export', 'done', 'keys'].includes(s.screen);
+    const overlay = ['export', 'done', 'keys', 'batchprogress', 'palette'].includes(s.screen);
     const isForm = ['cms1500', 'cms1500p2', 'ub04', 'dental'].includes(s.screen) || overlay;
     const isCms = s.screen === 'cms1500' || s.screen === 'cms1500p2' || overlay;
     const isUb = s.screen === 'ub04';
@@ -900,10 +1161,14 @@ class Component extends DCLogic {
       { id: 'ub04', label: 'UB-04' },
       { id: 'dental', label: 'ADA dental' },
       { id: 'export', label: 'Export dialog' },
+      { id: 'batchprogress', label: 'Batch export progress' },
       { id: 'done', label: 'Export done' },
       { id: 'unsupported', label: 'Unsupported form' },
       { id: 'error', label: 'Parse error' },
-      { id: 'keys', label: 'Shortcuts' }
+      { id: 'keys', label: 'Shortcuts' },
+      { id: 'annex', label: 'Appended pages' },
+      { id: 'audit', label: 'Audit log' },
+      { id: 'palette', label: 'Command palette' }
     ];
     const tabBase = 'padding:6px 11px;border-radius:4px;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border:1px solid;line-height:1.2;';
     const screens = screenDefs.map(d => ({
@@ -924,6 +1189,22 @@ class Component extends DCLogic {
       ...l,
       rowStyle, shadeRow, mainRow,
       ptrStyle: gridVal + (l.bad ? ';text-decoration:underline;text-decoration-style:wavy;text-underline-offset:2px' : '')
+    }));
+
+    const warnItems = [
+      { sev: 'error', text: 'Diagnosis pointer E on line 8 has no matching diagnosis (A–D populated)', line: 8 },
+      { sev: 'error', text: "Line 8's rendering NPI (1861479203) doesn't match the billing NPI on file for this payer ID", line: 8 },
+      { sev: 'warning', text: "Line charges ($760.66) don't match the claim total ($760.65) — delta +$0.01", line: null },
+      { sev: 'warning', text: 'Line 9 is billed at $0.01 — unusually low for a Category II quality-measure code', line: 9 },
+      { sev: 'warning', text: 'Box 19 carries a narrative but Box 14 (date of current illness) is blank', line: null }
+    ];
+    const errorCount = warnItems.filter(w => w.sev === 'error').length;
+    const warnAutoCollapse = warnItems.length > 3;
+    const warnExpanded = s.warnExpanded === null ? !warnAutoCollapse : s.warnExpanded;
+    const warnRows = warnItems.slice().sort((a, b) => (a.sev === 'error' ? 0 : 1) - (b.sev === 'error' ? 0 : 1)).map(w => ({
+      text: w.text, line: w.line,
+      sevWord: w.sev === 'error' ? 'Error' : 'Warning',
+      sevStyle: 'font:700 11px \'Open Sans\',sans-serif;text-transform:uppercase;letter-spacing:.03em;color:' + (w.sev === 'error' ? 'var(--clay)' : 'var(--gold)')
     }));
 
     const diagnoses = [
@@ -964,10 +1245,9 @@ class Component extends DCLogic {
         { k: 'Claim ID', v: isCms ? '808226319' : (isUb ? 'MMC-778213' : 'CVD-2026-0714'), mono: true },
         { k: 'Opened', v: '27 Jul 2026, 09:14', mono: true }
       ] },
-      { id: 'warn', label: 'Data warnings', tag: '2', tagWarn: true, rows: [
-        { k: 'Line total', v: 'Σ charges $760.66 vs claim total $760.65 — delta +$0.01', warn: true },
-        { k: 'Line 8 · pg 2', v: 'Diagnosis pointer E has no matching diagnosis (A–D populated)', warn: true }
-      ] },
+      { id: 'warn', label: 'Data warnings', tag: String(warnItems.length), tagWarn: true, rows: warnItems.map(w => ({
+        k: (w.sev === 'error' ? 'Error' : 'Warning') + (w.line ? ' · line ' + w.line : ''), v: w.text, warn: w.sev !== 'error', err: w.sev === 'error'
+      })) },
       { id: 'patient', label: 'Patient', tag: 'Box 2', rows: [
         { k: 'Name', v: 'Yoder, Miriam S' },
         { k: 'Date of birth', v: '1979-03-14', mono: true },
@@ -1131,19 +1411,67 @@ class Component extends DCLogic {
       }))
     );
 
+    const norm = x => String(x).toLowerCase().replace(/[$,\s()·—-]/g, '');
+    const query = norm(s.search || '');
+    const searching = query.length > 0;
+    const markBtnStyle = (active, tone) => 'height:22px;padding:0 8px;border-radius:3px;font:600 10px \'Open Sans\',sans-serif;letter-spacing:.02em;cursor:pointer;border:1px solid;' +
+      (active ? 'background:' + tone + ';border-color:' + tone + ';color:#fff' : 'background:var(--surface);border-color:var(--border-strong);color:var(--ink-2)');
+    const lineFilterFn = id => {
+      const n = s.notes[id];
+      if (s.lineFilter === 'disputed') return !!(n && n.mark === 'dispute');
+      if (s.lineFilter === 'flagged') return !!(n && (n.mark === 'verify' || n.mark === 'dispute' || (n.note && n.note.trim())));
+      return true;
+    };
+    const posDecode = { '11': 'Office', '21': 'Inpatient hospital', '22': 'Outpatient hospital', '23': 'Emergency room' };
+    const cmsLineRowsRaw = isCms ? all.map(l => {
+      const id = 'cms-' + l.n;
+      const note = s.notes[id] || { mark: null, note: '' };
+      const posText = '  ·  POS ' + l.pos + (posDecode[l.pos] ? ' — ' + posDecode[l.pos] : '');
+      const summary = l.dates.slice(0, 8) + '  ' + l.proc + (l.mods !== '—' ? '-' + l.mods : '') + '  ptr ' + l.ptr + '  ×' + l.units + '  $' + l.charge + posText;
+      return {
+        id, n: l.n, pg: l.n > 6 ? 2 : 1, summary, desc: l.desc,
+        okStyle: markBtnStyle(note.mark === 'ok', 'var(--accent)'),
+        verifyStyle: markBtnStyle(note.mark === 'verify', 'var(--gold)'),
+        disputeStyle: markBtnStyle(note.mark === 'dispute', 'var(--clay)'),
+        noteBtnStyle: 'height:22px;padding:0 8px;border-radius:3px;font:600 10px \'Open Sans\',sans-serif;cursor:pointer;border:1px solid var(--border-strong);' +
+          (note.note ? 'background:var(--accent-tint);color:var(--ink)' : 'background:var(--surface);color:var(--ink-2)'),
+        noteBtnLabel: note.note ? 'Note ✓' : 'Add note',
+        showNote: !!s.noteOpen[id], noteText: note.note || ''
+      };
+    }) : [];
+    const cmsLineRowsAll = cmsLineRowsRaw.filter(r => lineFilterFn(r.id) && (!searching || norm(r.summary + ' ' + r.desc).includes(query)));
+    const flaggedCount = cmsLineRowsRaw.filter(r => { const n = s.notes[r.id]; return n && (n.mark === 'verify' || n.mark === 'dispute' || (n.note && n.note.trim())); }).length;
+    const disputedCount = cmsLineRowsRaw.filter(r => { const n = s.notes[r.id]; return n && n.mark === 'dispute'; }).length;
+    const hasRestoredNote = isCms && !!(s.notes['cms-5'] && s.notes['cms-5'].note);
+
     const headBase = 'width:100%;display:flex;align-items:center;gap:8px;padding:' + (dense ? '6px 12px' : '9px 12px') + ';background:transparent;border:0;cursor:pointer;text-align:left;';
-    const groups = groupDefs.map(g => ({
-      id: g.id, label: g.label, tag: g.tag, caret: s.open[g.id] ? '▾' : '▸',
-      open: !!s.open[g.id], headStyle: headBase,
-      tagStyle: 'font:500 10.5px \'IBM Plex Mono\',monospace;padding:1px 6px;border-radius:3px;white-space:nowrap;' +
-        (g.tagWarn ? 'background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--gold)' : 'background:var(--surface-inset);border:1px solid var(--border);color:var(--ink-3)'),
-      rows: g.rows.map(r => ({
-        k: r.k,
-        v: r.v,
-        vStyle: 'flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line;line-height:1.45;font:' + (r.mono ? '400 11.5px \'IBM Plex Mono\',monospace' : '400 12px \'Open Sans\',sans-serif') +
-          ';color:' + (r.warn ? 'var(--gold)' : r.dim ? 'var(--ink-3)' : 'var(--ink)')
-      }))
-    }));
+    let totalMatches = 0, matchGroupCount = 0;
+    const groups = groupDefs.map(g => {
+      const isLinesGroup = isCms && g.id === 'lines';
+      let rows = g.rows;
+      if (searching && !isLinesGroup) {
+        rows = g.rows.filter(r => norm(r.k).includes(query) || norm(r.v).includes(query));
+        if (rows.length) { totalMatches += rows.length; matchGroupCount++; }
+      }
+      const groupHasMatch = !searching ? true : (isLinesGroup ? cmsLineRowsAll.length > 0 : rows.length > 0);
+      return {
+        id: g.id, label: g.label, tag: g.tag, caret: (searching || s.open[g.id]) ? '▾' : '▸',
+        open: searching ? groupHasMatch : !!s.open[g.id], headStyle: headBase, groupHasMatch,
+        isLines: isLinesGroup, isGeneric: !isLinesGroup,
+        tagStyle: 'font:500 10.5px \'IBM Plex Mono\',monospace;padding:1px 6px;border-radius:3px;white-space:nowrap;' +
+          (g.tagWarn ? 'background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--gold)' : 'background:var(--surface-inset);border:1px solid var(--border);color:var(--ink-3)'),
+        rows: rows.map(r => ({
+          k: r.k,
+          v: r.v,
+          vStyle: 'flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line;line-height:1.45;font:' + (r.mono ? '400 11.5px \'IBM Plex Mono\',monospace' : '400 12px \'Open Sans\',sans-serif') +
+            ';color:' + (r.err ? 'var(--clay)' : r.warn ? 'var(--gold)' : r.dim ? 'var(--ink-3)' : 'var(--ink)')
+        })),
+        lineRows: isLinesGroup ? cmsLineRowsAll : []
+      };
+    }).filter(g => g.groupHasMatch);
+    const searchSummary = !searching ? '' : (totalMatches
+      ? totalMatches + ' match' + (totalMatches === 1 ? '' : 'es') + ' in ' + matchGroupCount + ' group' + (matchGroupCount === 1 ? '' : 's')
+      : 'No matches for “' + s.search + '” in this claim' + ((isUb || isDental) ? ' — the other 837 claim in this file wasn’t searched.' : '.'));
 
     const keyGroups = [
       { title: 'File', items: [
@@ -1181,6 +1509,42 @@ class Component extends DCLogic {
     const btnBase = 'display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:4px;font:600 12.5px \'Open Sans\',sans-serif;cursor:pointer;border:1px solid;';
     const pageCount = onePage ? 1 : 2;
 
+    const fmtLabels = { pdf: 'PDF', csv: 'CSV', xlsx: 'XLSX', json: 'JSON' };
+    const exportFmtLabel = fmtLabels[s.exportFormat] || 'PDF';
+    const batchOk = 38, batchTotal = 40, batchFail = 2;
+    const batchFailRows = [
+      { id: 'MMC-778391', reason: 'Billing provider NPI failed the checksum — rendered as a blank facsimile with the raw fields listed' },
+      { id: 'CVD-2026-0722', reason: 'Total fee ($612.00) differs from summed procedure fees by more than the 5% tolerance' }
+    ];
+    const doneIsBatch = s.exportScope === 'all';
+    const doneTitle = doneIsBatch
+      ? 'Exported ' + batchOk + ' of ' + batchTotal + ' claims · ' + batchFail + ' could not be rendered'
+      : (onePage ? 'Exported 1 claim · 1 page (' + exportFmtLabel + ')' : 'Exported 1 claim · 2 pages (' + exportFmtLabel + ')');
+    const donePath = doneIsBatch ? 'D:\\ClaimExports\\' : ('D:\\ClaimExports\\claim_808226319_cms1500_2026-07-27.' + s.exportFormat);
+    const annexFields = [
+      ['Box 2', 'Patient name', 'Yoder, Miriam S'], ['Box 3', 'Patient DOB / sex', '1979-03-14 / F'],
+      ['Box 21', 'Diagnoses A–D', 'E11.9, I10, E78.5, M25.561'], ['Box 26', 'Account no.', 'MR-2026-01188'],
+      ['Box 28', 'Total charge', '$760.65'], ['Box 33', 'Billing provider', 'Meadow Run Family Practice · NPI 1730258417']
+    ].map(([box, label, val]) => ({ box, label, val }));
+    const rollup = [
+      { rev: '0450', desc: 'Emergency room — level 4', units: 1, charge: '1,842.00' },
+      { rev: '0762', desc: 'Observation room', units: 6, charge: '1,236.00' },
+      { rev: '0300', desc: 'Laboratory — chemistry', units: 1, charge: '96.00' },
+      { rev: '0301', desc: 'Laboratory — troponin I', units: 3, charge: '318.00' },
+      { rev: '0320', desc: 'Radiology — dx chest 2v', units: 1, charge: '284.00' },
+      { rev: '0730', desc: 'EKG / ECG — 12 lead', units: 2, charge: '212.00' },
+      { rev: '0250', desc: 'Pharmacy — general', units: 1, charge: '188.00' },
+      { rev: '0270', desc: 'Medical/surgical supplies', units: 1, charge: '142.00' }
+    ];
+    const auditRows = [
+      { ts: '2026-07-27 09:14', user: 'M. Herr', action: 'Opened claim', src: '808226319.json', dest: '—', ver: '1.4.2' },
+      { ts: '2026-07-27 09:16', user: 'M. Herr', action: 'Exported PDF', src: '808226319.json', dest: 'D:\\ClaimExports\\claim_808226319…pdf', ver: '1.4.2' },
+      { ts: '2026-07-26 15:02', user: 'M. Herr', action: 'Opened 837 batch', src: 'synthetic_837_batch.dat', dest: '—', ver: '1.4.2' },
+      { ts: '2026-07-26 15:11', user: 'M. Herr', action: 'Batch export (CSV)', src: 'synthetic_837_batch.dat', dest: 'D:\\ClaimExports\\batch_2026-07-26\\', ver: '1.4.2' },
+      { ts: '2026-07-22 11:40', user: 'M. Herr', action: 'Purged saved notes', src: '—', dest: '—', ver: '1.4.1' },
+      { ts: '2026-07-21 08:03', user: 'M. Herr', action: 'Opened claim', src: '808219044.json', dest: '—', ver: '1.4.1' }
+    ];
+
     return {
       rootStyle, screens, groups, keyGroups, diagnoses,
       rawLabel: isUb || isDental ? 'Raw 837 segments' : 'Raw JSON fields',
@@ -1201,6 +1565,18 @@ class Component extends DCLogic {
       exportOn: hasFile && s.screen !== 'unsupported',
       exportOff: !hasFile || s.screen === 'unsupported',
       showWarnBanner: isCms,
+      warnHeaderText: errorCount
+        ? (warnItems.length + ' data warning' + (warnItems.length === 1 ? '' : 's') + ' — ' + errorCount + ' error' + (errorCount === 1 ? '' : 's'))
+        : (warnItems.length + ' data warning' + (warnItems.length === 1 ? '' : 's')),
+      warnExpanded, warnCollapsible: warnAutoCollapse, warnRows,
+      warnToggleLabel: warnExpanded ? 'Hide list' : 'Show all',
+      toggleWarnBanner: () => this.setState(st => ({ warnExpanded: !(st.warnExpanded === null ? !warnAutoCollapse : st.warnExpanded) })),
+      jumpToWarnLine: e => {
+        const ln = e.currentTarget.getAttribute('data-line');
+        if (!ln) { this.setState(st => ({ inspectorOpen: true, open: { ...st.open, warn: true, recon: true } })); return; }
+        const n = parseInt(ln, 10);
+        this.setState(st => ({ screen: 'cms1500', page: n > 6 ? 2 : 1, inspectorOpen: true, open: { ...st.open, lines: true } }));
+      },
       multiPage: isCms && !onePage,
       paginateStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
       onePageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
@@ -1220,7 +1596,7 @@ class Component extends DCLogic {
       exportPages: onePage ? '1  (condensed grid)' : '2',
       exportDoneLabel: onePage ? 'Exported 1 claim · 1 page' : 'Exported 1 claim · 2 pages',
       zoomLabel: Math.round(s.zoom * 100) + '%',
-      formTransform: 'scale(' + s.zoom + ')',
+      formTransform: 'scale(' + (s.zoom / uiScaleNum) + ')',
       formFooter: isCms
         ? (onePage
           ? 'Service lines: 9 of 9 — grid condensed to fit one letter page · Page 1 of 1'
@@ -1266,6 +1642,74 @@ class Component extends DCLogic {
       cmsVal: 'font:500 9.5px \'IBM Plex Mono\',monospace;color:#000;line-height:1.35;margin-top:2px',
       cmsValDim: 'font:500 9.5px \'IBM Plex Mono\',monospace;color:#777;line-height:1.35;margin-top:2px',
       cmsGridVal: gridVal,
+      screenIsBatchProgress: s.screen === 'batchprogress',
+      exportFmtLabel,
+      exportManifestFormat: ({ pdf: 'PDF facsimile', csv: 'CSV — one row per service line', xlsx: 'XLSX — one row per service line', json: 'JSON — structured claim + line data' })[s.exportFormat] || 'PDF facsimile',
+      showDataFormatExtras: s.exportFormat !== 'pdf',
+      exportScope: s.exportScope,
+      setExportThis: () => this.setState({ exportScope: 'this' }),
+      setExportAll: () => this.setState({ exportScope: 'all' }),
+      exportScopeThisStyle: markBtnStyle(s.exportScope === 'this', 'var(--accent)'),
+      exportScopeAllStyle: markBtnStyle(s.exportScope === 'all', 'var(--accent)'),
+      exportFormat: s.exportFormat,
+      setFmt: e => this.setState({ exportFormat: e.currentTarget.dataset.fmt }),
+      fmtPdfStyle: markBtnStyle(s.exportFormat === 'pdf', 'var(--accent)'),
+      fmtCsvStyle: markBtnStyle(s.exportFormat === 'csv', 'var(--accent)'),
+      fmtXlsxStyle: markBtnStyle(s.exportFormat === 'xlsx', 'var(--accent)'),
+      fmtJsonStyle: markBtnStyle(s.exportFormat === 'json', 'var(--accent)'),
+      exportProfile: s.exportProfile,
+      setProfileClaim: () => this.setState({ exportProfile: 'claim' }),
+      setProfilePatient: () => this.setState({ exportProfile: 'patient' }),
+      profileClaimStyle: markBtnStyle(s.exportProfile === 'claim', 'var(--accent)'),
+      profilePatientStyle: markBtnStyle(s.exportProfile === 'patient', 'var(--clay)'),
+      exportProfileNote: s.exportProfile === 'patient' ? 'Adds patient name, date of birth and address to the file.' : "Codes, amounts, dates, providers and identifiers that aren't the patient.",
+      exportManifestLine1: s.exportScope === 'all' ? '40 claims in synthetic_837_batch.dat' : '1 claim (#808226319)',
+      doExport: () => this.setState({ screen: s.exportScope === 'all' ? 'batchprogress' : 'done' }),
+      cancelBatch: () => this.setState({ screen: 'cms1500' }),
+      batchClaimLabel: 'Exporting 23 of 40 — claim MMC-778391',
+      doneIsBatch, doneTitle, donePath, batchFailRows,
+      isAnnex: s.screen === 'annex', isAudit: s.screen === 'audit', showPalette: s.screen === 'palette',
+      annexFields, rollup, auditRows,
+      searchQuery: s.search, searchSummary,
+      updateSearch: e => this.setState({ search: e.target.value }),
+      clearSearch: () => this.setState({ search: '' }),
+      setLineFilterAll: () => this.setState({ lineFilter: 'all' }),
+      setLineFilterFlagged: () => this.setState({ lineFilter: 'flagged' }),
+      setLineFilterDisputed: () => this.setState({ lineFilter: 'disputed' }),
+      lineFilterAllStyle: markBtnStyle(s.lineFilter === 'all', 'var(--ink-2)'),
+      lineFilterFlaggedStyle: markBtnStyle(s.lineFilter === 'flagged', 'var(--gold)'),
+      lineFilterDisputedStyle: markBtnStyle(s.lineFilter === 'disputed', 'var(--clay)'),
+      linesSummary: flaggedCount + ' of ' + (isCms ? all.length : 0) + ' lines flagged · ' + disputedCount + ' disputed',
+      hasRestoredNote,
+      setMark: e => {
+        const id = e.currentTarget.dataset.id, mark = e.currentTarget.dataset.mark;
+        this.setState(st => {
+          const cur = st.notes[id] || { mark: null, note: '' };
+          return { notes: { ...st.notes, [id]: { ...cur, mark: cur.mark === mark ? null : mark } } };
+        });
+      },
+      toggleNote: e => {
+        const id = e.currentTarget.dataset.id;
+        this.setState(st => ({ noteOpen: { ...st.noteOpen, [id]: !st.noteOpen[id] } }));
+      },
+      updateNoteText: e => {
+        const id = e.currentTarget.dataset.id, val = e.target.value;
+        this.setState(st => { const cur = st.notes[id] || { mark: null, note: '' }; return { notes: { ...st.notes, [id]: { ...cur, note: val } } }; });
+      },
+      uiScaleLabel: s.uiScale + '%',
+      cycleUiScale: () => this.setState(st => { const seq = [100, 125, 150, 175]; const i = seq.indexOf(st.uiScale); return { uiScale: seq[(i + 1) % seq.length] }; }),
+      highContrast: s.highContrast,
+      toggleHighContrast: () => this.setState(st => ({ highContrast: !st.highContrast })),
+      highContrastStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (s.highContrast ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      sheetFilter: s.highContrast ? 'filter:contrast(1.35) saturate(0) brightness(.94);' : '',
+      windowStyle: 'width:1440px;height:980px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.28);zoom:' + uiScaleNum + ';',
+      paletteQuery: s.paletteQuery,
+      updatePaletteQuery: e => this.setState({ paletteQuery: e.target.value }),
+      openPalette: () => this.setState({ screen: 'palette' }),
+      purgeConfirm: s.purgeConfirm,
+      openPurgeConfirm: () => this.setState({ purgeConfirm: true }),
+      cancelPurge: () => this.setState({ purgeConfirm: false }),
+      confirmPurge: () => this.setState({ purgeConfirm: false, notes: {} }),
       pick: e => {
         const id = e.currentTarget.dataset.id;
         this.setState(st => ({ screen: id, page: id === 'cms1500p2' ? 2 : 1, zoom: id === 'cms1500p2' ? 0.72 : 1, onePage: false, batchIdx: st.batchIdx ?? 0 }));
