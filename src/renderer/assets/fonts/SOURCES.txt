@@ -1,0 +1,74 @@
+Fonts staged for Build 1's font swap (TABS §3d). Do NOT wire these into
+style.css from Build 0 — this file only records what's here and where it
+came from, per docs/BUILD_QUEUE.md Build 0 pre-flight.
+
+Fetched via `curl -L` from the Google Fonts GitHub mirror (OFL-licensed
+directories), pinned to the exact commit that last touched each font's
+directory at fetch time. Re-fetch by substituting the commit SHA into:
+  https://raw.githubusercontent.com/google/fonts/<SHA>/ofl/<dir>/<file>
+
+All three families are shipped by Google Fonts as VARIABLE fonts (no static
+per-weight TTFs exist in the upstream repo for these three), so one file per
+style covers the whole weight range used by src/renderer/style.css's
+--font-serif / --font-sans / --font-mono usages (checked via `grep -n
+"font:" src/renderer/style.css` against every var(--font-*) call site).
+
+--- Source Serif 4 ------------------------------------------------------
+Directory:  ofl/sourceserif4
+Commit:     08dc85da6bca7ae308a6f1d38d0b137465646071 (2026-04-24)
+Files:
+  source-serif-4/SourceSerif4-VF.ttf         <- SourceSerif4[opsz,wght].ttf
+                                                 variable axis wght covers
+                                                 400 (Regular) and 600
+                                                 (SemiBold) — both weights
+                                                 style.css uses for --font-serif.
+  source-serif-4/SourceSerif4-Italic-VF.ttf  <- SourceSerif4-Italic[opsz,wght].ttf
+                                                 covers italic 400, used at
+                                                 style.css:711 (welcome-screen
+                                                 scripture callout).
+  source-serif-4/OFL.txt                     <- SIL Open Font License 1.1
+
+--- Open Sans -------------------------------------------------------------
+Directory:  ofl/opensans
+Commit:     8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5 (2026-03-12)
+Files:
+  open-sans/OpenSans-VF.ttf   <- OpenSans[wdth,wght].ttf
+                                  variable axis wght covers 400 (Regular),
+                                  500 (Medium) and 600 (SemiBold) — the full
+                                  set style.css uses for --font-sans.
+  open-sans/OFL.txt           <- SIL Open Font License 1.1
+No italic staged: style.css never pairs `italic` with var(--font-sans).
+
+--- IBM Plex Mono -----------------------------------------------------
+Directory:  ofl/ibmplexmono
+Commit:     0b58fb370093f9a9f4ff785d94405710b79de67c (2026-03-03)
+Files (static, named instances — this family DOES ship static TTFs upstream):
+  ibm-plex-mono/IBMPlexMono-Regular.ttf   400, used by --font-mono
+  ibm-plex-mono/IBMPlexMono-Medium.ttf    500, used by --font-mono
+  ibm-plex-mono/OFL.txt                   SIL Open Font License 1.1
+
+--- Verification performed at fetch time -----------------------------
+- Every .ttf above starts with the sfnt magic bytes 00 01 00 00 (checked via
+  `xxd -l 4 -p`), confirming a real TTF and not an HTML error page.
+- Every OFL.txt opens with "This Font Software is licensed under the SIL
+  Open Font License, Version 1.1."
+- File sizes: SourceSerif4-VF.ttf 1,209,508 B; SourceSerif4-Italic-VF.ttf
+  855,432 B; OpenSans-VF.ttf 532,636 B; IBMPlexMono-Regular.ttf 135,580 B;
+  IBMPlexMono-Medium.ttf 136,704 B.
+
+--- For Build 1 ------------------------------------------------------------
+Wiring a variable font into @font-face just needs a weight RANGE, e.g.:
+  @font-face {
+    font-family: 'Source Serif 4';
+    src: url('assets/fonts/source-serif-4/SourceSerif4-VF.ttf') format('truetype-variations');
+    font-weight: 200 900;
+  }
+  @font-face {
+    font-family: 'Source Serif 4';
+    font-style: italic;
+    src: url('assets/fonts/source-serif-4/SourceSerif4-Italic-VF.ttf') format('truetype-variations');
+    font-weight: 200 900;
+  }
+(same pattern for Open Sans; IBM Plex Mono's two files are already
+single-weight statics, so a plain font-weight: 400 / 500 @font-face each is
+enough — no range needed.)
