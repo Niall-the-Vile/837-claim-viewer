@@ -37,9 +37,9 @@ explicitly waived.
   + 4 E2E, all green at the time of the tag).
 
 **Outstanding — do before 22:00:**
-- [ ] Re-confirm `.gitignore` excludes `node_modules/`, `dist/`, `release/`, and
+- [DONE] Re-confirm `.gitignore` excludes `node_modules/`, `dist/`, `release/`, and
   `/test-results/` — don't assume it's still correct.
-- [ ] Split `package.json` scripts so `verify` stops packing a full exe on every
+- [DONE] Split `package.json` scripts so `verify` stops packing a full exe on every
   build:
   ```
   "build:app": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && vite build"
@@ -55,7 +55,7 @@ explicitly waived.
   619 MB of node_modules re-scanned by Defender each time) for one deliverable pack.
 - [x] Create `docs/BUILD_LOG.md` from the fixed per-build template — done as part of
   this edit; see that file.
-- [ ] Generate and commit the large fixtures via a new `scripts/make-large-fixture.mjs`
+- [DONE] Generate and commit the large fixtures via a new `scripts/make-large-fixture.mjs`
   (deterministic, generated from the existing all-fields fixtures with mutated ids/
   dates only): `test/fixtures/x12/837I-400-claims.dat`,
   `test/fixtures/x12/837I-long-lines.dat` (one UB-04 with 120 service lines),
@@ -64,17 +64,17 @@ explicitly waived.
   as required verification inputs. A feature specified at volume that was only
   exercised at N=2 (the largest fixture in the repo today is a 2-claim 837I) must be
   reported as **UNVERIFIED** in `BUILD_LOG.md` rather than generated ad hoc mid-build.
-- [ ] Drop **Source Serif 4**, **Open Sans**, **IBM Plex Mono** (.ttf/.woff2, SIL OFL)
+- [DONE] Drop **Source Serif 4**, **Open Sans**, **IBM Plex Mono** (.ttf/.woff2, SIL OFL)
   into `src/renderer/assets/fonts/` with their license files, before 22:00. This is
   strongly preferred over letting Build 1 fetch them at runtime — see the escape
   hatch at `TABS_BUILD_PLAN.md` §3d. If they genuinely can't be pre-staged, pin the
   exact download URLs and release tags in §3d instead of leaving the agent to search
   for them at 2am on an offline-postured machine.
-- [ ] XLSX writer: **not** pre-installed, and Build 4.3 ships CSV/JSON only tonight —
+- [DONE — deferred, CSV/JSON only] XLSX writer: **not** pre-installed, and Build 4.3 ships CSV/JSON only tonight —
   see Build 4.3 below. No action needed unless that decision changes before 22:00, in
   which case install the chosen package here and get `npm run verify` green with it
   BEFORE the session starts. Name the package in this section if you do.
-- [ ] Once the above is done, run `npm run verify` one more time. **Abort the whole
+- [DONE — GREEN at 104 vitest + 4 E2E, typecheck clean] Once the above is done, run `npm run verify` one more time. **Abort the whole
   run if it is not green at this point.**
 
 If Build 0 cannot be fully completed before 22:00, the git init + baseline commit +
