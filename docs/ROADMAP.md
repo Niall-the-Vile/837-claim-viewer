@@ -58,8 +58,22 @@ from the existing tokens or run a Claude Design pass for the strip before
 implementing.
 
 ### Risk / watch-outs
-- Memory: several rendered PDFs held at once — consider releasing a tab's
-  `pdfDoc` when it goes inactive and re-rendering on focus.
-- The render serialization added for Ctrl+wheel zoom is currently module-level;
-  it must become per-tab (or be keyed on the active canvas) so a background
-  tab's render can't clobber the foreground one.
+- Memory: pdf.js documents already leak today — there is no `.destroy()` call
+  anywhere in `src/renderer/main.ts`, so every claim step, re-open and
+  `closeFile` abandons the previous `PDFDocumentProxy`. Fix the root cause with
+  a single `setActivePdfDoc(tab, doc)` helper that awaits `oldDoc.destroy()`
+  before assigning, routed through on every assignment (claim step, file open,
+  close, tab switch) — the tabs case (releasing a background tab's `pdfDoc`) is
+  the same mechanism, not a separate problem.
+- **The canvas is shared and stays shared** — there is exactly one
+  `<canvas id="pdfCanvas">` and `renderPdfPageNow` hard-references it. The
+  render serialization (`renderRunning`/`renderDirty`/`renderDirtyFade`) stays
+  **module-level**, not per-tab — moving it per-tab would let two tabs' render
+  loops target the same canvas concurrently and reintroduce the pdf.js
+  "Cannot use the same canvas during multiple render() operations" error the
+  serialization was added to fix. Instead, stamp each render request with the
+  requesting tab id, have `renderPdfPageNow` re-check the active tab before
+  each step and bail if it's no longer active, and cancel any in-flight
+  `page.render()` from an outgoing tab via `RenderTask.cancel()` on tab switch.
+  (See `TABS_BUILD_PLAN.md` §2 watch-out (b) for the full mechanism and the
+  required E2E.)
