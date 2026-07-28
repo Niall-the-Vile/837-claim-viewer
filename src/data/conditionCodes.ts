@@ -52,9 +52,10 @@ export const CONDITION_CODES: Record<string, string> = {
   '55': 'SNF bed not available',
   '56': 'Medical appropriateness',
   '57': 'SNF readmission',
-  '60': 'Day outlier',
-  '61': 'Cost outlier',
-  '62': 'Payer code',
+  '60': 'Operating cost day outlier',
+  '61': 'Operating cost outlier',
+  // 62 (PIP bill, recorded by the payer's system and never submitted by a
+  // provider) is omitted rather than carrying a bare "Payer code" placeholder.
   '66': 'Provider does not wish cost outlier payment',
   '70': 'Self-administered anemia management drug',
   '71': 'Full care in unit',
@@ -67,5 +68,15 @@ export const CONDITION_CODES: Record<string, string> = {
   '78': 'New coverage not implemented by managed care plan',
   '79': 'CORF services provided off-site',
   '80': 'Home dialysis — nursing facility',
-  '81': 'Cost outlier — IPPS',
+  // 81–83 are the gestational-age attestation series for C-sections and
+  // inductions. Build 2 shipped 81 as "Cost outlier — IPPS", which both
+  // collided with 61 and put a reimbursement concept on a maternity claim.
+  '81': 'C-section or induction at less than 39 weeks gestation — medical necessity',
+  '82': 'C-section or induction at less than 39 weeks gestation — elective',
+  '83': 'C-section or induction at 39 weeks gestation or later',
+  '84': 'Dialysis for acute kidney injury',
+  '87': 'ESRD self-care retraining',
+  '90': 'Service provided under an Expanded Access approval',
+  '91': 'Service provided under an Emergency Use Authorization',
+  '92': 'Services provided under an Intensive Outpatient Program care plan',
 };

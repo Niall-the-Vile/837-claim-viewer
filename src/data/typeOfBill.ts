@@ -80,7 +80,7 @@ export const TOB_FREQUENCY: Record<string, string> = {
   '8': 'Void/cancel of prior claim',
   '9': 'Final claim for a home health PPS episode',
   'A': 'Admission/election notice (hospice)',
-  'B': 'Cancel of election notice (hospice/home health)',
+  'B': 'Termination/revocation notice (hospice/home health)',
   'C': 'Change of provider notice (hospice/home health)',
   'D': 'Void/cancel (hospice/home health)',
   'E': 'Change of ownership (hospice)',
@@ -89,7 +89,12 @@ export const TOB_FREQUENCY: Record<string, string> = {
   'H': 'CMS-initiated adjustment claim',
   'I': 'Intermediary-initiated adjustment claim',
   'J': 'Initiated adjustment claim — other',
-  'K': 'OSCAR/QIO adjustment claim',
-  'M': 'QIM adjustment claim',
-  'P': 'QIM demand bill claim',
+  // K/M/P complete the adjustment-source series above. Build 2 shipped an
+  // invented "QIM" acronym on both M and P; the frequency string is folded
+  // into `combined` (src/model/decode.ts) and rendered on the headline
+  // "Type of bill" row, so a bill type ending in M showed a category that
+  // does not exist instead of Medicare Secondary Payer.
+  'K': 'OIG-initiated adjustment claim',
+  'M': 'MSP-initiated adjustment claim',
+  'P': 'QIO adjustment claim',
 };

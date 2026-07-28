@@ -40,6 +40,7 @@ export const PLACE_OF_SERVICE: Record<string, string> = {
   '24': 'Ambulatory surgical center',
   '25': 'Birthing center',
   '26': 'Military treatment facility',
+  '27': 'Outreach site/street',
   '31': 'Skilled nursing facility',
   '32': 'Nursing facility',
   '33': 'Custodial care facility',

@@ -38,7 +38,7 @@ export const MODIFIERS: Record<string, string> = {
   '58': 'Staged or related procedure by the same physician during the postoperative period',
   '59': 'Distinct procedural service',
   '62': 'Two surgeons',
-  '63': 'Procedure performed on infants',
+  '63': 'Procedure performed on infants weighing less than 4 kg',
   '66': 'Surgical team',
   '73': 'Discontinued outpatient procedure, prior to anesthesia',
   '74': 'Discontinued outpatient procedure, after anesthesia',

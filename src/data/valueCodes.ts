@@ -1,14 +1,24 @@
 /**
  * UB-04 Value codes (FL39–41).
  *
- * Source: NUBC Value Code set, as republished by CMS in the Medicare Claims
- * Processing Manual (Pub 100-04, Ch. 25). Public, freely redistributable
- * short labels only. This is a curated subset of the commonly-seen numeric
- * codes; an un-listed code shows the raw value alone (never "Unknown").
+ * Source: NUBC Value Code set as republished by CMS and its Medicare
+ * Administrative Contractors (Noridian JE/JF Part A "Value Codes" reference
+ * table, mirroring the Medicare Claims Processing Manual, Pub 100-04,
+ * Ch. 25). Public, freely redistributable short labels only. This is a
+ * curated subset of the commonly-seen numeric codes; an un-listed code shows
+ * the raw value alone (never "Unknown").
  *
- * To refresh: check the current Medicare Claims Processing Manual chapter
- * 25 value-code table and add any new/changed codes below, keyed by the
- * plain 2-character code.
+ * Codes the payer populates internally and a provider never submits (62, 63
+ * and the reserved 73–75 range) are deliberately omitted rather than carrying
+ * a placeholder label. A wrong label here renders inline beside a real dollar
+ * figure on a claim used for negotiation, so "no decode" is strictly better
+ * than "a plausible decode".
+ *
+ * To refresh: re-derive a whole contiguous block from ONE aligned source in a
+ * single pass rather than patching individual keys — Build 2 shipped an
+ * off-by-one key run through 67/68 plus a duplicated label on 62, which
+ * key-by-key patching would have left half-corrected. test/decodeTables.test.ts
+ * pins the corrected codes and mechanically rejects duplicate labels.
  */
 export const VALUE_CODES: Record<string, string> = {
   '01': 'Most common semi-private room rate',
@@ -25,7 +35,7 @@ export const VALUE_CODES: Record<string, string> = {
   '14': 'No-fault insurance, including auto/other',
   '15': 'Workers’ compensation',
   '16': 'Public Health Service or other federal agency',
-  '17': 'Payer code',
+  '17': 'Operating outlier amount',
   '21': 'Catastrophic',
   '22': 'Surplus',
   '23': 'Recurring monthly income',
@@ -50,20 +60,23 @@ export const VALUE_CODES: Record<string, string> = {
   '52': 'Speech therapy visits',
   '53': 'Cardiac rehabilitation visits',
   '54': 'Newborn birth weight, in grams',
-  '55': 'Eligibility/EPSDT',
+  '55': 'Eligibility threshold for charity care',
   '56': 'Skilled nurse — home visit hours',
   '58': 'Arterial blood gas',
   '59': 'Oxygen saturation',
   '61': 'Location where service is furnished (HHA/hospice)',
-  '62': 'Veterans Affairs',
-  '63': 'Weekly number of hours of dialysis',
+  // 62 and 63 (home health visits, Part A and Part B) are populated by the
+  // payer internally, never submitted by a provider, and are omitted per the
+  // policy above. Build 2 shipped 62 carrying a verbatim duplicate of 42's
+  // "Veterans Affairs" label — two codes decoding to one string.
   '66': 'Medicaid spend-down amount',
-  '68': 'Peritoneal dialysis',
-  '69': 'County code',
+  '67': 'Peritoneal dialysis hours',
+  '68': 'EPO units administered or supplied',
+  '69': 'State charity care percent',
   '70': 'Replacement of prosthetic device',
   '71': 'Funding source of ESRD network',
-  '73': 'Decrease in hematocrit/hemoglobin',
-  '74': 'Days',
+  // 73–75 are reserved for internal third-party payer use and are omitted.
+  // Build 2 shipped 73 and a bare "Days" label on 74.
   '76': 'Provider spend-down',
   '77': 'New EPO (ESRD) number',
   '80': 'Covered days',

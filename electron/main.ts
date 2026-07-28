@@ -18,6 +18,7 @@ import {
   decodeDischargeStatus,
   decodeConditionCode,
   decodeOccurrenceCode,
+  decodeOccurrenceSpanCode,
   decodeValueCode,
   decodeTypeOfBill,
   type CodedValue,
@@ -544,7 +545,7 @@ function buildInstitutionalDetail(claim: Claim): InstitutionalDetailDto | null {
     patientStatus: decodeDischargeStatus(inst.patientStatus),
     conditionCodes: inst.conditionCodes.map((c) => decodeConditionCode(c)),
     occurrenceCodes: inst.occurrenceCodes.map((o) => ({ ...decodeOccurrenceCode(o.code), date: o.date })),
-    occurrenceSpans: inst.occurrenceSpans.map((s) => ({ ...decodeOccurrenceCode(s.code), from: s.from, through: s.through })),
+    occurrenceSpans: inst.occurrenceSpans.map((s) => ({ ...decodeOccurrenceSpanCode(s.code), from: s.from, through: s.through })),
     valueCodes: inst.valueCodes.map((v) => ({ ...decodeValueCode(v.code), amount: v.amount })),
   };
 }

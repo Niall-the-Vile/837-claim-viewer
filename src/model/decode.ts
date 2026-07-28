@@ -9,7 +9,7 @@ import {
 } from '../data/typeOfBill.js';
 import { DISCHARGE_STATUS } from '../data/dischargeStatus.js';
 import { CONDITION_CODES } from '../data/conditionCodes.js';
-import { OCCURRENCE_CODES } from '../data/occurrenceCodes.js';
+import { OCCURRENCE_CODES, OCCURRENCE_SPAN_CODES } from '../data/occurrenceCodes.js';
 import { VALUE_CODES } from '../data/valueCodes.js';
 import { MODIFIERS } from '../data/modifiers.js';
 
@@ -45,8 +45,18 @@ export function decodePlaceOfService(raw: string): CodedValue {
   return lookup(PLACE_OF_SERVICE, raw);
 }
 
+/**
+ * Revenue codes, FL42. REVENUE_CODES is keyed on the 4-character form
+ * ("0450"), but SV2-01 reaches us verbatim from the 837 and providers do
+ * submit the 3-character form ("450"), which would otherwise silently lose
+ * its decode. Pads a 3-digit code the same way normalizeTypeOfBill handles
+ * the identical leading-zero variance on FL04. `raw` is left untouched so the
+ * value still displays and copies exactly as the claim carries it.
+ */
 export function decodeRevenueCode(raw: string): CodedValue {
-  return lookup(REVENUE_CODES, raw);
+  const trimmed = raw.trim();
+  const padded = trimmed.length === 3 && /^\d{3}$/.test(trimmed) ? `0${trimmed}` : raw;
+  return { ...lookup(REVENUE_CODES, padded), raw };
 }
 
 export function decodeModifier(raw: string): CodedValue {
@@ -61,9 +71,19 @@ export function decodeConditionCode(raw: string): CodedValue {
   return lookup(CONDITION_CODES, raw);
 }
 
-/** Shared by both occurrence codes (FL31–34) and occurrence span codes (FL35–36) — see src/data/occurrenceCodes.ts's header for why one table covers both fields. */
+/** Occurrence codes, FL31–34. Occurrence SPAN codes are a separate NUBC list — use decodeOccurrenceSpanCode. */
 export function decodeOccurrenceCode(raw: string): CodedValue {
   return lookup(OCCURRENCE_CODES, raw);
+}
+
+/**
+ * Occurrence span codes, FL35–36. Deliberately a different table from
+ * decodeOccurrenceCode: the two NUBC lists do not share a numeric range, so
+ * decoding one field against the other's table yields confident wrong labels
+ * rather than a harmless miss.
+ */
+export function decodeOccurrenceSpanCode(raw: string): CodedValue {
+  return lookup(OCCURRENCE_SPAN_CODES, raw);
 }
 
 export function decodeValueCode(raw: string): CodedValue {

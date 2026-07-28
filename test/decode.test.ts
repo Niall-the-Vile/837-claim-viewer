@@ -27,7 +27,12 @@ describe('decodePlaceOfService', () => {
   });
 
   it('passes through an unrecognized code with decoded: null', () => {
-    expect(decodePlaceOfService('27')).toEqual({ raw: '27', decoded: null });
+    // Deliberately a code CMS has never assigned. This used to be '27',
+    // which was a genuine gap in PLACE_OF_SERVICE (assigned 2023-10-01 as
+    // Outreach Site/Street) — so the test passed for the wrong reason and
+    // turned red the moment the table was corrected. A fixture for
+    // "unrecognized" must be a code that can never become recognized.
+    expect(decodePlaceOfService('43')).toEqual({ raw: '43', decoded: null });
   });
 
   it('passes through a blank code with decoded: null', () => {
@@ -105,7 +110,11 @@ describe('decodeOccurrenceCode', () => {
   });
 
   it('passes through an unrecognized occurrence code with decoded: null', () => {
-    expect(decodeOccurrenceCode('A2')).toEqual({ raw: 'A2', decoded: null });
+    // Was 'A2' — a standard NUBC insured-designation code (effective date,
+    // insured A policy) that the table simply had not been extended to
+    // cover, so completing the table turned this red. '99' is unassigned in
+    // every NUBC revision.
+    expect(decodeOccurrenceCode('99')).toEqual({ raw: '99', decoded: null });
   });
 });
 

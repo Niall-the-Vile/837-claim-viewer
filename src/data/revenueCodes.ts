@@ -304,13 +304,18 @@ export const REVENUE_CODES: Record<string, string> = {
   '0946': 'Other therapeutic services — complex medical equipment, routine',
   '0947': 'Other therapeutic services — complex medical equipment, ancillary',
   '0949': 'Other therapeutic services — other',
-  '0960': 'Professional fees',
+  // 0960/0970/0980 are the general-classification headers of the three
+  // consecutive NUBC "Professional Fees" sub-blocks and share one category
+  // name in the manual. Each is qualified here by the services its own block
+  // covers: three codes rendering one identical string is indistinguishable
+  // on screen from a transcription error (see test/decodeTables.test.ts).
+  '0960': 'Professional fees — general',
   '0961': 'Professional fees — psychiatric',
   '0962': 'Professional fees — ophthalmology',
   '0963': 'Professional fees — anesthesiologist (MD)',
   '0964': 'Professional fees — anesthetist (CRNA)',
   '0969': 'Professional fees — other',
-  '0970': 'Professional fees',
+  '0970': 'Professional fees — diagnostic and therapy services, general',
   '0971': 'Professional fees — laboratory',
   '0972': 'Professional fees — radiology, diagnostic',
   '0973': 'Professional fees — radiology, therapeutic',
@@ -320,7 +325,7 @@ export const REVENUE_CODES: Record<string, string> = {
   '0977': 'Professional fees — physical therapy',
   '0978': 'Professional fees — occupational therapy',
   '0979': 'Professional fees — speech pathology',
-  '0980': 'Professional fees',
+  '0980': 'Professional fees — visits and clinic services, general',
   '0981': 'Professional fees — emergency room',
   '0982': 'Professional fees — outpatient services',
   '0983': 'Professional fees — clinic',

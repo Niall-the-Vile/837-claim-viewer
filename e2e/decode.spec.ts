@@ -193,14 +193,29 @@ test.describe('837 Claim Viewer — E2E — plain-English code decoding (docs/BU
 
       const billingGroup = page.locator('details[data-group-id="billing"]');
       await expandGroup(billingGroup);
-      // The fixture's occurrence codes (HI*BH:A1/A2/B1/B2) aren't in the
-      // curated numeric occurrence-code table (src/data/occurrenceCodes.ts) —
-      // they show their raw value with no decoded sibling and no "Unknown".
+
+      // NOTE: this used to assert that the fixture's occurrence codes
+      // (HI*BH:A1/A2/B1/B2) rendered with NO decoded sibling, on the premise
+      // that they were payer-specific extensions outside the table. They are
+      // not — they are the standard NUBC insured-designation codes, so
+      // completing the table per src/data/occurrenceCodes.ts's own refresh
+      // instructions turned this red (docs/AUDIT_BUILD2.md). Anchoring on
+      // "this code is absent from a table we intend to grow" is brittle by
+      // construction. The durable invariant is the one the spec actually
+      // states, so that is what is asserted now.
       const occurrenceRow = billingGroup.locator('.inspRow', { hasText: 'Occurrence 1' });
       await expect(occurrenceRow).toBeVisible();
-      await expect(occurrenceRow.locator('.inspRowValDecoded')).toHaveCount(0);
-      const rowText = await occurrenceRow.textContent();
-      expect(rowText).not.toContain('Unknown');
+
+      // A code the table DOES cover renders its decode alongside the raw value.
+      await expect(occurrenceRow.locator('.inspRowValDecoded')).toHaveCount(1);
+      await expect(occurrenceRow).toContainText('A1');
+
+      // The invariant that can never go stale: no row anywhere in the
+      // inspector ever renders the word "Unknown" for a code, no matter how
+      // the tables grow (docs/UI_REQUIREMENTS_v3_queued_features.md §2 —
+      // "where no decoding exists, show the raw value alone").
+      const inspectorText = (await page.locator('#inspectorBody').textContent()) ?? '';
+      expect(inspectorText).not.toContain('Unknown');
     } finally {
       await app.close();
     }
