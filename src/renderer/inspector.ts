@@ -108,11 +108,28 @@ interface InspRow {
   decoded?: string | null;
 }
 
-/** Long decodings truncate for display, with the untruncated text always available in the row's `title` (docs/UI_REQUIREMENTS_v3_queued_features.md §2). */
-const DECODED_TRUNCATE_LEN = 64;
-function truncateDecoded(text: string): string {
-  return text.length > DECODED_TRUNCATE_LEN ? `${text.slice(0, DECODED_TRUNCATE_LEN - 1)}…` : text;
-}
+/**
+ * Decoded text is rendered IN FULL and allowed to wrap. It is deliberately
+ * not truncated by character count.
+ *
+ * Build 2 sliced it at 64 characters, which did not shorten long labels so
+ * much as merge them: discharge status '05' and '85' differ only by a
+ * trailing ", with planned readmission", so both rendered the byte-identical
+ * string "Discharged/transferred to a designated cancer center or childre…".
+ * The 81-88 discharge series is systematically the 01-06 series with that
+ * clause appended, so the distinguishing text is always at the END — exactly
+ * what a tail truncation discards (test/decodeTables.test.ts pins this).
+ *
+ * Worse, buildServiceLineRows joins the place-of-service, revenue-code and
+ * EVERY modifier decode into one string before it reaches this point, so the
+ * same cut silently dropped the trailing modifiers on any line carrying more
+ * than one.
+ *
+ * `.inspRowVal` already wraps (`overflow-wrap: anywhere`, `min-width: 0`), so
+ * the drawer handles length on its own. If a visual limit is ever wanted it
+ * must be a CSS clamp on the rendered box, never a slice of the model text —
+ * and it must not be applied to the joined multi-decode string at all.
+ */
 
 /**
  * Fires after every `renderInspector()` rebuild (docs/BUILD_QUEUE.md
@@ -240,7 +257,7 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
         // §2 ("distinguish decoded text ... so nobody mistakes our lookup
         // for something the claim actually said").
         decodedEl.setAttribute('style', 'font-style: italic; color: var(--ink-3); margin-left: 4px;');
-        decodedEl.textContent = `· ${truncateDecoded(row.decoded)}`;
+        decodedEl.textContent = `· ${row.decoded}`;
         decodedEl.title = row.decoded;
         valEl.append(decodedEl);
       } else {
@@ -251,7 +268,13 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
       // Accessible name explicit rather than relying on content-derived
       // accname computation (§2f item 4: "assert the accessible name
       // contains the severity word") — deterministic across browsers/AT.
-      if (row.glyph) rowEl.setAttribute('aria-label', `${row.key}: ${row.value}`);
+      // The decode is included: it is the plain-English half of the row, and
+      // omitting it left the untruncated meaning reachable only by hovering
+      // for the tooltip (docs/AUDIT_BUILD2.md).
+      if (row.glyph) {
+        const accName = row.decoded ? `${row.key}: ${row.value}, ${row.decoded}` : `${row.key}: ${row.value}`;
+        rowEl.setAttribute('aria-label', accName);
+      }
 
       if (!row.isExplanation) {
         const copyBtn = document.createElement('button');

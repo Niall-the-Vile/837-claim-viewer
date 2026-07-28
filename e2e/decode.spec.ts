@@ -220,4 +220,44 @@ test.describe('837 Claim Viewer — E2E — plain-English code decoding (docs/BU
       await app.close();
     }
   });
+
+  test('decoded text renders in full — never truncated by character count', async () => {
+    // Build 2 sliced decoded text at 64 chars before putting it in the DOM.
+    // That did not shorten long labels so much as MERGE them: discharge
+    // status 05 and 85 differ only by a trailing ", with planned
+    // readmission" and rendered byte-identically, and a service line's
+    // joined POS + revenue + modifier decodes silently lost its trailing
+    // modifiers. The full text was reachable only by hovering for the
+    // tooltip (docs/AUDIT_BUILD2.md).
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_837I_MINIMAL });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      // Expand every group so all decoded rows are in play, not just the
+      // handful that happen to render open by default.
+      const groups = page.locator('#inspectorBody details');
+      const groupCount = await groups.count();
+      for (let i = 0; i < groupCount; i += 1) await expandGroup(groups.nth(i));
+
+      const decoded = page.locator('.inspRowValDecoded');
+      const count = await decoded.count();
+      expect(count).toBeGreaterThan(0);
+
+      for (let i = 0; i < count; i += 1) {
+        const el = decoded.nth(i);
+        const shown = (await el.textContent()) ?? '';
+        // `title` carries the untruncated decode, so it is the oracle for
+        // what the DOM text must equal.
+        const full = (await el.getAttribute('title')) ?? '';
+        expect(full).not.toBe('');
+        expect(shown).toBe(`· ${full}`);
+        expect(shown).not.toContain('…');
+      }
+    } finally {
+      await app.close();
+    }
+  });
 });

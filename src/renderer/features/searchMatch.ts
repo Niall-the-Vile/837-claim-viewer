@@ -30,15 +30,41 @@
  *     normalizes to "20260603", found by the query "2026-06-03" (which
  *     normalizes to the same "20260603", an exact match) OR by "06/03"
  *     (which normalizes to "0603", a substring of the tail "...0603").
+ *
+ * KNOWN AND DELIBERATE (docs/AUDIT_BUILD2.md): matching is sign-INSENSITIVE.
+ * Dates force `-` into the strip set, so a leading minus cannot survive
+ * normalization. `+` is stripped alongside it so the blindness is at least
+ * symmetric — before, `+` was kept while `-` was not, so the query "-45.00"
+ * matched a rendered value of "+$45.00" but not the reverse.
  */
 export function normalizeSearchText(value: string): string {
-  return value.toLowerCase().replace(/[$,\s()·—/-]/g, '');
+  return value.toLowerCase().replace(/[$,\s()·—/+-]/g, '');
 }
 
-/** `normalizedQuery` must already be the output of `normalizeSearchText` — callers that check many rows against one query normalize the query once, not per row. An empty query never matches anything (there is no "everything matches" state here; features/search.ts's own empty-query branch never calls this at all). */
+/**
+ * The separator inspector.ts uses to join independent values into one
+ * composite row (`parts.join('  ·  ')` in buildServiceLineRows).
+ */
+const COMPOSITE_SEPARATOR = '·';
+
+/**
+ * `normalizedQuery` must already be the output of `normalizeSearchText` —
+ * callers that check many rows against one query normalize the query once,
+ * not per row. An empty query never matches anything (there is no "everything
+ * matches" state here; features/search.ts's own empty-query branch never
+ * calls this at all).
+ *
+ * Matching is per COMPONENT, not over the whole joined string. Normalization
+ * deletes separators, so testing the concatenation let a query match across
+ * the boundary between two unrelated values: on the service line
+ * "2026-06-03 · 99213-25 · ptr 1 · pos 11 · ×1 · $1,150.00", the query "0399"
+ * matched by spanning the date's day and the procedure code's leading digits,
+ * counting a match and drawing a persistent outline on a row where that
+ * string appears nowhere on screen (docs/AUDIT_BUILD2.md).
+ */
 export function matchesSearchQuery(text: string, normalizedQuery: string): boolean {
   if (normalizedQuery === '') return false;
-  return normalizeSearchText(text).includes(normalizedQuery);
+  return text.split(COMPOSITE_SEPARATOR).some((part) => normalizeSearchText(part).includes(normalizedQuery));
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +190,31 @@ export function computeOtherClaimMatches(others: OtherClaimSummary[], query: str
     }
   }
   return { totalMatches, matches };
+}
+
+// ---------------------------------------------------------------------------
+// Step-through index arithmetic
+// ---------------------------------------------------------------------------
+
+/**
+ * Where Enter (delta +1) / Shift+Enter (delta -1) should land, given the
+ * current index and the match count. `current` is -1 when the user has not
+ * stepped yet.
+ *
+ * Extracted here (rather than inlined in search.ts) purely so the -1 case is
+ * unit-testable: Build 2 folded the sentinel through the plain modulo
+ * `((current + delta) % len + len) % len`, which sends an un-stepped
+ * Shift+Enter to len-2 — the SECOND-to-last match — instead of the last.
+ * With 7 matches the first backward step landed on index 5, and because the
+ * sentinel is reset on every keystroke, it recurred after each edit rather
+ * than once per session. Neither suite covered it: e2e/search.spec.ts only
+ * pressed Shift+Enter after two Enters (docs/AUDIT_BUILD2.md).
+ */
+export function nextMatchIndex(current: number, delta: number, len: number): number {
+  if (len <= 0) return -1;
+  // Not yet stepped: forward starts at the first match, backward at the last.
+  if (current < 0) return delta > 0 ? 0 : len - 1;
+  return (((current + delta) % len) + len) % len;
 }
 
 // ---------------------------------------------------------------------------

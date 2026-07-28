@@ -7,6 +7,7 @@ import {
   formatMatchSummaryText,
   formatEmptyStateText,
   formatOtherClaimsButtonLabel,
+  nextMatchIndex,
   type SearchableRow,
   type OtherClaimSummary,
 } from '../src/renderer/features/searchMatch.js';
@@ -151,10 +152,26 @@ describe('computeOtherClaimMatches (837 batch cross-claim summary matching)', ()
   });
 
   it('sums matches across multiple matching claims/fields', () => {
-    // "institutional" and "ub-04" both appear in formTypeLabel for BOTH claims -> 2 fields each -> 4 total, 2 claims.
+    // matchCount counts matching FIELDS per claim. "institutional" hits
+    // exactly one field (formTypeLabel) on each of the two claims, so
+    // 1 + 1 = 2 across 2 claims.
+    //
+    // The comment here used to describe a two-query case that was never
+    // executed and contradicted the assertion below, so a reader "correcting"
+    // the code to produce 4 would have broken the suite (docs/AUDIT_BUILD2.md).
     const result = computeOtherClaimMatches(others, 'institutional');
     expect(result.totalMatches).toBe(2);
     expect(result.matches.map((m) => m.index)).toEqual([0, 2]);
+  });
+
+  it('counts each matching field separately within one claim', () => {
+    // The multi-field case the old comment claimed to cover: '756048Q'
+    // matches only claim 0's id, while a query hitting both its id and its
+    // total would count 2 on that one claim.
+    const oneClaim: OtherClaimSummary[] = [{ index: 1, claimId: '89', patientName: 'DOE JOHN', formTypeLabel: 'Professional — CMS-1500', totalLabel: '$89.93' }];
+    const result = computeOtherClaimMatches(oneClaim, '89');
+    expect(result.matches).toEqual([{ index: 1, matchCount: 2 }]);
+    expect(result.totalMatches).toBe(2);
   });
 
   it('an empty query matches no other claims', () => {
@@ -202,5 +219,83 @@ describe('aria-live / empty-state text formatting', () => {
   it('formats the other-claims button label', () => {
     expect(formatOtherClaimsButtonLabel({ totalMatches: 3, claimCount: 2 })).toBe('3 more matches in 2 other claims');
     expect(formatOtherClaimsButtonLabel({ totalMatches: 1, claimCount: 1 })).toBe('1 more match in 1 other claim');
+  });
+});
+
+/**
+ * Build 2 audit regressions (docs/AUDIT_BUILD2.md). Each case below was
+ * confirmed to fail against build-2-green before the fix.
+ */
+describe('nextMatchIndex — step-through wrap', () => {
+  it('first Enter lands on the first match', () => {
+    expect(nextMatchIndex(-1, 1, 7)).toBe(0);
+  });
+
+  it('first Shift+Enter lands on the LAST match, not the second-to-last', () => {
+    // The bug: `((-1 + -1) % 7 + 7) % 7` === 5, so the first backward step
+    // skipped match 7 of 7 and announced "match 6 of 7". Because the sentinel
+    // resets on every keystroke, this recurred after each edit.
+    expect(nextMatchIndex(-1, -1, 7)).toBe(6);
+  });
+
+  it('wraps forward off the end', () => {
+    expect(nextMatchIndex(6, 1, 7)).toBe(0);
+  });
+
+  it('wraps backward off the start', () => {
+    expect(nextMatchIndex(0, -1, 7)).toBe(6);
+  });
+
+  it('steps normally in the middle', () => {
+    expect(nextMatchIndex(3, 1, 7)).toBe(4);
+    expect(nextMatchIndex(3, -1, 7)).toBe(2);
+  });
+
+  it('handles a single match in both directions', () => {
+    expect(nextMatchIndex(-1, 1, 1)).toBe(0);
+    expect(nextMatchIndex(-1, -1, 1)).toBe(0);
+    expect(nextMatchIndex(0, 1, 1)).toBe(0);
+    expect(nextMatchIndex(0, -1, 1)).toBe(0);
+  });
+
+  it('returns the sentinel when there is nothing to step through', () => {
+    expect(nextMatchIndex(-1, 1, 0)).toBe(-1);
+    expect(nextMatchIndex(-1, -1, 0)).toBe(-1);
+  });
+});
+
+describe('matchesSearchQuery — composite values match per component', () => {
+  // inspector.ts joins independent service-line values with '  ·  '.
+  const SERVICE_LINE = '2026-06-03  ·  99213-25  ·  ptr 1  ·  pos 11  ·  ×1  ·  $1,150.00';
+
+  it('does not match a query that spans two components', () => {
+    // '0399' spans the date's day ("03") and the proc code's leading "99".
+    // Build 2 counted this and drew a persistent outline on a row where the
+    // string is nowhere on screen.
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('0399'))).toBe(false);
+  });
+
+  it('does not match a query spanning the units and charge components', () => {
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('11150'))).toBe(false);
+  });
+
+  it('still matches within a single component', () => {
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('1150'))).toBe(true);
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('$1,150.00'))).toBe(true);
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('99213'))).toBe(true);
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('2026-06-03'))).toBe(true);
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('06/03'))).toBe(true);
+    expect(matchesSearchQuery(SERVICE_LINE, normalizeSearchText('pos 11'))).toBe(true);
+  });
+});
+
+describe('normalizeSearchText — signs are stripped symmetrically', () => {
+  it('strips a leading + as well as a leading -', () => {
+    // Dates force '-' into the strip set, so matching cannot be
+    // sign-sensitive. Build 2 stripped '-' but kept '+', so the query
+    // '-45.00' matched a rendered '+$45.00' while the reverse failed.
+    expect(normalizeSearchText('+$45.00')).toBe('45.00');
+    expect(normalizeSearchText('-$45.00')).toBe('45.00');
+    expect(normalizeSearchText('+$45.00')).toBe(normalizeSearchText('-$45.00'));
   });
 });

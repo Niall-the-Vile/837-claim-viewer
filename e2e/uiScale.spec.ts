@@ -227,6 +227,83 @@ test.describe('837 Claim Viewer — E2E — UI text scale (docs/UI_REQUIREMENTS_
       expect(dialogInfo.rect.right, 'export dialog right edge inside the window at 175%').toBeLessThanOrEqual(dialogInfo.windowW + 1);
       expect(dialogInfo.rect.y, 'export dialog top edge inside the window at 175%').toBeGreaterThanOrEqual(0);
       expect(dialogInfo.rect.bottom, 'export dialog bottom edge inside the window at 175%').toBeLessThanOrEqual(dialogInfo.windowH + 1);
+      await page.keyboard.press('Escape');
+      await page.locator('#exportOverlay').waitFor({ state: 'hidden' });
+
+      // --- The TALLER dialogs, which the export dialog (the shortest one)
+      // never exercised. The keyboard-shortcuts sheet is 22 rows over 4
+      // groups and at 175% measures taller than the window: Build 2 gave
+      // .dialog a scale-aware max-width but no max-height, inside a
+      // non-scrolling overlay under `#app { overflow: hidden }`, so it
+      // overflowed symmetrically and put its own titlebar — carrying the
+      // only close button — above y=0 with no scrollbar (docs/AUDIT_BUILD2.md).
+      const tallDialogs: Array<{ overlayId: string; action: string; name: string }> = [
+        { overlayId: '#shortcutsOverlay', action: 'shortcuts', name: 'shortcuts' },
+        { overlayId: '#aboutOverlay', action: 'about', name: 'about' },
+      ];
+      for (const { overlayId, action, name } of tallDialogs) {
+        await page.locator('[data-menu-trigger="help"]').click();
+        await page.locator(`[data-action="${action}"]`).click();
+        await page.locator(overlayId).waitFor({ state: 'visible' });
+
+        const info = await page.evaluate((sel) => {
+          const dialog = document.querySelector(`${sel} .dialog`)!;
+          const rect = dialog.getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, windowW: window.innerWidth, windowH: window.innerHeight };
+        }, overlayId);
+
+        expect(info.top, `${name} dialog top edge inside the window at 175%`).toBeGreaterThanOrEqual(-1);
+        expect(info.bottom, `${name} dialog bottom edge inside the window at 175%`).toBeLessThanOrEqual(info.windowH + 1);
+        expect(info.left, `${name} dialog left edge inside the window at 175%`).toBeGreaterThanOrEqual(-1);
+        expect(info.right, `${name} dialog right edge inside the window at 175%`).toBeLessThanOrEqual(info.windowW + 1);
+
+        // The close button must be on screen — Esc alone is not an
+        // acceptable sole means of dismissal.
+        const closeRect = await page.locator(`${overlayId} .dialogTitlebar button`).first().evaluate((el) => el.getBoundingClientRect());
+        expect(closeRect.top, `${name} dialog close button must be visible at 175%`).toBeGreaterThanOrEqual(-1);
+        expect(closeRect.bottom, `${name} dialog close button must be within the window at 175%`).toBeLessThanOrEqual(info.windowH + 1);
+
+        await page.keyboard.press('Escape');
+        await page.locator(overlayId).waitFor({ state: 'hidden' });
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('175%: the preview-pane state screens scale too', async () => {
+    // Build 2 applied `zoom: var(--ui-scale)` to the nine chrome regions §9
+    // enumerates and to nothing else, so #welcomeScreen, #loadingScreen,
+    // #errorScreen and #chipRow rendered byte-identically at 100% and 175%.
+    // The app's first screen and every parse-error message are precisely the
+    // text the feature exists to enlarge (docs/AUDIT_BUILD2.md).
+    const app = await launchApp({});
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeScreen').waitFor({ state: 'visible' });
+
+      const titleAt100 = await page.locator('.welcomeTitle').evaluate((el) => el.getBoundingClientRect().height);
+
+      await clickCycleUiScale(page); // 125
+      await clickCycleUiScale(page); // 150
+      await clickCycleUiScale(page); // 175
+      await expect(page.locator('#uiScaleValueLabel')).toHaveText('175%');
+
+      const titleAt175 = await page.locator('.welcomeTitle').evaluate((el) => el.getBoundingClientRect().height);
+      expect(titleAt175, 'the welcome title must actually grow at 175%').toBeGreaterThan(titleAt100 * 1.5);
+
+      // ...and must still fit the window it just grew inside of.
+      const box = await page.evaluate(() => {
+        const card = document.querySelector('.welcomeCard')!;
+        const r = card.getBoundingClientRect();
+        return { left: r.left, right: r.right, windowW: window.innerWidth };
+      });
+      expect(box.left, 'welcome card left edge inside the window at 175%').toBeGreaterThanOrEqual(-1);
+      expect(box.right, 'welcome card right edge inside the window at 175%').toBeLessThanOrEqual(box.windowW + 1);
+
+      const welcomeOverflow = await page.locator('#welcomeScreen').evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(welcomeOverflow.scrollWidth, '#welcomeScreen must not overflow horizontally at 175%').toBeLessThanOrEqual(welcomeOverflow.clientWidth + 1);
     } finally {
       await app.close();
     }

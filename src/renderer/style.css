@@ -884,6 +884,22 @@ a:focus-visible {
   }
 }
 
+/*
+ * §9 UI text scale — the preview-pane state screens.
+ *
+ * These were missed entirely by Build 2: `zoom: var(--ui-scale)` was applied
+ * to the nine chrome regions §9 enumerates, but #welcomeScreen,
+ * #loadingScreen, #errorScreen, #chipRow and .unsupportedNote are none of
+ * them, so the app's FIRST screen and every parse-error message rendered
+ * identically at 100% and 175% — precisely the text the feature exists to
+ * enlarge for the low-vision reviewer who filed it (docs/AUDIT_BUILD2.md).
+ *
+ * Applied to each state screen INDIVIDUALLY and never to .stateScreen or
+ * #workspaceScreen: those would pull #pdfScroll/#pdfCanvas into a zoomed
+ * subtree and break the architecture documented at the top of this file
+ * (the PDF canvas must never inherit UI scale, or per-tab zoom is corrupted).
+ */
+
 /* Welcome */
 #welcomeScreen {
   flex: 1;
@@ -894,10 +910,12 @@ a:focus-visible {
   padding: 40px;
   background: var(--surface);
   overflow: auto;
+  zoom: var(--ui-scale);
 }
 .welcomeCard {
   width: 100%;
-  max-width: 560px;
+  /* §9 sub-task 1: was a hard `560px`. */
+  max-width: min(calc(560em / 13), calc((100vw - 96px) / var(--ui-scale)));
   text-align: center;
 }
 .welcomeTitle {
@@ -957,9 +975,11 @@ a:focus-visible {
   justify-content: center;
   gap: 16px;
   background: var(--matte);
+  zoom: var(--ui-scale);
 }
 .loadingBar {
-  width: 240px;
+  /* §9 sub-task 1: was a hard `240px`. */
+  width: calc(240em / 13);
   height: 4px;
   border-radius: 2px;
   background: var(--border);
@@ -989,8 +1009,10 @@ a:focus-visible {
   color: var(--chip-ink);
 }
 .loadingSkeleton {
-  width: 520px;
-  max-width: calc(100vw - 120px);
+  /* §9 sub-task 1 names "520px" — this is the element it meant, and the one
+     that was skipped when 600/720 became .dialog/.dialogWide. */
+  width: calc(520em / 13);
+  max-width: calc((100vw - 120px) / var(--ui-scale));
   height: 300px;
   border: 1px solid var(--matte-line);
   background: var(--skeleton);
@@ -1078,10 +1100,12 @@ a:focus-visible {
   padding: 40px;
   background: var(--surface);
   overflow: auto;
+  zoom: var(--ui-scale);
 }
 .errorCard {
   width: 100%;
-  max-width: 560px;
+  /* §9 sub-task 1: was a hard `560px`. */
+  max-width: min(calc(560em / 13), calc((100vw - 96px) / var(--ui-scale)));
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-inset);
@@ -1147,6 +1171,8 @@ a:focus-visible {
   padding: 8px 12px;
   background: var(--matte);
   border-bottom: 1px solid var(--matte-line);
+  /* §9 — see the state-screen note above #welcomeScreen. */
+  zoom: var(--ui-scale);
 }
 .chip {
   display: inline-flex;
@@ -1182,6 +1208,8 @@ a:focus-visible {
   font: 400 12.5px var(--font-sans);
   color: var(--ink-2);
   line-height: 1.5;
+  /* §9 — see the state-screen note above #welcomeScreen. */
+  zoom: var(--ui-scale);
 }
 .unsupportedNote svg {
   flex: none;
@@ -1607,6 +1635,19 @@ a:focus-visible {
    * exceeds the viewport" geometry check exists to catch).
    */
   max-width: calc((100vw - 48px) / var(--ui-scale));
+  /*
+   * The height counterpart, and for the same reason (docs/AUDIT_BUILD2.md).
+   * Build 2 shipped the max-WIDTH above with no height constraint, while
+   * `.overlay` does not scroll and `#app` is `overflow: hidden`. The
+   * keyboard-shortcuts sheet is 22 rows over 4 groups — roughly 520-535px at
+   * 100%, so ~910-935px at 175% against an inner height of ~765-800px. It
+   * overflowed symmetrically, putting its own titlebar and close button
+   * above y=0 with no scrollbar anywhere; only Esc still dismissed it.
+   */
+  max-height: calc((100vh - 48px) / var(--ui-scale));
+  /* Column layout so the titlebar stays pinned and only the body scrolls. */
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -1646,8 +1687,11 @@ a:focus-visible {
   /* §9 mandatory sub-task 1: was a hard `720px`. */
   width: calc(720em / 13);
 }
+/* .dialog is a flex column (see its max-height above): the titlebar and any
+   footer stay pinned, and only the scrollable body region gives. */
 .dialogTitlebar {
   height: 34px;
+  flex: none;
   background: var(--titlebar);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1658,6 +1702,11 @@ a:focus-visible {
 }
 .dialogBody {
   padding: 18px 20px 4px;
+  /* min-height:0 is what actually lets a flex child shrink below its content
+     size — without it the body refuses to scroll and the dialog overflows. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .exportIntro {
   font: 400 13.5px var(--font-sans);
@@ -1700,16 +1749,23 @@ a:focus-visible {
 }
 .dialogFooter {
   display: flex;
+  flex: none;
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 20px 18px;
 }
 
+/* The shortcuts sheet has no .dialogBody wrapper — the grid IS its scrollable
+   region. This is the tallest dialog in the app and the one that overflowed
+   the window at 175% (docs/AUDIT_BUILD2.md). */
 .shortcutsGrid {
   padding: 18px 22px 22px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 22px 34px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .shortcutsCol > .shortcutsColTitle {
   font: 600 11px var(--font-sans);
@@ -1732,6 +1788,7 @@ a:focus-visible {
 }
 .shortcutsFootnote {
   padding: 0 22px 18px;
+  flex: none;
   font: 400 12px var(--font-sans);
   color: var(--ink-3);
 }
@@ -1751,8 +1808,16 @@ a:focus-visible {
   gap: 10px;
   /* §9 mandatory sub-task 1: was a hard `460px`, converted the same way as
      .dialog above; also made viewport/scale-aware (like .dialog's max-width)
-     so a zoomed toast never overflows the real window at high --ui-scale. */
-  max-width: min(calc(460em / 13), calc((100vw - 40px) / var(--ui-scale)));
+     so a zoomed toast never overflows the real window at high --ui-scale.
+
+     Divisor is 12.5, NOT the 13 used elsewhere: `em` in any property other
+     than font-size resolves against the element's OWN computed font-size,
+     and .toast declares `font: 400 12.5px` below. .dialog/.dialogWide/
+     #inspector/.menuPanel all inherit body's 13px and declare no font of
+     their own, so 13 is right for them — the toast was the one exception,
+     and dividing by 13 silently rendered it at 460 x 12.5/13 = 442px, ~4%
+     narrower than the value it was meant to reproduce (docs/AUDIT_BUILD2.md). */
+  max-width: min(calc(460em / 12.5), calc((100vw - 40px) / var(--ui-scale)));
   padding: 10px 10px 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border-strong);

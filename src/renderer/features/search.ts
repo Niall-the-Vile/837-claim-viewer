@@ -16,6 +16,7 @@ import {
   formatMatchSummaryText,
   formatEmptyStateText,
   formatOtherClaimsButtonLabel,
+  nextMatchIndex,
   type SearchableRow,
   type OtherClaimSummary,
   type OtherClaimSearchResult,
@@ -62,8 +63,25 @@ import {
 // ---------------------------------------------------------------------------
 
 let query = '';
-/** Captured once per search session (on the empty -> non-empty transition), keyed by `data-group-id`; `null` when no query is active. */
+/** Captured on the empty -> non-empty transition AND re-captured whenever the inspector re-renders for a DIFFERENT claim (see priorOpenKey); keyed by `data-group-id`; `null` when no query is active. */
 let priorOpenState: Map<string, boolean> | null = null;
+/**
+ * Which (tab, claim) the snapshot in `priorOpenState` was taken from.
+ *
+ * Build 2 captured once per search SESSION and never re-captured, so a
+ * cross-claim jump re-ran the filter against a rebuilt DOM belonging to a
+ * different claim while still holding the first claim's map. Esc then
+ * replayed one claim's layout onto another, and because clearFilterVisuals
+ * only writes back ids present in the map, any group absent from it kept
+ * whatever `.open` the unconditional force-open left — permanently expanded
+ * (docs/AUDIT_BUILD2.md).
+ *
+ * Group sets and defaults genuinely differ per claim: `billing` is emitted
+ * only for institutional claims, `warn`'s default is hasWarnings and
+ * `recon`'s is !reconciles, so this is reachable even within a single
+ * form-type file.
+ */
+let priorOpenKey: string | null = null;
 /** Whatever had focus immediately before the search field did (captured via the field's own `focus` event's `relatedTarget` — covers both Ctrl+F and a plain click into the field) — where Esc returns focus to. */
 let priorFocusEl: HTMLElement | null = null;
 
@@ -106,6 +124,16 @@ function allGroupEls(): HTMLDetailsElement[] {
   return Array.from(inspectorBodyEl.querySelectorAll<HTMLDetailsElement>('details.inspGroup'));
 }
 
+/**
+ * Identifies the claim the currently-rendered inspector belongs to. A
+ * snapshot is only valid for restoring onto the exact (tab, claim) it was
+ * taken from — see priorOpenKey.
+ */
+function currentInspectorKey(): string | null {
+  const tab = activeTab();
+  return tab ? `${tab.tabId}:${tab.currentIndex}` : null;
+}
+
 function capturePriorOpenState(): void {
   const map = new Map<string, boolean>();
   for (const g of allGroupEls()) {
@@ -113,15 +141,22 @@ function capturePriorOpenState(): void {
     if (id) map.set(id, g.open);
   }
   priorOpenState = map;
+  priorOpenKey = currentInspectorKey();
 }
 
 /** Un-hides every group/row this file may have hidden and restores each group's captured `.open` — called both when the query empties out via typing and when Esc is pressed. Never touches focus (callers decide that). */
 function clearFilterVisuals(): void {
+  // A snapshot may only be replayed onto the exact claim it was taken from.
+  // If the user has jumped to a different claim since (or the tab is gone),
+  // leaving the freshly-rendered layout alone is strictly better than
+  // restoring another document's arrangement onto it.
+  const snapshotApplies = priorOpenState !== null && priorOpenKey !== null && priorOpenKey === currentInspectorKey();
+
   for (const g of allGroupEls()) {
     g.hidden = false;
     const id = g.dataset['groupId'];
-    if (priorOpenState && id && priorOpenState.has(id)) {
-      g.open = priorOpenState.get(id)!;
+    if (snapshotApplies && id && priorOpenState!.has(id)) {
+      g.open = priorOpenState!.get(id)!;
     }
     const rows = Array.from(g.querySelectorAll<HTMLElement>('.inspRow'));
     rows.forEach((r, i) => {
@@ -202,10 +237,27 @@ function applyActiveFilter(): void {
 // aria-live summary + the "N more matches in M other claims" control
 // ---------------------------------------------------------------------------
 
+/**
+ * Hides the cross-claim jump button, first moving focus off it if it holds
+ * focus. Clicking the button jumps to the other claim, which re-runs the
+ * filter and recomputes "other claims" EXCLUDING the claim just jumped to —
+ * so a query unique to one claim drops the count to 0 and hides the very
+ * button that was clicked. `[hidden] { display: none !important }` makes it
+ * unfocusable, and the browser resets activeElement to <body>.
+ *
+ * The app already treats this class of bug as must-fix: main.ts's
+ * closeTabById explicitly redirects focus rather than letting it fall to
+ * <body> (docs/AUDIT_BUILD2.md).
+ */
+function hideOtherClaimsBtn(): void {
+  if (document.activeElement === inspectorSearchOtherClaimsBtn) inspectorSearchInputEl.focus();
+  inspectorSearchOtherClaimsBtn.hidden = true;
+}
+
 function renderAriaLiveNow(): void {
   if (query === '') {
     inspectorSearchSummaryEl.textContent = '';
-    inspectorSearchOtherClaimsBtn.hidden = true;
+    hideOtherClaimsBtn();
     return;
   }
   const otherClaimsInfo = { totalMatches: lastOtherClaims.totalMatches, claimCount: lastOtherClaims.matches.length };
@@ -219,7 +271,7 @@ function renderAriaLiveNow(): void {
     inspectorSearchOtherClaimsBtn.hidden = false;
     inspectorSearchOtherClaimsBtn.textContent = formatOtherClaimsButtonLabel(otherClaimsInfo);
   } else {
-    inspectorSearchOtherClaimsBtn.hidden = true;
+    hideOtherClaimsBtn();
   }
 }
 
@@ -249,7 +301,7 @@ function stepMatch(delta: number): void {
   if (currentMatchEls.length === 0) return;
   const prev = currentMatchIndex >= 0 ? currentMatchEls[currentMatchIndex] : undefined;
   prev?.classList.remove('searchMatchActive');
-  currentMatchIndex = ((currentMatchIndex + delta) % currentMatchEls.length + currentMatchEls.length) % currentMatchEls.length;
+  currentMatchIndex = nextMatchIndex(currentMatchIndex, delta, currentMatchEls.length);
   const target = currentMatchEls[currentMatchIndex]!;
   target.classList.add('searchMatchActive');
   target.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
@@ -269,6 +321,7 @@ function onQueryInput(): void {
   if (query === '') {
     clearFilterVisuals();
     priorOpenState = null;
+    priorOpenKey = null;
     currentMatchEls = [];
     currentMatchIndex = -1;
     inspectorSearchClearBtn.hidden = true;
@@ -289,6 +342,7 @@ function clearQuery(): void {
   query = '';
   clearFilterVisuals();
   priorOpenState = null;
+  priorOpenKey = null;
   currentMatchEls = [];
   currentMatchIndex = -1;
   inspectorSearchClearBtn.hidden = true;
@@ -304,6 +358,15 @@ function clearQuery(): void {
  */
 function reapply(): void {
   if (query === '') return;
+
+  // The DOM has just been rebuilt. If it now belongs to a DIFFERENT claim
+  // than the snapshot was taken from, re-capture from this claim's freshly
+  // rendered defaults BEFORE applyActiveFilter() force-opens anything —
+  // otherwise the force-open is what gets captured, or (worse) the old
+  // claim's map survives and Esc replays it onto this one.
+  const key = currentInspectorKey();
+  if (key !== null && key !== priorOpenKey) capturePriorOpenState();
+
   applyActiveFilter();
   scheduleAriaLiveUpdate(true);
 }
@@ -311,6 +374,36 @@ function reapply(): void {
 // ---------------------------------------------------------------------------
 // Ctrl+F (shortcuts.ts) / init
 // ---------------------------------------------------------------------------
+
+/**
+ * Drops all search state without touching the DOM — for when the document
+ * the query was typed against goes away entirely (main.ts's closeTabById).
+ *
+ * Build 2 never reset on tab close: `query`, the input's value and
+ * `priorOpenState` are module-level and were cleared only by Esc and the ✕
+ * button, so closing a file and opening a different one immediately filtered
+ * the new claim with "Expand all" still disabled — and Esc replayed the
+ * CLOSED document's captured layout onto it (docs/AUDIT_BUILD2.md).
+ *
+ * Deliberately does not call clearFilterVisuals(): the inspector belonging to
+ * the closed tab is already gone, and the incoming one renders fresh.
+ */
+export function resetSearch(): void {
+  query = '';
+  inspectorSearchInputEl.value = '';
+  priorOpenState = null;
+  priorOpenKey = null;
+  priorFocusEl = null;
+  currentMatchEls = [];
+  currentMatchIndex = -1;
+  lastTotalMatches = 0;
+  lastGroupMatchCount = 0;
+  lastOtherClaims = { totalMatches: 0, matches: [] };
+  inspectorSearchClearBtn.hidden = true;
+  inspectorSearchOtherClaimsBtn.hidden = true;
+  inspectorSearchSummaryEl.textContent = '';
+  expandAllBtn.disabled = false;
+}
 
 /**
  * Ctrl+F: a no-op with no file open (never steals focus — docs/
@@ -339,7 +432,12 @@ export function initSearch(searchDeps: SearchDeps): void {
   inspectorSearchInputEl.addEventListener('input', onQueryInput);
 
   inspectorSearchInputEl.addEventListener('focus', (event: FocusEvent) => {
-    if (event.relatedTarget instanceof HTMLElement) priorFocusEl = event.relatedTarget;
+    // The else-branch matters: relatedTarget is null whenever nothing was
+    // focused before (Ctrl+F after clicking dead space drops focus to
+    // <body>). Without it, a stale element from an EARLIER interaction
+    // survived, and Esc scrolled focus somewhere the user never came from
+    // (docs/AUDIT_BUILD2.md).
+    priorFocusEl = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null;
   });
 
   inspectorSearchInputEl.addEventListener('keydown', (event) => {
@@ -354,7 +452,11 @@ export function initSearch(searchDeps: SearchDeps): void {
       if (query !== '') clearQuery();
       const toFocus = priorFocusEl;
       priorFocusEl = null;
-      toFocus?.focus();
+      // isConnected guard: the inspector rebuilds itself wholesale
+      // (inspectorBodyEl.innerHTML = ''), so a captured row can be detached
+      // by now. .focus() on a detached node is a silent no-op that would
+      // leave focus in the search field — explicit is better than incidental.
+      if (toFocus?.isConnected) toFocus.focus();
       return;
     }
     if (event.key === 'Enter' && query !== '') {

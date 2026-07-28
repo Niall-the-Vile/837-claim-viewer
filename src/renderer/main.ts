@@ -79,7 +79,7 @@ import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliat
 import { severityWord } from './format.js';
 import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 import { initUiScale, cycleUiScale } from './features/uiScale.js';
-import { initSearch } from './features/search.js';
+import { initSearch, resetSearch } from './features/search.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -568,6 +568,14 @@ async function closeTabById(tabId: string): Promise<void> {
   const focusWasInStrip = document.activeElement instanceof Node && tabStripEl.contains(document.activeElement);
 
   const { nextActiveTabId } = await closeTab(tabId);
+
+  // Drop any active search typed against the document that just closed
+  // (docs/AUDIT_BUILD2.md). Search state is module-level in features/search.ts
+  // and was previously cleared only by Esc / the ✕ button, so a query — and,
+  // worse, the closed claim's captured group-open snapshot — survived into
+  // whatever file was opened next.
+  resetSearch();
+
   syncScreenUI();
 
   if (wasActive && nextActiveTabId) {
