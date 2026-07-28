@@ -16,7 +16,7 @@
  * dist/electron/ (see package.json's "build:app" script) — this only
  * WRITES a new file there, it never depends on tsc's own output.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -24,8 +24,20 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(repoRoot, 'dist', 'electron');
 const outFile = join(outDir, 'build-info.json');
 
+/*
+ * The VERSION is stamped here too, not read from `app.getVersion()` at
+ * runtime. `app.getVersion()` only returns this app's version when Electron
+ * can find the app's own package.json — which it can't when launched via a
+ * bare script path (`electron dist/electron/main.js`), the way `npm start`
+ * and every Playwright E2E launches it. In that case it silently falls back
+ * to ELECTRON's version, so the About screen read "Version 43.2.0" instead
+ * of 0.0.1. Stamping it at build time is correct in dev, E2E and packaged
+ * alike.
+ */
+const { version } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+
 mkdirSync(outDir, { recursive: true });
-const buildInfo = { buildDate: new Date().toISOString() };
+const buildInfo = { version, buildDate: new Date().toISOString() };
 writeFileSync(outFile, JSON.stringify(buildInfo, null, 2), 'utf8');
 
-console.log(`[write-build-info] wrote ${outFile} (buildDate: ${buildInfo.buildDate})`);
+console.log(`[write-build-info] wrote ${outFile} (version: ${version}, buildDate: ${buildInfo.buildDate})`);

@@ -107,6 +107,8 @@ interface AppInfoDto {
 
 interface BuildInfoFile {
   buildDate: string;
+  /** Stamped from package.json at build time — see the app:getInfo handler for why this is preferred over app.getVersion(). Absent in stamps written before that change. */
+  version?: string;
 }
 
 /**
@@ -126,7 +128,12 @@ function readBuildInfo(): BuildInfoFile | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(target, 'utf8'));
     if (typeof parsed === 'object' && parsed !== null && typeof (parsed as Record<string, unknown>)['buildDate'] === 'string') {
-      return { buildDate: (parsed as Record<string, unknown>)['buildDate'] as string };
+      const record = parsed as Record<string, unknown>;
+      const version = record['version'];
+      return {
+        buildDate: record['buildDate'] as string,
+        ...(typeof version === 'string' ? { version } : {}),
+      };
     }
     return null;
   } catch {
@@ -750,13 +757,24 @@ function registerIpcHandlers(): void {
     if (typeof sessionId === 'string') sessions.delete(sessionId);
   });
 
-  // App version (app.getVersion(), from package.json) + build-date stamp
-  // for the About screen (docs/TABS_BUILD_PLAN.md §2c) — the app deploys by
-  // replacing the .exe with no auto-update, so a bug report needs to name a
-  // build.
+  // App version + build-date stamp for the About screen
+  // (docs/TABS_BUILD_PLAN.md §2c) — the app deploys by replacing the .exe
+  // with no auto-update, so a bug report needs to name a build.
+  //
+  // The version comes from the build-time stamp (scripts/write-build-info.mjs)
+  // in preference to `app.getVersion()`: Electron can only resolve the app's
+  // own package.json when it is launched as a packaged app or a directory,
+  // NOT via a bare script path (`electron dist/electron/main.js`) — which is
+  // exactly how `npm start` and every Playwright E2E launch it. In that case
+  // `app.getVersion()` silently reports ELECTRON's version instead, which is
+  // why About read "Version 43.2.0" rather than 0.0.1. `app.getVersion()`
+  // stays as the fallback for an unbuilt dev checkout with no stamp.
   ipcMain.handle('app:getInfo', async (): Promise<AppInfoDto> => {
     const buildInfo = readBuildInfo();
-    return { version: app.getVersion(), buildDate: buildInfo?.buildDate ?? 'unknown (unbuilt dev checkout)' };
+    return {
+      version: buildInfo?.version ?? app.getVersion(),
+      buildDate: buildInfo?.buildDate ?? 'unknown (unbuilt dev checkout)',
+    };
   });
 
   // Session restore (docs/TABS_BUILD_PLAN.md §2e): what the renderer should

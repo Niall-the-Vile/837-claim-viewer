@@ -28,6 +28,8 @@ import { test, expect, _electron as electron, type ElectronApplication } from '@
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
 const MAIN_ENTRY = join(repoRoot, 'dist', 'electron', 'main.js');
+/** The app's real version, read from package.json — the value About must display (see the About assertion below). */
+const APP_VERSION = (JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { version: string }).version;
 const FIXTURE_1500 = join(repoRoot, 'test', 'fixtures', 'synthetic-1500.json');
 const FIXTURE_837I = join(repoRoot, 'test', 'fixtures', 'x12', '837I-multi-claim.dat');
 
@@ -185,8 +187,13 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
         await page.locator('[data-menu-trigger="help"]').click();
         await page.locator('[data-action="about"]').click();
         await expect(page.locator('#aboutOverlay')).toBeVisible();
-        await expect(page.locator('#aboutVersion')).not.toHaveText('Loading…');
-        await expect(page.locator('#aboutVersion')).not.toHaveText('');
+        // Assert the ACTUAL version from package.json, not merely "non-empty".
+        // A non-empty check passed happily while About displayed Electron's
+        // own version (43.2.0) instead of the app's — `app.getVersion()`
+        // falls back to Electron's package.json when launched via a bare
+        // script path, which is how every E2E launches it. The version is now
+        // stamped at build time (scripts/write-build-info.mjs); this pins it.
+        await expect(page.locator('#aboutVersion')).toContainText(APP_VERSION);
         await expect(page.locator('#aboutBuildDate')).not.toHaveText('Loading…');
         await expect(page.locator('#aboutBuildDate')).not.toHaveText('');
         // §2e: the About screen's own wording must be honest about what's
