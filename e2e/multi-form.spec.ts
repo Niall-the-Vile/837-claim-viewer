@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
@@ -47,12 +48,42 @@ function definedEnv(source: NodeJS.ProcessEnv): Record<string, string> {
   return out;
 }
 
+/**
+ * PROFILE ISOLATION (docs/TABS_BUILD_PLAN.md §2e's hard prerequisite / guardrail
+ * §1.9): mirrors e2e/app.spec.ts's launchApp() — see that file's header comment
+ * for the full rationale. This file launches its own independent Electron
+ * processes (separate `test.describe` block, own fixtures), so it needs the same
+ * fresh-`userData`-dir-per-launch treatment; no test here may launch with only
+ * `[MAIN_ENTRY]` against the developer's real profile.
+ */
 async function launchApp(env: Record<string, string> = {}): Promise<ElectronApplication> {
   requireBuiltApp();
-  return electron.launch({
-    args: [MAIN_ENTRY],
-    env: { ...definedEnv(process.env), ...env },
-  });
+  const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-userdata-'));
+  // eslint-disable-next-line no-console -- deliberate: makes per-launch profile isolation observable in `npx playwright test` output.
+  console.log(`[e2e profile isolation] launching with fresh userData dir: ${userDataDir}`);
+
+  let app: ElectronApplication;
+  try {
+    app = await electron.launch({
+      args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
+      env: { ...definedEnv(process.env), ...env },
+    });
+  } catch (err) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw err;
+  }
+
+  const originalClose = app.close.bind(app);
+  app.close = async () => {
+    try {
+      await originalClose();
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+      // eslint-disable-next-line no-console -- see the log at launch above.
+      console.log(`[e2e profile isolation] removed userData dir: ${userDataDir}`);
+    }
+  };
+  return app;
 }
 
 test.describe('837 Claim Viewer — E2E — multi-claim 837 and unsupported forms', () => {

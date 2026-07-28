@@ -73,13 +73,69 @@ function definedEnv(source: NodeJS.ProcessEnv): Record<string, string> {
   return out;
 }
 
+/**
+ * PROFILE ISOLATION (docs/TABS_BUILD_PLAN.md §2e's hard prerequisite / guardrail
+ * §1.9): every E2E launch must get its own throwaway `userData` directory, never
+ * the developer's real `%APPDATA%` profile. Once session-restore starts writing
+ * `session.json` there, a second launch against the real profile would restore a
+ * previously-open tab and break this file's `visibleStateScreens` assertions
+ * (which assert exactly `['welcomeScreen']` on a fresh launch) — for a
+ * test-harness reason, not a real defect. `launchApp()` therefore creates a fresh
+ * `mkdtempSync` directory per call, passes it via `--user-data-dir=<dir>`
+ * (Electron's own CLI switch — see `app.getPath('userData')` in
+ * electron/main.ts, which resolves relative to it), and removes it once the
+ * caller closes the returned `ElectronApplication` (wrapping `.close()` in a
+ * try/finally so callers don't need to change their own `finally { await
+ * app.close(); }` blocks to get the cleanup). No test in this file (or any
+ * other `e2e/*.spec.ts`) may bypass this and launch with only `[MAIN_ENTRY]`.
+ */
 async function launchApp(env: Record<string, string> = {}): Promise<ElectronApplication> {
   requireBuiltApp();
+  const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-userdata-'));
+  // eslint-disable-next-line no-console -- deliberate: makes per-launch profile isolation observable in `npx playwright test` output (proof step for TABS_BUILD_PLAN.md §2e's prerequisite), not left-over debugging.
+  console.log(`[e2e profile isolation] launching with fresh userData dir: ${userDataDir}`);
+
+  let app: ElectronApplication;
+  try {
+    app = await electron.launch({
+      args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
+      // Merge onto the real process.env (Playwright replaces it outright if
+      // given a partial object) — the app still needs PATH/TEMP/etc. to run
+      // normally; only CLAIM_VIEWER_E2E_OPEN/SAVE are ever added on top.
+      env: { ...definedEnv(process.env), ...env },
+    });
+  } catch (err) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw err;
+  }
+
+  const originalClose = app.close.bind(app);
+  app.close = async () => {
+    try {
+      await originalClose();
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+      // eslint-disable-next-line no-console -- see the log at launch above.
+      console.log(`[e2e profile isolation] removed userData dir: ${userDataDir}`);
+    }
+  };
+  return app;
+}
+
+/**
+ * Variant of `launchApp()` for tests that need TWO launches to share ONE
+ * `userData` directory — e.g. a future session-restore test: open a file,
+ * close the app, relaunch against the same directory, and assert the tab
+ * comes back. Unlike `launchApp()`, this does not create or remove the
+ * directory itself — the CALLER owns that directory's full lifecycle
+ * (typically `mkdtempSync` before the first launch, `rmSync` in a `finally`
+ * after the last `app.close()`), since the whole point is that the directory
+ * survives between the two launches.
+ */
+async function launchAppWithUserData(userDataDir: string, env: Record<string, string> = {}): Promise<ElectronApplication> {
+  requireBuiltApp();
   return electron.launch({
-    args: [MAIN_ENTRY],
-    // Merge onto the real process.env (Playwright replaces it outright if
-    // given a partial object) — the app still needs PATH/TEMP/etc. to run
-    // normally; only CLAIM_VIEWER_E2E_OPEN/SAVE are ever added on top.
+    args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
     env: { ...definedEnv(process.env), ...env },
   });
 }
