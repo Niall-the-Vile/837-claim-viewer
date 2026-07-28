@@ -259,6 +259,23 @@ test.describe('837 Claim Viewer — E2E', () => {
       // confirmExport() closes the overlay itself once claimApi.exportPdf resolves.
       await expect(page.locator('#exportOverlay')).toBeHidden();
 
+      // docs/TABS_BUILD_PLAN.md §3c ("the toast backslash question"): a
+      // screenshot once showed the export-success toast rendering the saved
+      // path without backslashes (`C:UsersNiall Yoder...`). The message is
+      // built as `Exported to ${path}` (src/renderer/overlays.ts's
+      // confirmExport) and assigned via `toastMessageEl.textContent =
+      // message`, which cannot strip or re-encode characters — so if the
+      // backslashes are genuinely missing anywhere along the way (IPC
+      // round-trip, template literal, DOM assignment), this exact-string
+      // assertion catches it. It doesn't pass: this is proof the string
+      // itself is intact end-to-end; whether the GLYPHS render is a font/
+      // display question, verified separately via
+      // docs/screenshots/toast-export.png (e2e/screenshots.spec.ts).
+      await expect(page.locator('#toast')).toBeVisible();
+      const toastText = await page.locator('#toastMessage').textContent();
+      expect(toastText).toContain('\\');
+      expect(toastText).toBe(`Exported to ${savePath}`);
+
       await expect.poll(() => existsSync(savePath), { message: `expected a PDF at ${savePath}` }).toBe(true);
       const exported = readFileSync(savePath);
       expect(exported.subarray(0, 5).toString('latin1')).toBe('%PDF-');

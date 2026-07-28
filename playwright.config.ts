@@ -16,6 +16,13 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  // e2e/screenshots.spec.ts (docs/TABS_BUILD_PLAN.md §3b) is a visual record,
+  // not a correctness gate — it must never be able to fail `npm run verify` /
+  // a plain `npx playwright test`. It has its own script, `npm run
+  // screenshots`, which runs it via playwright.screenshots.config.ts (a
+  // testIgnore only filters discovery, so a same-config file argument can't
+  // "un-ignore" it — see that file's header comment).
+  testIgnore: ['**/screenshots.spec.ts'],
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
