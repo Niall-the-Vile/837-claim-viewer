@@ -83,27 +83,88 @@ STATUS: PARTIAL (human task, not part of the unattended chain — see
 ---
 
 ## Build 1 — Tabs + polish + fonts + version stamp + clipboard/copy suite
-STATUS: IN PROGRESS
+STATUS: GREEN
 
-Start: 2026-07-28 07:30 EDT        End: —
-Commit: —                          Tag: —
+Start: 2026-07-28 07:30 EDT        End: 2026-07-28 11:15 EDT
+Commit: 7a38745                    Tag: build-1-green
 
 **Note on scheduling:** the 2026-07-27 22:00 unattended run **never executed**. The
-scheduled task fired on time (`lastRunAt` 2026-07-27 22:00:47 EDT) but the Claude
-Code process exited immediately after, so no work landed: no commits past
-`build-0-preflight-green`, no build tags, no screenshots, and this log left at its
-template. The repo was verified clean and green (104 vitest, 4 E2E, typecheck clean)
-before restarting. Build 1 is now being run **in the foreground with Niall present**,
-which is strictly better than unattended — screenshots get reviewed as they appear.
+task fired on time (`lastRunAt` 22:00:47) but the Claude Code process exited straight
+after, so nothing landed — no commits past `build-0-preflight-green`, no tags, no
+screenshots. The repo was verified clean and green before restarting, and Build 1 was
+run in the foreground with Niall present instead, with screenshots reviewed as they
+appeared rather than in a morning report.
 
-### Prerequisites completed before the build proper
-- `4760d65` — E2E per-launch `--user-data-dir` profile isolation
-  (`TABS_BUILD_PLAN.md` §2e first bullet / guardrail §1.9). Verified: 8 distinct
-  temp profiles across two consecutive suite runs, all removed afterwards; the two
-  protected exact-equality assertions (visible state screens, frozen `claimApi` key
-  list) confirmed byte-identical. **No `userData` writer may land before this — it
-  has.**
+### What shipped
+- **E2E profile isolation** (`4760d65`) — per-launch `--user-data-dir`; the hard
+  prerequisite for any userData writer.
+- **Module split** (`a97fe15`) — `src/renderer/main.ts` 1,604 → 577 lines across
+  dom/tabs/preview/inspector/overlays/shortcuts. Pure move; two circular imports
+  resolved by dependency injection rather than mutual imports.
+- **Multi-file tabs** (`735834e`) — main-process session Map keyed by sessionId,
+  sessionId on every claim IPC, per-tab `TabState`, tab strip, Ctrl+Tab / Ctrl+W /
+  Ctrl+1-7, same-file dedupe, background-tab release, shared-canvas render
+  serialization with tab-stamped requests.
+- **Clipboard/copy suite** (`73ac6d1`) — TSV service-line copy (Ctrl+Shift+C),
+  click-to-copy inspector fields via a roving-tabindex composite, copy summary /
+  warnings, severity glyph + word, reconciliation verdict, and seven plain-English
+  warning explanations. *This is the item 38 of 50 reviewers asked for.*
+- **Session restore + recent files + version stamp** (`4c1ec92`) — `session.json` in
+  userData, lazy restore via `TabState.status`, About screen, and honest README/About
+  data-policy wording.
+- **Screenshot suite** (`dad6886`) — 15 images, excluded from the verify gate so a
+  screenshot failure can never break the build.
+- **About version fix** (`4a2ac7f`) — was displaying Electron's 43.2.0.
+- **Bundled design fonts** (`e798776`) — Source Serif 4 / Open Sans / IBM Plex Mono,
+  all confirmed inside the packaged asar.
+- **Audit fixes** (`7a38745`) — all 10 MUST FIX items from `docs/AUDIT_BUILD1.md`.
 
-### In progress
-- Item 0 — pure-move split of `src/renderer/main.ts` into `dom/tabs/preview/
-  inspector/overlays/shortcuts`, `main.ts` reduced to init + wiring.
+### Audit findings
+Six-dimension adversarial audit → `docs/AUDIT_BUILD1.md`: **33 CONFIRMED of 38**
+verified. All eight §1 guardrails held. The verdict was **do not ship**, correctly:
+
+- **BLOCKING** — background-tab pdf.js release was bypassed on every
+  open-into-a-background-tab (`createTab` set `activeTabId` itself, so the release
+  path saw no previous tab). The leak this build set out to fix was still leaking.
+- **MAJOR** — a failed `claim:getPdf` left the tab describing one claim while the
+  canvas showed another, and **export followed the wrong one**.
+- **MAJOR** — restored-but-unloaded tabs escaped the same-file dedupe, producing two
+  tabs sharing one sessionId; closing either broke the other.
+- **MAJOR** — `role="tablist"` shipped with no keyboard handler at all.
+- Plus focus loss on tab re-render, a Ctrl+Shift+C double-fire, modal stacking, and
+  two test-integrity findings (a spec header claiming coverage that did not exist).
+
+All fixed in `7a38745`, each with a test **confirmed to fail against the pre-fix
+code**. The two verifications the plan mandated but that had never been built — a
+pdf.js lifecycle test (via a new injectable `getDocument` seam in
+`src/renderer/tabState.ts`) and `e2e/a11y.spec.ts` — landed with the fixes. Their
+absence is precisely why the top two defects shipped.
+
+### Not done and why
+- The 13 SHOULD FIX items and remaining coverage gaps (F6 region cycling, dialog
+  invoker focus restore, warning-explanation unit tests) — deferred to a later pass,
+  all recorded in `docs/AUDIT_BUILD1.md`.
+- Builds 2-6 not started; Build 1 was the stated deliverable.
+
+### Verification
+- typecheck: **pass** (3 configs)
+- vitest: 104 → **134**, pass
+- Playwright E2E: 4 → **28**, pass
+- screenshots: 7 specs / 15 images, regenerated after the font swap
+- exe: `release/837 Claim Viewer 0.0.1.exe` · 88.5 MB · unsigned (intended) ·
+  2026-07-28 11:12 · SHA-256 `52F981CA80A178B05AEC0EB240B577A0`
+- fonts verified inside the asar: 8 `.ttf` (5 UI + 3 DejaVu PDF)
+
+### Preload/IPC surface changes (rule 7b)
+- `closeSession`, `getInfo`, `getRestoreState`, `saveSession`, `forgetSession` —
+  preload + main handler + types + `e2e/app.spec.ts`'s exact key-list assertion all
+  updated together; the assertion was extended, never loosened.
+
+### Needs Niall's eye
+- The seven **warning explanations** (`src/renderer/warningExplanations.ts`) are
+  first-draft copy, never reviewed — kept in one file so they can be reworded in one
+  place. This is compliance-adjacent text the team will read.
+- The **status-bar copy icon** is subtle; easy to make more prominent.
+- **"Forget open tabs & recent files"** is a *clear now*, not a *stop remembering*
+  toggle — normal tab activity re-persists afterwards. Matches the spec as written;
+  confirm that is what was wanted.
