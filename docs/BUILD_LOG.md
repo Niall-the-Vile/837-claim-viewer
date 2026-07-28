@@ -79,3 +79,31 @@ STATUS: PARTIAL (human task, not part of the unattended chain — see
 ---
 
 <!-- Build 1's "## Build 1 — Tabs + polish" section starts here when the run begins. -->
+
+---
+
+## Build 1 — Tabs + polish + fonts + version stamp + clipboard/copy suite
+STATUS: IN PROGRESS
+
+Start: 2026-07-28 07:30 EDT        End: —
+Commit: —                          Tag: —
+
+**Note on scheduling:** the 2026-07-27 22:00 unattended run **never executed**. The
+scheduled task fired on time (`lastRunAt` 2026-07-27 22:00:47 EDT) but the Claude
+Code process exited immediately after, so no work landed: no commits past
+`build-0-preflight-green`, no build tags, no screenshots, and this log left at its
+template. The repo was verified clean and green (104 vitest, 4 E2E, typecheck clean)
+before restarting. Build 1 is now being run **in the foreground with Niall present**,
+which is strictly better than unattended — screenshots get reviewed as they appear.
+
+### Prerequisites completed before the build proper
+- `4760d65` — E2E per-launch `--user-data-dir` profile isolation
+  (`TABS_BUILD_PLAN.md` §2e first bullet / guardrail §1.9). Verified: 8 distinct
+  temp profiles across two consecutive suite runs, all removed afterwards; the two
+  protected exact-equality assertions (visible state screens, frozen `claimApi` key
+  list) confirmed byte-identical. **No `userData` writer may land before this — it
+  has.**
+
+### In progress
+- Item 0 — pure-move split of `src/renderer/main.ts` into `dom/tabs/preview/
+  inspector/overlays/shortcuts`, `main.ts` reduced to init + wiring.
