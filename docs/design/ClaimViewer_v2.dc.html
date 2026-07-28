@@ -1414,7 +1414,7 @@ class Component extends DCLogic {
     const norm = x => String(x).toLowerCase().replace(/[$,\s()·—-]/g, '');
     const query = norm(s.search || '');
     const searching = query.length > 0;
-    const markBtnStyle = (active, tone) => 'height:22px;padding:0 8px;border-radius:3px;font:600 10px \'Open Sans\',sans-serif;letter-spacing:.02em;cursor:pointer;border:1px solid;' +
+    const markBtnStyle = (active, tone) => 'height:22px;padding:0 8px;border-radius:3px;font:600 10px \'Open Sans\',sans-serif;letter-spacing:.02em;cursor:pointer;border:1px solid;white-space:nowrap;' +
       (active ? 'background:' + tone + ';border-color:' + tone + ';color:#fff' : 'background:var(--surface);border-color:var(--border-strong);color:var(--ink-2)');
     const lineFilterFn = id => {
       const n = s.notes[id];
@@ -1552,8 +1552,8 @@ class Component extends DCLogic {
       ubLines: ubGrid, dentalLines: dentalGrid,
       pageLines: decorated,
       isForm, isCms, isUb, isDental, hasFile, noFile: !hasFile,
-      fitPageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (Math.abs(s.zoom - 0.72) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
-      fitWidthStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (Math.abs(s.zoom - 1.18) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      fitPageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (Math.abs(s.zoom - 0.72) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      fitWidthStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (Math.abs(s.zoom - 1.18) < 0.001 ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
       isWelcome: s.screen === 'welcome',
       isLoading: s.screen === 'loading',
       isError: s.screen === 'error',
@@ -1578,8 +1578,8 @@ class Component extends DCLogic {
         this.setState(st => ({ screen: 'cms1500', page: n > 6 ? 2 : 1, inspectorOpen: true, open: { ...st.open, lines: true } }));
       },
       multiPage: isCms && !onePage,
-      paginateStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
-      onePageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (onePage ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      paginateStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (onePage ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
+      onePageStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (onePage ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
       setPaginate: () => this.setState({ onePage: false }),
       setOnePage: () => this.setState({ onePage: true, page: 1 }),
       isBatch: isUb || isDental,
@@ -1589,8 +1589,8 @@ class Component extends DCLogic {
       pageNo: s.page, pageCount,
       sheetStyle: 'width:816px;' + (letter ? 'min-height:1056px;' : '') + 'display:flex;flex-direction:column;background:#fff;color:#000;padding:14px 16px;font-family:\'Open Sans\',sans-serif',
       isSheetForm: isUb || isDental,
-      compactStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (letter ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
-      letterStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (letter ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      compactStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (letter ? 'background:transparent;color:var(--ink-2)' : 'background:var(--accent-tint);color:var(--ink)'),
+      letterStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (letter ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
       setCompact: () => this.setState({ letter: false }),
       setLetter: () => this.setState({ letter: true }),
       exportPages: onePage ? '1  (condensed grid)' : '2',
@@ -1627,14 +1627,14 @@ class Component extends DCLogic {
         ? 'background:var(--accent-tint);border-color:var(--accent);color:var(--ink)'
         : 'background:var(--surface);border-color:var(--border-strong);color:var(--ink)'),
       iconBtn: 'display:inline-flex;align-items:center;justify-content:center;width:28px;height:26px;border:0;background:transparent;color:var(--ink-2);cursor:pointer;border-radius:3px',
-      textBtn: 'height:26px;padding:0 9px;border:0;background:transparent;color:var(--ink-2);font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px',
-      linkBtn: 'border:0;background:transparent;color:var(--accent);font:600 12px \'Open Sans\',sans-serif;cursor:pointer;padding:2px 4px',
+      textBtn: 'height:26px;padding:0 9px;border:0;background:transparent;color:var(--ink-2);font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap',
+      linkBtn: 'border:0;background:transparent;color:var(--accent);font:600 12px \'Open Sans\',sans-serif;cursor:pointer;padding:2px 4px;white-space:nowrap',
       navGroup: 'display:flex;align-items:center;height:32px;padding:0 4px;background:var(--surface);border:1px solid var(--border-strong);border-radius:4px;gap:2px',
       navDivider: 'width:1px;height:16px;background:var(--border);margin:0 3px',
       groupLabel: 'font:600 9.5px \'Open Sans\',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)',
       sepStyle: 'width:1px;height:34px;background:var(--border);align-self:center',
       statusSep: 'width:1px;height:12px;background:var(--border-strong);margin:0 12px',
-      statusWarnStyle: 'border:0;background:transparent;cursor:pointer;padding:0;font:600 11.5px \'Open Sans\',sans-serif;color:' + (isCms ? 'var(--gold)' : 'var(--ink-2)'),
+      statusWarnStyle: 'border:0;background:transparent;cursor:pointer;padding:0;white-space:nowrap;font:600 11.5px \'Open Sans\',sans-serif;color:' + (isCms ? 'var(--gold)' : 'var(--ink-2)'),
       cmsCell: 'border-bottom:1px solid #000;padding:2px 4px 3px;min-height:26px',
       cmsCellLast: 'padding:2px 4px 3px;min-height:26px',
       cmsCellPad: 'padding:2px 4px 3px',
@@ -1700,7 +1700,7 @@ class Component extends DCLogic {
       cycleUiScale: () => this.setState(st => { const seq = [100, 125, 150, 175]; const i = seq.indexOf(st.uiScale); return { uiScale: seq[(i + 1) % seq.length] }; }),
       highContrast: s.highContrast,
       toggleHighContrast: () => this.setState(st => ({ highContrast: !st.highContrast })),
-      highContrastStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;' + (s.highContrast ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
+      highContrastStyle: 'height:26px;padding:0 9px;border:0;font:500 12px \'Open Sans\',sans-serif;cursor:pointer;border-radius:3px;white-space:nowrap;' + (s.highContrast ? 'background:var(--accent-tint);color:var(--ink)' : 'background:transparent;color:var(--ink-2)'),
       sheetFilter: s.highContrast ? 'filter:contrast(1.35) saturate(0) brightness(.94);' : '',
       windowStyle: 'width:1440px;height:980px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.28);zoom:' + uiScaleNum + ';',
       paletteQuery: s.paletteQuery,
