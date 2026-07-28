@@ -149,8 +149,10 @@ test.describe('837 Claim Viewer — screenshots (docs/TABS_BUILD_PLAN.md §3b)',
     // The full open-queue, in the exact order this file's tests consume it:
     // 3 distinct real fixtures (1 tab, then 3 tabs) -> 12 overflow copies ->
     // FIXTURE_1500 again (clean single tab for workspace/about/export/toast)
-    // -> FIXTURE_MANY_WARNINGS (warnings banner + inspector explanation).
-    const queue = [FIXTURE_1500, FIXTURE_837I_MULTI, FIXTURE_UNSUPPORTED, ...overflowFixturePaths, FIXTURE_1500, FIXTURE_MANY_WARNINGS];
+    // -> FIXTURE_MANY_WARNINGS (warnings banner + inspector explanation) ->
+    // FIXTURE_1500 once more (Ctrl+F inspector search, docs/BUILD_QUEUE.md
+    // Build 2.1).
+    const queue = [FIXTURE_1500, FIXTURE_837I_MULTI, FIXTURE_UNSUPPORTED, ...overflowFixturePaths, FIXTURE_1500, FIXTURE_MANY_WARNINGS, FIXTURE_1500];
 
     const launched = await launchApp({
       CLAIM_VIEWER_E2E_OPEN: queue.join(';'),
@@ -270,6 +272,28 @@ test.describe('837 Claim Viewer — screenshots (docs/TABS_BUILD_PLAN.md §3b)',
     await ensureTheme(page, 'dark');
     await shot(page, 'warnings-dark');
     await ensureTheme(page, 'light');
+    await closeAllTabs(page, 1);
+  });
+
+  test('Ctrl+F inspector search: filtered fields + stepped-to match outline, light + dark (docs/BUILD_QUEUE.md Build 2.1)', async () => {
+    await openNextQueuedFile(page, 1); // FIXTURE_1500
+    await expect(page.locator('#workspaceScreen')).toBeVisible();
+    await page.keyboard.press('Control+f');
+    await expect(page.locator('#inspectorSearchInput')).toBeFocused();
+    // "SAMPLEPATIENT" -> matches in both Patient and Insured (see
+    // e2e/search.spec.ts's header comment for why this fixture value is
+    // safe from the accidental cross-field digit collisions a bare numeric
+    // query can hit once punctuation is stripped).
+    await page.locator('#inspectorSearchInput').fill('SAMPLEPATIENT');
+    await expect(page.locator('#inspectorSearchSummary')).toContainText('2 matches in 2 groups');
+    await page.keyboard.press('Enter'); // stepped-to match gets the persistent outline
+    await expect(page.locator('.inspRow.searchMatchActive')).toHaveCount(1);
+    await ensureTheme(page, 'light');
+    await shot(page, 'search-light');
+    await ensureTheme(page, 'dark');
+    await shot(page, 'search-dark');
+    await ensureTheme(page, 'light');
+    await page.keyboard.press('Escape');
     await closeAllTabs(page, 1);
   });
 });

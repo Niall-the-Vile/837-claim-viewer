@@ -3,6 +3,7 @@ import { toggleInspector } from './inspector.js';
 import { zoomBy, zoomToActualSize, fitPage, fitWidth, stepPage } from './preview.js';
 import { anyOverlayOpen, openOverlayId, trapTabInOverlay, closeOverlay, openOverlay, openExportDialog, exportCurrentClaimSkipDialog } from './overlays.js';
 import { activeTab } from './tabs.js';
+import { focusSearch } from './features/search.js';
 
 /**
  * The keyboard shortcuts sheet's content (KEY_GROUPS + rendering it + the
@@ -52,6 +53,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Fit page', keys: 'Ctrl+9' },
       { label: 'Fit width', keys: 'Ctrl+8' },
       { label: 'Toggle inspector', keys: 'Ctrl+D' },
+      { label: 'Find in this claim', keys: 'Ctrl+F' },
       { label: 'Light / dark', keys: 'Ctrl+Shift+L' },
       { label: 'UI text scale — cycle 100/125/150/175%', keys: '—' },
     ],
@@ -198,6 +200,15 @@ export function initShortcuts(deps: ShortcutDeps): void {
       case 'd':
         event.preventDefault();
         toggleInspector();
+        break;
+      case 'f':
+        // focusSearch() itself is the no-op guard (no file open / a modal
+        // dialog is open) — docs/UI_REQUIREMENTS_v3_queued_features.md §1's
+        // "Ctrl+F is a no-op with no file open (do not steal focus)".
+        // preventDefault unconditionally so this never falls through to any
+        // OS/Chromium default for Ctrl+F either way.
+        event.preventDefault();
+        focusSearch();
         break;
       case 'w':
         event.preventDefault();

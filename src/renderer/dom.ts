@@ -70,6 +70,12 @@ export const inspectorEl = requireEl<HTMLElement>('inspector');
 export const expandAllBtn = requireEl<HTMLButtonElement>('expandAllBtn');
 export const inspectorBodyEl = requireEl<HTMLDivElement>('inspectorBody');
 
+// Find/search (docs/UI_REQUIREMENTS_v3_queued_features.md §1 / docs/BUILD_QUEUE.md Build 2.1).
+export const inspectorSearchInputEl = requireEl<HTMLInputElement>('inspectorSearchInput');
+export const inspectorSearchClearBtn = requireEl<HTMLButtonElement>('inspectorSearchClearBtn');
+export const inspectorSearchOtherClaimsBtn = requireEl<HTMLButtonElement>('inspectorSearchOtherClaims');
+export const inspectorSearchSummaryEl = requireEl<HTMLDivElement>('inspectorSearchSummary');
+
 export const statusFileGroupEl = requireEl<HTMLSpanElement>('statusFileGroup');
 export const statusFileNameEl = requireEl<HTMLSpanElement>('statusFileName');
 export const statusFormTypeEl = requireEl<HTMLSpanElement>('statusFormType');

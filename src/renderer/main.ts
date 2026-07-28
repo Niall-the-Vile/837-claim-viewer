@@ -79,6 +79,7 @@ import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliat
 import { severityWord } from './format.js';
 import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 import { initUiScale, cycleUiScale } from './features/uiScale.js';
+import { initSearch } from './features/search.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -413,7 +414,14 @@ async function loadTabContent(tab: TabState): Promise<void> {
   await ensureClaimRendered(tab, { forceReload: true });
 }
 
-async function stepClaim(delta: number): Promise<void> {
+/**
+ * Switches the active tab's claim to `next` (an absolute index, not a
+ * delta) and re-renders — the shared body behind both `stepClaim`
+ * (PageUp/PageDown, delta ±1) and search.ts's cross-claim "jump to a match
+ * in another claim" (docs/BUILD_QUEUE.md Build 2.1), which needs an
+ * arbitrary target index rather than a step of exactly one.
+ */
+async function goToClaimIndex(next: number): Promise<void> {
   if (currentScreen() !== 'workspace') return;
   // No claim navigation while any overlay is open — mirrors the Escape
   // special-casing elsewhere (the export dialog's manifest is rendered once
@@ -421,7 +429,6 @@ async function stepClaim(delta: number): Promise<void> {
   if (anyOverlayOpen()) return;
   const tab = activeTab();
   if (!tab) return;
-  const next = tab.currentIndex + delta;
   if (next < 0 || next >= tab.summaries.length) return;
 
   // docs/AUDIT_BUILD1.md MUST FIX #2: remember exactly what's still on
@@ -460,6 +467,12 @@ async function stepClaim(delta: number): Promise<void> {
     }
     showToast(errorMessage(err), true);
   }
+}
+
+async function stepClaim(delta: number): Promise<void> {
+  const tab = activeTab();
+  if (!tab) return;
+  await goToClaimIndex(tab.currentIndex + delta);
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,3 +1149,4 @@ renderTabStrip();
 syncScreenUI();
 void initSessionRestore();
 void initUiScale();
+initSearch({ jumpToClaim: goToClaimIndex });

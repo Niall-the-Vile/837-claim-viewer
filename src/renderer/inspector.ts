@@ -114,6 +114,25 @@ function truncateDecoded(text: string): string {
   return text.length > DECODED_TRUNCATE_LEN ? `${text.slice(0, DECODED_TRUNCATE_LEN - 1)}…` : text;
 }
 
+/**
+ * Fires after every `renderInspector()` rebuild (docs/BUILD_QUEUE.md
+ * Build 2.1) — the hook this file's `features/search.ts` registers itself
+ * with (via `onInspectorRendered`) to re-apply an active search filter to
+ * the freshly-rebuilt `.inspGroup`/`.inspRow` DOM (tab switch, claim step, a
+ * cross-claim search jump — every path that calls `renderInspector` tears
+ * down and rebuilds the whole body via `inspectorBodyEl.innerHTML = ''`
+ * above, so nothing about a previous filter survives it on its own). Kept
+ * as a generic hook list — this file has no idea search.ts exists — rather
+ * than an import, so inspector.ts and features/search.ts don't need to
+ * import each other (search.ts already imports `updateInspectorVisibility`
+ * from here for Ctrl+F's "expand the inspector if collapsed" step; a
+ * two-way import between the two files would be a needless cycle).
+ */
+const postRenderHooks: Array<() => void> = [];
+export function onInspectorRendered(hook: () => void): void {
+  postRenderHooks.push(hook);
+}
+
 function syncCaret(details: HTMLDetailsElement): void {
   const caret = details.querySelector<HTMLSpanElement>('.inspGroupCaret');
   if (caret) caret.textContent = details.open ? '▾' : '▸';
@@ -171,6 +190,16 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
       rowEl.className = 'inspRow' + (row.isExplanation ? ' inspRowExplain' : '');
       rowEl.setAttribute('role', 'listitem');
       rowEl.tabIndex = -1;
+      // docs/BUILD_QUEUE.md Build 2.1 (Ctrl+F inspector search): the row's
+      // plain label/value text, read by features/search.ts's post-render
+      // filter — deliberately the RAW `row.value` (never the `.decoded`
+      // sibling text this file renders below), matching the spec's "match
+      // on the value and the field label" against what the claim actually
+      // said, not our own decoding lookup. A dataset attribute (not a
+      // rendered-DOM-text scrape) keeps search.ts decoupled from exactly how
+      // this file lays out a row's markup.
+      rowEl.dataset['searchKey'] = row.key;
+      rowEl.dataset['searchValue'] = row.value;
 
       if (row.glyph) {
         const glyphEl = document.createElement('span');
@@ -297,7 +326,15 @@ inspectorBodyEl.addEventListener('keydown', (event) => {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') return;
   const body = row.closest<HTMLElement>('.inspGroupBody');
   if (!body) return;
-  const rows = Array.from(body.querySelectorAll<HTMLElement>('.inspRow'));
+  // `:not([hidden])` (docs/BUILD_QUEUE.md Build 2.1): while an inspector
+  // search filter is active, non-matching rows are hidden in place rather
+  // than removed (features/search.ts) — without this filter, Up/Down/Home/
+  // End would still walk the FULL row list (including hidden ones) by
+  // index, landing the roving tabindex on a `hidden` element that can never
+  // actually receive focus, which silently breaks keyboard navigation the
+  // moment a search filter hides anything. With no filter active every row
+  // is visible anyway, so this is a no-op change outside search.
+  const rows = Array.from(body.querySelectorAll<HTMLElement>('.inspRow:not([hidden])'));
   const currentIdx = rows.indexOf(row);
   if (currentIdx === -1) return;
 
@@ -612,6 +649,7 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   inspectorBodyEl.append(rawDetails);
 
   updateExpandAllLabel();
+  for (const hook of postRenderHooks) hook();
 }
 
 expandAllBtn.addEventListener('click', () => {

@@ -1,3 +1,9 @@
+/* Per-feature stylesheet (docs/TABS_BUILD_PLAN.md §2 Item 0: "per-feature
+   CSS in src/renderer/features/*.css imported from style.css") — `@import`
+   must precede every other rule in a stylesheet (CSS spec), hence it's the
+   very first line here, above even this file's own header comment below. */
+@import './features/search.css';
+
 /*
  * Brotherhood chrome for the Claim Viewer, matching
  * docs/design/ClaimViewer_v2.dc.html (see that file's Component.themeVars()
@@ -587,12 +593,21 @@ a:focus-visible {
   cursor: pointer;
   padding: 2px 4px;
 }
-.linkBtn:hover {
+.linkBtn:hover:not(:disabled) {
   color: var(--accent-hover);
   text-decoration: underline;
 }
-.linkBtn:active {
+.linkBtn:active:not(:disabled) {
   transform: scale(0.96);
+}
+/* docs/BUILD_QUEUE.md Build 2.1: "Expand all" is disabled while an inspector
+   search query is active (search.ts) — the first time any .linkBtn in this
+   app is ever disabled, so (unlike .iconBtn/.btn above) there was no
+   existing :disabled treatment to reuse. Same dimmed/not-allowed language as
+   those. */
+.linkBtn:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
 }
 
 .btn {

@@ -1,0 +1,76 @@
+/*
+ * Ctrl+F find/search across the parsed claim (docs/
+ * UI_REQUIREMENTS_v3_queued_features.md §1 / docs/BUILD_QUEUE.md Build 2.1).
+ * Lives entirely inside #inspector, which already carries the shell's
+ * `zoom: var(--ui-scale)` (see style.css's :root --ui-scale comment) as one
+ * subtree — every descendant here inherits that scaling for free, no
+ * separate `zoom` declaration needed.
+ */
+
+#inspectorSearch {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+#inspectorSearchField {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--field);
+  padding: 0 8px;
+  color: var(--ink-3);
+}
+
+#inspectorSearchInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: 0;
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink);
+}
+
+#inspectorSearchInput::placeholder {
+  color: var(--ink-3);
+}
+
+#inspectorSearchClearBtn {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+#inspectorSearchOtherClaims {
+  align-self: flex-start;
+  font: 600 11.5px var(--font-sans);
+}
+
+#inspectorSearchSummary {
+  font: 400 11.5px var(--font-sans);
+  color: var(--ink-3);
+  min-height: 1em;
+}
+
+/*
+ * Persistent match outline (Enter/Shift+Enter step-through) — deliberately
+ * NOT an animation/flash: the low-vision reviewer explicitly asked for a
+ * locator that stays until the user steps away from it or the query
+ * changes (docs/UI_REQUIREMENTS_v3_queued_features.md §1). Same accent
+ * color/weight as the roving-tabindex focus-visible ring (.inspRow:focus-visible,
+ * style.css) so it reads as "this app's locator outline", not a new idiom,
+ * but `outline-offset` is drawn a touch further out so the two can be told
+ * apart if a stepped-to match also happens to be focused.
+ */
+.inspRow.searchMatchActive {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}

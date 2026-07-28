@@ -263,6 +263,28 @@
             <div class="toolSpacer"></div>
             <button id="expandAllBtn" class="linkBtn" type="button">Expand all</button>
           </div>
+          <!-- Find/search (docs/UI_REQUIREMENTS_v3_queued_features.md §1 /
+               docs/BUILD_QUEUE.md Build 2.1): pinned to the top of the
+               inspector, not a floating overlay — the inspector is where
+               results live. Ctrl+F focuses #inspectorSearchInput from
+               anywhere (src/renderer/features/search.ts); Esc clears the
+               query and returns focus to wherever it came from. -->
+          <div id="inspectorSearch">
+            <div id="inspectorSearchField">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+              </svg>
+              <input id="inspectorSearchInput" type="text" autocomplete="off" spellcheck="false" placeholder="Find in this claim… (Ctrl+F)" aria-label="Find in this claim" />
+              <button id="inspectorSearchClearBtn" class="iconBtn" type="button" aria-label="Clear search" hidden>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </div>
+            <button id="inspectorSearchOtherClaims" class="linkBtn" type="button" hidden></button>
+            <!-- Match count, step position ("match 3 of 7") and the empty
+                 state all live in this ONE aria-live region — announcing
+                 count/position only, never matched row contents. -->
+            <div id="inspectorSearchSummary" role="status" aria-live="polite" aria-atomic="true"></div>
+          </div>
           <div id="inspectorBody"></div>
         </aside>
       </div>

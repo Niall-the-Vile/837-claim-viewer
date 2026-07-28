@@ -245,6 +245,50 @@ test.describe('837 Claim Viewer — E2E — accessibility (tab strip)', () => {
     }
   });
 
+  test('Ctrl+F search: the match-count/position/empty-state region is a single aria-live=polite aria-atomic=true element, and the roving-tabindex composite (one Tab stop per visible group) survives a filter (docs/BUILD_QUEUE.md Build 2.1)', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      const summary = page.locator('#inspectorSearchSummary');
+      await expect(summary).toHaveAttribute('aria-live', 'polite');
+      await expect(summary).toHaveAttribute('aria-atomic', 'true');
+      // Empty before any search — the region exists but announces nothing yet.
+      await expect(summary).toHaveText('');
+
+      await page.keyboard.press('Control+f');
+      // "billing" matches only the Providers group's Billing* rows by label.
+      await page.locator('#inspectorSearchInput').fill('billing');
+      const providersGroup = page.locator('details[data-group-id="providers"]');
+      await expect(providersGroup).toBeVisible();
+
+      // Roving tabindex, still exactly one stop, but now pointing at the
+      // first VISIBLE (matching) row — not a hidden one, which would be a
+      // dead Tab stop (docs/AUDIT_BUILD1.md-style regression this build
+      // must not reintroduce: inspector.ts's own keydown handler was
+      // updated to walk only `:not([hidden])` rows for this exact reason).
+      const tabStops = providersGroup.locator('.inspRow[tabindex="0"]');
+      await expect(tabStops).toHaveCount(1);
+      await expect(tabStops.first()).toBeVisible();
+      const hiddenRows = providersGroup.locator('.inspRow[hidden]');
+      const hiddenCount = await hiddenRows.count();
+      for (let i = 0; i < hiddenCount; i++) {
+        await expect(hiddenRows.nth(i)).toHaveAttribute('tabindex', '-1');
+      }
+
+      // Arrow-key navigation within the group only ever lands on a visible row.
+      await tabStops.first().focus();
+      await page.keyboard.press('ArrowDown');
+      const focused = page.locator('.inspRow:focus');
+      await expect(focused).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
   test('View menu\'s "UI text scale" action is keyboard-reachable, has a non-empty accessible name that includes the current value, and updates it in place on activation (docs/UI_REQUIREMENTS_v3_queued_features.md §9)', async () => {
     const app = await launchApp();
     try {
