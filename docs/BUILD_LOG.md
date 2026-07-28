@@ -168,3 +168,84 @@ absence is precisely why the top two defects shipped.
 - **"Forget open tabs & recent files"** is a *clear now*, not a *stop remembering*
   toggle — normal tab activity re-persists afterwards. Matches the spec as written;
   confirm that is what was wanted.
+
+---
+
+## Build 2 — UI text scale, CMS code decoding, Ctrl+F search
+STATUS: GREEN (adversarial audit pending — see "Not done")
+
+Start: 2026-07-28 12:55 EDT        End: 2026-07-28 16:05 EDT
+Commit: 284887f                    Tag: build-2-green
+
+**Scheduling note:** this build was scheduled for 12:35 but the task never fired
+(`enabled: true`, no `lastRunAt`, repo untouched) — the second scheduler no-show in
+two attempts. Run in the foreground instead, and the scheduled task was disabled so
+it could not fire mid-build and start a competing session on the same repo.
+
+### What shipped
+- **2.0 — Independent UI text scale** (`61dd5e1`). View-menu control cycling
+  100/125/150/175%, persisted in `session.json`. Applies `zoom` per chrome region
+  (`#titlebar`, `#menubar`, `#tabStrip`, `#toolbar`, `.warnBanner`, `#inspector`,
+  `#statusBar`, `.dialog`, `#toast`) so `#pdfScroll`/`#pdfCanvas` never inherit it —
+  `setZoomFactor` was forbidden precisely because it would have scaled the PDF canvas
+  and corrupted per-tab zoom. Fixed px widths (`#inspector` 372, `.dialog` 600,
+  `.dialogWide` 720, `.menuPanel` 230) converted to `em`. Fit-math extracted to a
+  pure `src/renderer/fitMath.ts`.
+  *Filed **critical** by the low-vision reviewer, who runs Windows at 175%.*
+- **2.2 — Plain-English CMS code decoding** (folded into `61dd5e1`). Eight public
+  code sets as `.ts` modules under `src/data/`: place of service, type of bill,
+  discharge status, revenue codes, condition/occurrence/value codes, modifiers.
+  Decoding applied in MAIN inside `buildClaimDetail`, so the DTO carries
+  `{ raw, decoded }` and the renderer stays a view layer. Raw value always shown
+  first and stays copyable verbatim; unknown codes render raw, never "Unknown".
+  CPT/ICD descriptors deliberately excluded (AMA-licensed).
+- **2.1 — `Ctrl+F` find/search** (`284887f`). Search field pinned to the inspector,
+  filters rows while keeping group headings, live match count + `Enter`/`Shift+Enter`
+  stepping with a persistent outline, cross-claim "matches in other claims" jump,
+  `Esc` clears. Pure matching logic in `src/renderer/features/searchMatch.ts`.
+  *Second-most requested feature on the 50-reviewer panel (27 filings).*
+
+### Two bugs caught by insisting on empirical proof
+- **`vw` max-width vs. element zoom.** A `vw`-based cap resolves against the true
+  window regardless of an element's own `zoom`, so at 175% a dialog would have
+  overflowed the window. Found by probing the real renderer, not by reading CSS.
+- **Fit-math must NOT take a scale parameter.** The intuitive "divide by scale" fix
+  would have been the bug: `#pdfScroll`'s `getBoundingClientRect()` stays exact at
+  every scale, so dividing would break "fitWidth yields the same zoom at 175% as at
+  100%" — now asserted directly.
+
+### The `<details>` trap (from the Build 1 audit, avoided here)
+Inspector groups render **collapsed**. A naive search would report "7 matches in 3
+groups" while showing none. Search force-opens matching groups, and captures each
+group's prior `open` state on the first keystroke to restore it **verbatim** on
+`Esc` — otherwise clearing a search would silently destroy the user's layout.
+
+### Not done and why
+- **Adversarial audit not yet run** for this build. Build 1's audit found 33 confirmed
+  defects including a wrong-claim export, so this is a real gap, not a formality —
+  it should run before this build is treated as trustworthy.
+- 13 SHOULD FIX items + coverage gaps from `docs/AUDIT_BUILD1.md` still open.
+- Builds 3-6 not started.
+
+### Verification
+- typecheck: **pass** (3 configs)
+- vitest: 134 → **202**, pass
+- Playwright E2E: 28 → **47**, pass
+- screenshots: 7 → **8** specs (search light/dark added)
+- exe: `release/837 Claim Viewer 0.0.1.exe` rebuilt, unsigned (intended)
+- asar: 17 matches for fonts + `dist/src/data` — the eight decode tables ship as
+  compiled `.js`; as `.json` they would have shipped EMPTY while every test passed
+  (the same gap that silently disabled the PDF fonts once)
+
+### Incident
+`node_modules` was wiped by a subagent's `git worktree` cleanup (it used a worktree at
+the pre-feature commit to prove its E2E tests fail without the feature — good
+practice, bad cleanup). Detected immediately: `tsc` stopped resolving. Fixed with
+`npm ci`; nothing committed was affected, since dependencies are gitignored.
+
+### Needs Niall's eye
+- Everything from Build 1 still stands (warning-explanation copy unreviewed, subtle
+  status-bar copy icon, "Forget" is clear-now not stop-remembering).
+- UI scale at 175% is verified **programmatically** (real `scrollWidth`/overlap/
+  viewport-containment checks in the Electron renderer) but never seen by a human on
+  a real 175%-DPI Windows display.
