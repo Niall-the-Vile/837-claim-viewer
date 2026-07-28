@@ -210,9 +210,22 @@ inspectorBodyEl.addEventListener('keydown', (event) => {
   const row = target.closest<HTMLElement>('.inspRow');
   if (!row) return;
 
+  // docs/AUDIT_BUILD1.md MUST FIX #7: this used to match plain Ctrl+C AND
+  // Ctrl+Shift+C (no `!event.shiftKey` guard) and never stopped the event
+  // from bubbling — so pressing Ctrl+Shift+C with focus on an inspector row
+  // copied the row's single value here, THEN bubbled to the window
+  // dispatcher (shortcuts.ts), which copied the whole service-lines TSV on
+  // top of it: two clipboard writes and two toasts for one keypress, with
+  // the final clipboard contents depending on event-handler ordering.
+  // Ctrl+Shift+C is reserved for the TSV shortcut everywhere else in the
+  // app; excluding it here (rather than just relying on shortcuts.ts to
+  // "win" by running later) plus stopPropagation() on the plain-Ctrl+C
+  // branch keeps this row-level handler from ever colliding with a
+  // window-level chord, now or if one is added later.
   const ctrlOrCmd = event.ctrlKey || event.metaKey;
-  if (ctrlOrCmd && event.key.toLowerCase() === 'c') {
+  if (ctrlOrCmd && !event.shiftKey && event.key.toLowerCase() === 'c') {
     event.preventDefault();
+    event.stopPropagation();
     const key = row.querySelector('.inspRowKey')?.textContent ?? row.getAttribute('aria-label') ?? 'Value';
     const value = row.querySelector('.inspRowVal')?.textContent ?? '';
     copyToClipboard(value, `${key} copied to the clipboard.`);

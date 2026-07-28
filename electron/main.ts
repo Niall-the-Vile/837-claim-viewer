@@ -686,6 +686,22 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('claim:getPdf', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<Uint8Array> => {
+    // --- TEST-ONLY SEAM ----------------------------------------------------
+    // Mirrors nextE2EOpenPath/CLAIM_VIEWER_E2E_SAVE above: when
+    // CLAIM_VIEWER_E2E_FAIL_PDF_INDEX is set to a claim index (and gated on
+    // !isRealPackagedApp(), the same guard every other test-only seam in
+    // this file uses), that index's render always throws — this is what lets
+    // e2e/tabs.spec.ts's "failed claim:getPdf never leaves the tab
+    // describing the wrong claim" test (docs/AUDIT_BUILD1.md MUST FIX #2)
+    // reproduce a per-claim render failure deterministically, without any
+    // way to actually break renderClaim() for a specific real fixture claim
+    // on demand. Provably unreachable in the packaged app regardless of the
+    // environment, same as every other seam here.
+    const failIndex = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_FAIL_PDF_INDEX'] : undefined;
+    if (failIndex !== undefined && String(index) === failIndex) {
+      throw new Error('Simulated PDF render failure (E2E test seam).');
+    }
+    // --- end TEST-ONLY SEAM --------------------------------------------------
     const claim = getSessionClaim(sessionId, index);
     return renderClaim(claim);
   });
@@ -791,7 +807,25 @@ function registerIpcHandlers(): void {
     const stored = await sessionStore.loadSession(userDataDir());
     const storedActiveRef = stored.activeIndex >= 0 ? stored.tabs[stored.activeIndex] : undefined;
 
-    const validTabs = stored.tabs.filter(isRestorableFileRef);
+    // Defensive dedupe by resolved path (docs/AUDIT_BUILD1.md MUST FIX #3):
+    // session:save trusts the renderer's tab list as-is (see that handler's
+    // own doc comment on the accepted trust carve-out), so a hand-edited
+    // session.json — or any future bug upstream of this handler — could in
+    // principle list the same path twice. Restoring it twice would recreate
+    // the exact "two TabStates, one path" shape the performOpen dedupe fix
+    // above exists to prevent, just via a different route (two independent
+    // 'unloaded' tabs instead of a placeholder race): activating one and
+    // then the other would hand both the SAME sessionId (main dedupes
+    // openClaimAtPath by path), so closing either would drop the session
+    // out from under the other.
+    const seenPaths = new Set<string>();
+    const validTabs: StoredFileRef[] = [];
+    for (const ref of stored.tabs) {
+      if (!isRestorableFileRef(ref)) continue;
+      if (seenPaths.has(ref.filePath)) continue;
+      seenPaths.add(ref.filePath);
+      validTabs.push(ref);
+    }
     let activeIndex = -1;
     if (validTabs.length > 0) {
       const matched = storedActiveRef ? validTabs.findIndex((t) => t.filePath === storedActiveRef.filePath) : -1;

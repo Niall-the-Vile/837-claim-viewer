@@ -1,16 +1,16 @@
-import * as pdfjsLib from 'pdfjs-dist';
-import type { PDFDocumentProxy, PDFDocumentLoadingTask } from 'pdfjs-dist';
-// `?url` gives Vite's resolved asset URL for the worker file (bundled and
-// copied into dist/renderer at build time) instead of trying to parse it as
-// a JS module — this is what keeps the pdf.js worker fully local/offline;
-// it is never fetched from a CDN. Set here (rather than preview.ts) because
-// this module owns the one place pdf.js documents are ever created
-// (loadPdfDocument below), and workerSrc must be set before the first call.
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { ClaimSummaryDto, ClaimDetailDto } from '../../electron/preload.js';
+import type { ClaimSummaryDto } from '../../electron/preload.js';
 import { tabStripEl } from './dom.js';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+// Per-tab state's type shape (TabState/ZoomMode/Screen) and pdf.js document
+// create/destroy (loadPdfDocument/setActivePdfDoc) now live in tabState.ts —
+// split out so that module can be unit-tested (with an injectable fake
+// pdf.js loader) without pulling in this file's DOM-coupled pieces, since
+// dom.ts's module-level `requireEl` calls need a real `document` (see
+// tabState.ts's header comment). Imported (not just re-exported) since this
+// file's own code below still uses TabState/setActivePdfDoc directly;
+// re-exported so every existing importer of tabs.ts (main.ts, preview.ts,
+// inspector.ts, overlays.ts, shortcuts.ts) keeps working unchanged.
+import { loadPdfDocument, setActivePdfDoc, type TabState, type ZoomMode, type Screen } from './tabState.js';
+export { loadPdfDocument, setActivePdfDoc, type TabState, type ZoomMode, type Screen };
 
 /**
  * Per-tab state (docs/ROADMAP.md §1 / docs/TABS_BUILD_PLAN.md §2 — the
@@ -23,32 +23,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
  * `screen` is deliberately NOT stored anywhere — it is DERIVED from the
  * active tab's status via `currentScreen()` below (no tabs -> welcome).
  * Only `inspectorOpen`, `theme` and `activeTabId` stay as genuine
- * cross-tab globals (see the literal `TabState`/`AppState` shapes below,
- * which mirror docs/TABS_BUILD_PLAN.md §2's interface exactly).
+ * cross-tab globals (see the literal `TabState`/`AppState` shapes, which
+ * mirror docs/TABS_BUILD_PLAN.md §2's interface exactly — `TabState`/
+ * `ZoomMode`/`Screen` now live in tabState.ts, imported/re-exported above).
  */
-
-export type Screen = 'welcome' | 'loading' | 'error' | 'workspace';
-export type ZoomMode = 'manual' | 'fit-page' | 'fit-width';
-
-export interface TabState {
-  tabId: string;
-  sessionId: string | null;
-  status: 'unloaded' | 'loading' | 'ready' | 'error';
-  filePath: string;
-  fileName: string;
-  source: 'json' | 'x12' | null;
-  summaries: ClaimSummaryDto[];
-  currentIndex: number;
-  detail: ClaimDetailDto | null;
-
-  pdfDoc: PDFDocumentProxy | null;
-  pageNum: number;
-  pageCount: number;
-  zoom: number;
-  zoomMode: ZoomMode;
-
-  errorMessage: string;
-}
 
 export interface AppState {
   tabs: TabState[];
@@ -82,6 +60,21 @@ export function findTabBySessionId(sessionId: string): TabState | null {
 }
 
 /**
+ * Finds a tab by its (main-resolved, absolute) file path — used by
+ * performOpen's dedupe (docs/AUDIT_BUILD1.md MUST FIX #3) to catch a
+ * lazily-restored `'unloaded'` tab, which has `sessionId: null` and so is
+ * invisible to findTabBySessionId, when the SAME file is reopened before
+ * that tab is ever activated. Without this, reopening it would mint a
+ * brand-new session/tab instead of filling in the existing placeholder, and
+ * later activating the original placeholder would get handed that same
+ * fresh session by main's own path-based dedupe — leaving two TabStates
+ * sharing one main-process sessionId, so closing either kills the other.
+ */
+export function findTabByFilePath(filePath: string): TabState | null {
+  return state.tabs.find((t) => t.filePath !== '' && t.filePath === filePath) ?? null;
+}
+
+/**
  * The screen to show, derived purely from tab state — never an independent
  * flag (docs/TABS_BUILD_PLAN.md §2). No tabs at all -> welcome. Otherwise
  * the active tab's own status decides it. `'unloaded'` (reserved for a
@@ -101,53 +94,6 @@ export function currentScreen(): Screen {
     case 'ready':
       return 'workspace';
   }
-}
-
-// ---------------------------------------------------------------------------
-// pdf.js document lifecycle — THE single place a tab's `pdfDoc` is ever
-// created or reassigned. pdf.js documents leaked before tabs existed at all
-// (every claim step / re-open / close abandoned the previous
-// PDFDocumentProxy with no destroy call anywhere) — this fixes the root
-// cause, not just the tabs symptom, by awaiting the outgoing document's
-// real destroy() before adopting the new one. Every assignment site (claim
-// step, file open, tab close, tab deactivate/background-release — see
-// src/renderer/main.ts) routes through setActivePdfDoc below.
-// ---------------------------------------------------------------------------
-
-/**
- * pdf.js's actual `destroy()` lives on the `PDFDocumentLoadingTask` that
- * `getDocument()` returns, NOT on the `PDFDocumentProxy` its `.promise`
- * resolves to (the proxy has no destroy method at all in this pdf.js
- * version). `TabState.pdfDoc` is typed as the proxy per
- * docs/TABS_BUILD_PLAN.md §2's literal interface — that's the only part the
- * rest of the renderer (preview.ts's getPage/render calls) ever needs. This
- * map is the bridge: loadPdfDocument() below registers each proxy's owning
- * loading task, and setActivePdfDoc() looks it up to call the task's real
- * destroy() when a tab's pdfDoc is replaced or cleared.
- */
-const loadingTasksByDoc = new WeakMap<PDFDocumentProxy, PDFDocumentLoadingTask>();
-
-/** Loads a claim's PDF bytes into a fresh pdf.js document. pdf.js may transfer/detach the buffer it's given; hand it a fresh copy so re-rendering (stepping back and forth, zooming) never operates on a stale one. */
-export async function loadPdfDocument(bytes: Uint8Array): Promise<PDFDocumentProxy> {
-  const loadingTask = pdfjsLib.getDocument({ data: bytes.slice() });
-  const doc = await loadingTask.promise;
-  loadingTasksByDoc.set(doc, loadingTask);
-  return doc;
-}
-
-export async function setActivePdfDoc(tab: TabState, doc: PDFDocumentProxy | null): Promise<void> {
-  const old = tab.pdfDoc;
-  if (old && old !== doc) {
-    const loadingTask = loadingTasksByDoc.get(old);
-    loadingTasksByDoc.delete(old);
-    try {
-      if (loadingTask) await loadingTask.destroy();
-    } catch {
-      // pdf.js destroy() is best-effort cleanup; a failure here must never
-      // block adopting the new document (or nulling it out on close).
-    }
-  }
-  tab.pdfDoc = doc;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +125,25 @@ export interface NewTabInput {
  * the caller to sequence around a loading floor — it always does, since the
  * strip must never visibly lag the state it reflects.
  */
-export function createTab(input: NewTabInput = {}): TabState {
+/**
+ * `activate`: docs/AUDIT_BUILD1.md MUST FIX #1 — createTab used to set
+ * `state.activeTabId` itself unconditionally, so opening a file while
+ * another tab was already showing silently made the brand-new (not-yet-
+ * loaded) tab "active" the instant it was created, well before
+ * `main.ts`'s `activateTabById` ever ran for it. By the time
+ * `activateTabById` DID run, `activeTab()` (reading the already-changed
+ * `state.activeTabId`) returned the SAME new tab as both "previous" and
+ * "next", so `switchingAway` was false and neither `cancelInFlightRender`
+ * nor the background-release `setActivePdfDoc(previousTab, null)` call ever
+ * fired for the tab that had actually been on screen — leaking one live
+ * pdf.js document/worker per background-opened file. `activateTabById` is
+ * now the ONLY writer of `state.activeTabId` for every path except the
+ * very-first-tab placeholder (there is no "previous" tab to release in that
+ * case, and something must be active immediately so `currentScreen()` has a
+ * tab to derive 'loading' from during the open's IPC round-trip) — that one
+ * caller opts in via `activate: true`. Defaults to `false`.
+ */
+export function createTab(input: NewTabInput = {}, opts: { activate?: boolean } = {}): TabState {
   const tab: TabState = {
     tabId: newTabId(),
     sessionId: input.sessionId ?? null,
@@ -198,7 +162,7 @@ export function createTab(input: NewTabInput = {}): TabState {
     errorMessage: '',
   };
   state.tabs.push(tab);
-  state.activeTabId = tab.tabId;
+  if (opts.activate) state.activeTabId = tab.tabId;
   renderTabStrip();
   return tab;
 }
@@ -254,6 +218,17 @@ function middleEllipsize(name: string, maxChars = 22): string {
 }
 
 export function renderTabStrip(): void {
+  // docs/AUDIT_BUILD1.md MUST FIX #6: this wipes and rebuilds every `.tab`
+  // node on every call (tab open/close/switch, and every claim step, since
+  // ensureClaimRendered re-renders the strip too) — capture whether keyboard
+  // focus was actually inside the strip BEFORE the wipe, so it can be
+  // restored onto the (freshly rebuilt) active tab afterward, instead of
+  // silently falling to <body>. When there's no active tab left afterward
+  // (the strip is now empty — the last tab just closed), there is nothing
+  // here to refocus; main.ts's closeTabById handles that case by focusing
+  // the welcome screen's primary button instead, since this module has no
+  // reason to know about it.
+  const focusWasInStrip = document.activeElement instanceof Node && tabStripEl.contains(document.activeElement);
   tabStripEl.hidden = state.tabs.length === 0;
   tabStripEl.innerHTML = '';
   for (const tab of state.tabs) {
@@ -271,6 +246,12 @@ export function renderTabStrip(): void {
     // background tab 'unloaded' rather than eagerly loading every restored
     // tab.
     el.dataset['tabStatus'] = tab.status;
+    // Testability only (no behavior reads this — sessionId is an opaque
+    // crypto.randomUUID(), never PHI): lets E2E confirm the shared-session
+    // dedupe bug (docs/AUDIT_BUILD1.md MUST FIX #3) stays fixed, and that a
+    // closed tab's session actually stops serving claims (coverage gap #6),
+    // without any way to reach the sessionId value from the DOM otherwise.
+    el.dataset['tabSessionId'] = tab.sessionId ?? '';
 
     const label = document.createElement('span');
     label.className = 'tabLabel';
@@ -282,6 +263,15 @@ export function renderTabStrip(): void {
     close.type = 'button';
     close.className = 'iconBtn tabClose';
     close.setAttribute('aria-label', `Close ${displayName}`);
+    // docs/AUDIT_BUILD1.md MUST FIX #4: without this, every tab's close
+    // button was a full, native `tabIndex="0"` Tab stop nested inside the
+    // `.tab` div, doubling the tab strip's tab-stop count and defeating the
+    // roving-tabindex pattern the `.tab` elements themselves already use
+    // (only the active `.tab` is index 0, see above) — "one tab in the tab
+    // order" (docs/TABS_BUILD_PLAN.md §3a). Closing by keyboard is Delete/
+    // Backspace on the focused tab (see initTabStrip's keydown handler
+    // below), not a second Tab stop on its close button.
+    close.tabIndex = -1;
     close.dataset['tabClose'] = tab.tabId;
     close.innerHTML =
       '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -292,6 +282,7 @@ export function renderTabStrip(): void {
 
   const activeEl = tabStripEl.querySelector<HTMLElement>('.tab.isActive');
   activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focusWasInStrip) activeEl?.focus();
 }
 
 export interface TabStripDeps {
@@ -327,6 +318,78 @@ export function initTabStrip(deps: TabStripDeps): void {
     if (id) {
       event.preventDefault();
       deps.onClose(id);
+    }
+  });
+
+  /**
+   * docs/AUDIT_BUILD1.md MUST FIX #5: `#tabStrip` declares `role="tablist"`
+   * and each `.tab` gets `role="tab"`/`aria-selected`/a roving tabindex
+   * (renderTabStrip above), but nothing ever listened for a keydown on the
+   * strip at all — a focused `.tab` (a plain `<div>`, so Enter/Space do
+   * nothing natively) was a dead end: Left/Right/Home/End never moved the
+   * roving index, per the APG tablist pattern docs/TABS_BUILD_PLAN.md
+   * §3a/§2b require. Modeled on inspector.ts's roving-tabindex delegated
+   * listener. Left/Right/Home/End both move focus AND activate the target
+   * tab (automatic-activation model — matches this strip's mouse click
+   * behavior, where clicking a tab both focuses and activates it in one
+   * step); Enter/Space activate whatever's already focused; Delete/
+   * Backspace close it (the close button itself is tabIndex=-1 — see
+   * MUST FIX #4 above — this is the only keyboard path to close a tab from
+   * the strip).
+   */
+  tabStripEl.addEventListener('keydown', (event) => {
+    const target = event.target as HTMLElement;
+    const tabEl = target.closest<HTMLElement>('.tab');
+    if (!tabEl) return;
+    const id = tabEl.dataset['tabId'];
+    if (!id) return;
+
+    const tabs = Array.from(tabStripEl.querySelectorAll<HTMLElement>('.tab'));
+    const idx = tabs.indexOf(tabEl);
+    if (idx === -1) return;
+
+    // Activates `tabs[nextIdx]` and moves focus onto it. Re-queries the DOM
+    // for the target tab's element by id rather than reusing `tabs[nextIdx]`
+    // directly: `deps.onActivate` (main.ts's `activateTabById`) runs
+    // synchronously up to its own first `await` — which is AFTER it calls
+    // `setActiveTab`/`renderTabStrip()` — so by the time this call returns,
+    // the strip's DOM has already been wiped and rebuilt (every `.tab` node,
+    // including the one this closure captured, is stale/detached).
+    const focusAndActivate = (nextIdx: number): void => {
+      const nextEl = tabs[nextIdx];
+      const nextId = nextEl?.dataset['tabId'];
+      if (!nextId) return;
+      deps.onActivate(nextId);
+      tabStripEl.querySelector<HTMLElement>(`.tab[data-tab-id="${nextId}"]`)?.focus();
+    };
+
+    switch (event.key) {
+      case 'ArrowRight':
+        event.preventDefault();
+        focusAndActivate((idx + 1) % tabs.length);
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        focusAndActivate((idx - 1 + tabs.length) % tabs.length);
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusAndActivate(0);
+        break;
+      case 'End':
+        event.preventDefault();
+        focusAndActivate(tabs.length - 1);
+        break;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        deps.onActivate(id);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        event.preventDefault();
+        deps.onClose(id);
+        break;
     }
   });
 }

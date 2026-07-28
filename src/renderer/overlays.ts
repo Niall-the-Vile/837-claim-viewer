@@ -59,8 +59,16 @@ function prefersReducedMotion(): boolean {
  * trapTabInOverlay(), wired from the keydown handler below) so
  * behind-the-scrim controls are never Tab-reachable while a dialog is open;
  * on close, focus is restored to whatever control invoked the dialog.
+ *
+ * Keyed by OverlayId (docs/AUDIT_BUILD1.md MUST FIX #8 — matches
+ * overlayCloseTimers' existing per-id pattern below) rather than a single
+ * module-level variable: openOverlay() below now force-closes any OTHER
+ * open overlay before opening a new one, so at most one entry in this
+ * record is ever non-null at a time, but keying it by id keeps that
+ * invariant explicit rather than relying on one shared variable never being
+ * clobbered by the wrong caller.
  */
-let lastFocusedBeforeOverlay: HTMLElement | null = null;
+const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null };
 
 /**
  * The scrim + dialog fade/scale out on close (spec requirement 4) rather
@@ -104,6 +112,33 @@ export function focusableEls(container: HTMLElement): HTMLElement[] {
 }
 
 export function openOverlay(id: OverlayId): void {
+  // docs/AUDIT_BUILD1.md MUST FIX #8: F1 (opens 'shortcuts') and Ctrl+E
+  // (opens 'export') used to have no anyOverlayOpen() guard, unlike every
+  // other entry point in this app — so pressing one while the other's
+  // dialog was already open stacked a SECOND non-hidden overlay. Rather
+  // than adding a guard at every current (and future) call site, make
+  // openOverlay itself the single choke point: opening any overlay first
+  // force-closes whichever OTHER one is currently open, instantly (no exit
+  // animation — this is a programmatic replace, not a user-dismissed
+  // close, and there is no invoking control to restore focus to for the one
+  // being displaced). This also makes Escape's fixed-order resolution
+  // (OVERLAY_IDS, openOverlayId() below) moot in practice: at most one
+  // overlay is ever open at a time now, so there is never an ambiguous
+  // "which one does Escape mean" case.
+  for (const otherId of OVERLAY_IDS) {
+    if (otherId === id) continue;
+    const other = overlayElFor(otherId);
+    if (other.hidden) continue;
+    const otherTimer = overlayCloseTimers[otherId];
+    if (otherTimer !== undefined) {
+      window.clearTimeout(otherTimer);
+      overlayCloseTimers[otherId] = undefined;
+    }
+    other.hidden = true;
+    other.classList.remove('isClosing');
+    lastFocusedBeforeOverlay[otherId] = null;
+  }
+
   // Reopening while a previous close is still fading out (fast double-toggle)
   // must win outright: drop the pending hide so it can't fire mid-reopen.
   const pendingClose = overlayCloseTimers[id];
@@ -114,7 +149,7 @@ export function openOverlay(id: OverlayId): void {
   const overlay = overlayElFor(id);
   overlay.classList.remove('isClosing');
 
-  lastFocusedBeforeOverlay = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  lastFocusedBeforeOverlay[id] = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   overlay.hidden = false;
   const dialog = overlay.querySelector<HTMLElement>('.dialog');
   if (!dialog) return;
@@ -130,8 +165,8 @@ export function openOverlay(id: OverlayId): void {
 export function closeOverlay(id: OverlayId): void {
   const overlay = overlayElFor(id);
   if (overlay.hidden || overlay.classList.contains('isClosing')) return; // already closed, or already closing
-  const restore = lastFocusedBeforeOverlay;
-  lastFocusedBeforeOverlay = null;
+  const restore = lastFocusedBeforeOverlay[id];
+  lastFocusedBeforeOverlay[id] = null;
 
   const finish = (): void => {
     overlay.hidden = true;

@@ -1,6 +1,7 @@
 import type { OpenClaimResultDto, ClaimSummaryDto, ClaimDetailDto, StoredFileRefDto } from '../../electron/preload.js';
 import {
   titlebarFileNameEl,
+  tabStripEl,
   openBtn,
   exportBtn,
   zoomSepEl,
@@ -58,6 +59,7 @@ import {
   activeTab,
   findTabById,
   findTabBySessionId,
+  findTabByFilePath,
   createTab,
   closeTab,
   setActiveTab,
@@ -312,13 +314,27 @@ function renderActiveTabChrome(tab: TabState): void {
 // lazy restore / fast mode) routes through, per docs/TABS_BUILD_PLAN.md §2.
 // ---------------------------------------------------------------------------
 
-/** Fetches claim-detail data for `index` on `tab` and — only if `tab` is still the active tab once the fetch resolves — paints every piece of chrome that depends on it. Inspector-and-friends only; never touches pdf.js/the canvas (see ensureClaimRendered). */
+/**
+ * Fetches claim-detail data for `index` on `tab` and — only if `tab` is
+ * still the active tab once the fetch resolves — paints every piece of
+ * chrome that depends on it. Inspector-and-friends only; never touches
+ * pdf.js/the canvas (see ensureClaimRendered).
+ *
+ * `tab.currentIndex`/`tab.detail` are assigned TOGETHER, only after
+ * `getDetail` resolves (docs/AUDIT_BUILD1.md MUST FIX #2) — previously
+ * `currentIndex` was written before the `await`, so a `getDetail` that
+ * rejects (or, more commonly, a subsequent `claim:getPdf` failure in
+ * `ensureClaimRendered` — see stepClaim's catch below) could leave the tab
+ * *describing* a different claim than the one still painted on screen,
+ * which `openExportDialog`/`confirmExport` (overlays.ts) then read to
+ * decide what to export.
+ */
 async function loadClaimDetail(tab: TabState, index: number): Promise<void> {
   if (!tab.sessionId) return;
   const summary = tab.summaries[index];
   if (!summary) return;
-  tab.currentIndex = index;
   const detail = await window.claimApi.getDetail(tab.sessionId, index);
+  tab.currentIndex = index;
   tab.detail = detail;
   if (tab.tabId === state.activeTabId) {
     renderActiveTabChrome(tab);
@@ -338,6 +354,17 @@ async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean 
   if (!tab.sessionId) return;
   const needsReload = opts.forceReload === true || !tab.pdfDoc;
   if (needsReload) {
+    // Diagnostic (harmless — no PHI, just an internal tab id) that also
+    // doubles as an E2E-observable signal for the background-tab release
+    // fix (docs/AUDIT_BUILD1.md MUST FIX #1 — see
+    // e2e/tabs.spec.ts's "background tab release" test): a tab whose
+    // pdf.js document was actually released on switch-away
+    // (activateTabById's setActivePdfDoc(previousTab, null)) rebuilds it
+    // here, from scratch, the next time it's reactivated — a tab that was
+    // never released (the pre-fix bug) never logs a second rebuild for the
+    // same tabId, since `tab.pdfDoc` stays truthy and `needsReload` never
+    // becomes true again.
+    console.debug(`[tabs] rebuilding pdf.js document for tab ${tab.tabId}`);
     const bytes = await window.claimApi.getPdf(tab.sessionId, tab.currentIndex);
     const doc = await loadPdfDocument(bytes);
     await setActivePdfDoc(tab, doc);
@@ -395,6 +422,22 @@ async function stepClaim(delta: number): Promise<void> {
   if (!tab) return;
   const next = tab.currentIndex + delta;
   if (next < 0 || next >= tab.summaries.length) return;
+
+  // docs/AUDIT_BUILD1.md MUST FIX #2: remember exactly what's still on
+  // screen before touching anything, so a failure partway through (most
+  // commonly claim:getPdf rejecting AFTER claim:getDetail already
+  // succeeded — loadClaimDetail's own currentIndex/detail assignment is
+  // atomic per-call, but a render failure one step later must not leave
+  // THOSE already-updated values pointing at a claim the canvas never
+  // actually got to) can be rolled back to a fully consistent state rather
+  // than leaving the tab describing claim `next` while the canvas (whose
+  // pdfDoc was never replaced — ensureClaimRendered only calls
+  // setActivePdfDoc after a successful getPdf/loadPdfDocument) still shows
+  // the previous claim. Export (overlays.ts's openExportDialog/
+  // confirmExport) reads tab.currentIndex/tab.detail, so this is exactly
+  // what stood between a failed render and an export of the wrong claim.
+  const previousIndex = tab.currentIndex;
+  const previousDetail = tab.detail;
   try {
     await loadClaimDetail(tab, next);
     // A different claim index means a genuinely different PDF — this is
@@ -402,6 +445,18 @@ async function stepClaim(delta: number): Promise<void> {
     // pdfDoc via setActivePdfDoc before the new one is built.
     await ensureClaimRendered(tab, { forceReload: true });
   } catch (err) {
+    // Roll all the way back to the claim that's actually still rendered —
+    // tab.pdfDoc itself was never touched by the failed attempt (see the
+    // comment above), so this restores full consistency: currentIndex,
+    // detail, and every piece of chrome that depends on them (inspector,
+    // warnings banner, status bar, export manifest) once again describe
+    // exactly the claim the canvas shows, and export is safe to use again
+    // immediately rather than needing a separate disabled state.
+    tab.currentIndex = previousIndex;
+    tab.detail = previousDetail;
+    if (tab.tabId === state.activeTabId) {
+      renderActiveTabChrome(tab);
+    }
     showToast(errorMessage(err), true);
   }
 }
@@ -488,6 +543,16 @@ async function closeTabById(tabId: string): Promise<void> {
   const wasActive = state.activeTabId === tabId;
   if (wasActive) cancelInFlightRender();
 
+  // docs/AUDIT_BUILD1.md MUST FIX #6 (the last-tab-closed case specifically
+  // — tabs.ts's renderTabStrip() itself now restores focus onto whatever
+  // tab slides into the active slot, but there is no tab left to focus at
+  // all once the very last one closes): capture whether focus was on the
+  // strip BEFORE closing, so it can be moved somewhere sensible — the
+  // welcome screen's primary button — rather than silently falling to
+  // <body>, per docs/TABS_BUILD_PLAN.md §3a's "closing the last tab moves
+  // focus to the empty state's primary button".
+  const focusWasInStrip = document.activeElement instanceof Node && tabStripEl.contains(document.activeElement);
+
   const { nextActiveTabId } = await closeTab(tabId);
   syncScreenUI();
 
@@ -496,6 +561,10 @@ async function closeTabById(tabId: string): Promise<void> {
     await activateTabById(nextActiveTabId);
   } else {
     await persistSession();
+  }
+
+  if (focusWasInStrip && state.tabs.length === 0) {
+    welcomeOpenBtn.focus();
   }
 }
 
@@ -570,10 +639,22 @@ type OpenSource = { kind: 'dialog' } | { kind: 'path'; path: string };
  * placeholder is still mid-floor) reliably finds it via
  * findTabBySessionId() instead of both independently deciding "not a
  * duplicate yet" and creating two tabs for one session.
+ *
+ * ALSO dedupes by resolved file path (docs/AUDIT_BUILD1.md MUST FIX #3):
+ * findTabBySessionId alone misses a lazily-restored `'unloaded'` tab (§2e —
+ * it carries `sessionId: null` until it's actually activated), so reopening
+ * that same file here used to mint a completely fresh session and a
+ * duplicate second tab; later activating the ORIGINAL placeholder would
+ * then hit main's own path-based dedupe and get handed that SAME fresh
+ * sessionId — two TabStates sharing one main-process session, so closing
+ * either one closes both (`closeSession` has no refcount). Finding the
+ * 'unloaded' tab by path here and filling IT in (fillPlaceholder, same as
+ * the brand-new-placeholder path below) instead of creating a second tab
+ * means that duplicate/shared-session state can never arise.
  */
 async function performOpen(source: OpenSource): Promise<void> {
   const isFirstTab = state.tabs.length === 0;
-  const placeholder = isFirstTab ? createTab() : null;
+  const placeholder = isFirstTab ? createTab({}, { activate: true }) : null;
   if (placeholder) syncScreenUI();
 
   try {
@@ -587,11 +668,15 @@ async function performOpen(source: OpenSource): Promise<void> {
       return;
     }
 
-    const existing = findTabBySessionId(result.sessionId);
+    const existing = findTabBySessionId(result.sessionId) ?? findTabByFilePath(result.filePath);
     let tab: TabState;
     if (existing && existing !== placeholder) {
       if (placeholder) await closeTab(placeholder.tabId);
-      tab = existing;
+      // `existing` may be a same-path 'unloaded' restored tab that never
+      // had this (or any) session — fillPlaceholder adopts the just-opened
+      // session into it exactly like a brand-new placeholder, rather than
+      // leaving it stranded while a second tab silently took its session.
+      tab = existing.sessionId === result.sessionId ? existing : fillPlaceholder(existing, result);
     } else if (placeholder) {
       tab = fillPlaceholder(placeholder, result);
     } else {
@@ -747,13 +832,19 @@ async function initSessionRestore(): Promise<void> {
 
   if (restoreState.tabs.length === 0) return;
 
+  // Every restored tab is created un-activated (createTab's default) —
+  // docs/AUDIT_BUILD1.md MUST FIX #1 makes activateTabById the ONLY writer
+  // of state.activeTabId, so which one ends up active is decided below by
+  // calling it directly, not by an extra setActiveTab call here (that used
+  // to run redundantly with activateTabById's own internal one — harmless
+  // in this specific startup-only case since there was never a "previous"
+  // tab to release yet, but removed anyway so the invariant has no
+  // exceptions to reason about).
   const created = restoreState.tabs.map((ref) => createTab({ filePath: ref.filePath, fileName: ref.fileName, status: 'unloaded' }));
   const activeIdx = restoreState.activeIndex >= 0 && restoreState.activeIndex < created.length ? restoreState.activeIndex : 0;
   const toActivate = created[activeIdx];
   if (!toActivate) return;
 
-  setActiveTab(toActivate.tabId);
-  syncScreenUI();
   await activateTabById(toActivate.tabId);
 }
 

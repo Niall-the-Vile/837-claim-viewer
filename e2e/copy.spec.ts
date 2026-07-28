@@ -132,6 +132,54 @@ test.describe('837 Claim Viewer — E2E — clipboard/copy suite', () => {
     }
   });
 
+  test('Ctrl+Shift+C with focus on an inspector row copies the service-lines TSV exactly once, not the row\'s own value (docs/AUDIT_BUILD1.md MUST FIX #7)', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      // inspector.ts's row-level keydown handler used to match Ctrl+C AND
+      // Ctrl+Shift+C (no `!event.shiftKey` guard) with no stopPropagation,
+      // so this chord fired the row's own single-value copy here, THEN
+      // bubbled to the window dispatcher (shortcuts.ts), which copied the
+      // whole service-lines TSV on top of it — two clipboard writes and two
+      // toasts for one keypress. e2e/copy.spec.ts's existing Ctrl+Shift+C
+      // test missed this because it presses the chord with focus on a
+      // <summary>-hosted button, where closest('.inspRow') is null.
+      //
+      // Checking only the FINAL clipboard/toast state doesn't reliably catch
+      // this: both writeText() calls fire synchronously in the same bubble
+      // dispatch and (empirically) resolve in call order, so the second
+      // (correct) TSV write happens to overwrite the first every time in
+      // this environment — the audit's own "ordering-dependent" caveat.
+      // Counting actual navigator.clipboard.writeText() invocations is the
+      // only reliable signal that it fired once, not twice.
+      const accountRow = page.locator('.inspRow', { hasText: 'ACCT-0001' });
+      await accountRow.focus();
+      await page.evaluate(() => {
+        const original = navigator.clipboard.writeText.bind(navigator.clipboard);
+        (window as unknown as { __writeCount: number }).__writeCount = 0;
+        navigator.clipboard.writeText = (text: string) => {
+          (window as unknown as { __writeCount: number }).__writeCount += 1;
+          return original(text);
+        };
+      });
+
+      await page.keyboard.press('Control+Shift+C');
+
+      const clipboard = normalizeClipboardText(await page.evaluate(() => navigator.clipboard.readText()));
+      expect(clipboard).not.toBe('ACCT-0001'); // must not be the focused row's own copy
+      expect(clipboard).toContain('Line\tDOS\tPOS/Rev\tCPT/HCPCS'); // must be the TSV
+      await expect(page.locator('#toastMessage')).toHaveText('Service lines copied to the clipboard.');
+      const writeCount = await page.evaluate(() => (window as unknown as { __writeCount: number }).__writeCount);
+      expect(writeCount).toBe(1); // the discriminating assertion: exactly one copy for one keypress
+    } finally {
+      await app.close();
+    }
+  });
+
   test('copy claim summary and copy warnings+reconciliation put the expected plain text on the clipboard', async () => {
     const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
     try {

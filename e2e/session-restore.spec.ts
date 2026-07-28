@@ -128,6 +128,72 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
     }
   });
 
+  test('reopening a restored-but-unloaded tab\'s path does not create a duplicate tab or a shared session (docs/AUDIT_BUILD1.md MUST FIX #3)', async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-restore-dedupe-userdata-'));
+    try {
+      // --- First launch: open two files, tab 2 (837I) active, then close. --
+      const app1 = await launchAppWithUserData(userDataDir, { CLAIM_VIEWER_E2E_OPEN: [FIXTURE_1500, FIXTURE_837I].join(';') });
+      const page1 = await app1.firstWindow();
+      await page1.waitForLoadState('domcontentloaded');
+      await page1.locator('#welcomeOpenBtn').click(); // tab 1: synthetic-1500.json
+      await page1.locator('#openBtn').click(); // tab 2: 837I-multi-claim.dat, becomes active
+      await expect(page1.locator('.tab')).toHaveCount(2);
+
+      const sessionFile = join(userDataDir, 'session.json');
+      await expect
+        .poll(() => (existsSync(sessionFile) ? (JSON.parse(readFileSync(sessionFile, 'utf8')) as { tabs: unknown[] }).tabs.length : 0))
+        .toBe(2);
+      await app1.close();
+
+      // --- Second launch: SAME profile, tab 1 (1500) restores 'unloaded' —
+      // never clicked, so it never got its own session. Reopen ITS SAME
+      // path via the E2E open seam, exactly as if the user picked it again
+      // from the Open dialog or a Recent Files entry, before ever clicking
+      // the restored tab itself.
+      const app2 = await launchAppWithUserData(userDataDir, { CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+      try {
+        const page2 = await app2.firstWindow();
+        await page2.waitForLoadState('domcontentloaded');
+        await expect(page2.locator('.tab')).toHaveCount(2);
+        const tab1 = page2.locator('.tab').first();
+        const tab2 = page2.locator('.tab').nth(1);
+        await expect(tab1).toHaveAttribute('data-tab-status', 'unloaded');
+        await expect(tab2).toHaveAttribute('data-tab-status', 'ready');
+
+        await page2.locator('#openBtn').click(); // reopens FIXTURE_1500 via the seam
+
+        // Must still be exactly 2 tabs — filling in the existing 'unloaded'
+        // placeholder, not minting a THIRD tab with a brand-new session for
+        // the same path.
+        await expect(page2.locator('.tab')).toHaveCount(2);
+        await expect(tab1).toHaveClass(/isActive/);
+        await expect(tab1).toHaveAttribute('data-tab-status', 'ready');
+        const tab1Session = await tab1.getAttribute('data-tab-session-id');
+        const tab2Session = await tab2.getAttribute('data-tab-session-id');
+        expect(tab1Session).toBeTruthy();
+        expect(tab2Session).toBeTruthy();
+        expect(tab1Session).not.toBe(tab2Session); // no shared main-process session
+
+        // Closing tab 1 must NOT take tab 2's session down with it (the
+        // shared-sessionId bug's exact failure surface: closeSession has no
+        // refcount, so two tabs sharing one id meant closing either killed
+        // both).
+        await tab1.locator('[data-tab-close]').click();
+        await expect(page2.locator('.tab')).toHaveCount(1);
+        await expect(page2.locator('.tab').first()).toHaveClass(/isActive/);
+        await expect(page2.locator('#claimGroup')).toBeVisible(); // tab 2 (837I) still fully functional
+        await expect(page2.locator('#claimStepLabel')).toHaveText('Claim 1 of 2');
+        const canvas = await page2.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
+        expect(canvas.width).toBeGreaterThan(0);
+        expect(canvas.height).toBeGreaterThan(0);
+      } finally {
+        await app2.close();
+      }
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('a missing/deleted stored path is skipped quietly without breaking startup', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-restore-missing-userdata-'));
     const sourceDir = mkdtempSync(join(tmpdir(), 'claim-viewer-restore-missing-source-'));
