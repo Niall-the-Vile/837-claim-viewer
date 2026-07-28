@@ -5,8 +5,9 @@
     <!--
       Defense-in-depth CSP (the authoritative copy is set in main via
       session.onHeadersReceived — see electron/main.ts installOfflineKillSwitch).
-      No Google Fonts / CDN links here — see style.css's top comment for why
-      this app uses a system-font stack instead of self-hosted font files.
+      No Google Fonts / CDN links here — the design fonts are bundled and
+      self-hosted via @font-face in style.css (see that file's top comment),
+      loaded only from 'self' as local relative files.
       No inline script/style beyond the 'unsafe-inline' allowance style.css's
       CSS variables need; every event listener is attached in main.ts, never
       via an inline on* attribute, so script-src 'self' is never violated.
