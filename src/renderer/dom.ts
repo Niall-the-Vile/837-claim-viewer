@@ -89,6 +89,19 @@ export const exportConfirmBtn = requireEl<HTMLButtonElement>('exportConfirmBtn')
 export const shortcutsOverlayEl = requireEl<HTMLDivElement>('shortcutsOverlay');
 export const shortcutsGridEl = requireEl<HTMLDivElement>('shortcutsGrid');
 
+// About screen (docs/TABS_BUILD_PLAN.md §2c version/build stamp, §2e data-policy wording).
+export const aboutOverlayEl = requireEl<HTMLDivElement>('aboutOverlay');
+export const aboutVersionEl = requireEl<HTMLSpanElement>('aboutVersion');
+export const aboutBuildDateEl = requireEl<HTMLSpanElement>('aboutBuildDate');
+
+// "Forget open tabs & recent files" confirm dialog (docs/TABS_BUILD_PLAN.md §2e).
+export const forgetOverlayEl = requireEl<HTMLDivElement>('forgetOverlay');
+export const forgetConfirmBtn = requireEl<HTMLButtonElement>('forgetConfirmBtn');
+
+// File menu's dynamically-populated recent-files list (docs/TABS_BUILD_PLAN.md §2e).
+export const recentFilesListEl = requireEl<HTMLDivElement>('recentFilesList');
+export const recentFilesEmptyEl = requireEl<HTMLDivElement>('recentFilesEmpty');
+
 export const toastEl = requireEl<HTMLDivElement>('toast');
 export const toastMessageEl = requireEl<HTMLSpanElement>('toastMessage');
 export const toastActionsEl = requireEl<HTMLDivElement>('toastActions');

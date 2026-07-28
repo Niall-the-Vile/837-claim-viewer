@@ -98,6 +98,23 @@ export interface ClaimDetailDto {
 
 export type OpenExportMode = 'file' | 'folder';
 
+export interface AppInfoDto {
+  version: string;
+  buildDate: string;
+}
+
+/** A stored file reference — `{ filePath, fileName }` only, never claim content. Structurally identical to `src/app/persistence/sessionStore.ts`'s `StoredFileRef` — declared again here for the same reason as the other DTOs above (no main-process import from the renderer's type surface). */
+export interface StoredFileRefDto {
+  filePath: string;
+  fileName: string;
+}
+
+export interface SessionRestoreStateDto {
+  tabs: StoredFileRefDto[];
+  activeIndex: number;
+  recentFiles: StoredFileRefDto[];
+}
+
 const claimApi = Object.freeze({
   /**
    * With no argument: opens a native file-picker (filtered to
@@ -131,6 +148,14 @@ const claimApi = Object.freeze({
   openExport: (mode: OpenExportMode): Promise<void> => ipcRenderer.invoke('shell:openExport', mode),
   /** Drops one tab's session in main — its parsed claims (PHI) leave main-process memory immediately (docs/TABS_BUILD_PLAN.md §2). Called when a tab closes. */
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
+  /** App version + build-date stamp for the About screen (docs/TABS_BUILD_PLAN.md §2c). */
+  getAppInfo: (): Promise<AppInfoDto> => ipcRenderer.invoke('app:getInfo'),
+  /** What to restore on launch (docs/TABS_BUILD_PLAN.md §2e): open-tab paths + order + which was active (already re-validated in main — extension allow-list + existsSync, a stored path that's gone is silently dropped), plus the recent-files list. Called once at renderer startup, and again whenever the File menu needs a fresh recent-files list. */
+  getSessionRestoreState: (): Promise<SessionRestoreStateDto> => ipcRenderer.invoke('session:getRestoreState'),
+  /** Persists the current open-tab list + which one is active (docs/TABS_BUILD_PLAN.md §2e). Every path passed here already came FROM main (openClaim's own result) — never a renderer-invented path. */
+  saveSession: (tabs: StoredFileRefDto[], activeIndex: number): Promise<void> => ipcRenderer.invoke('session:save', tabs, activeIndex),
+  /** File-menu "Forget open tabs & recent files" (docs/TABS_BUILD_PLAN.md §2e) — clears the stored session + recent list on disk. Does not close any tab currently open in this window. */
+  forgetSession: (): Promise<void> => ipcRenderer.invoke('session:forget'),
 });
 
 export type ClaimApi = typeof claimApi;

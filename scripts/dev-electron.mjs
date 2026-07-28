@@ -47,6 +47,13 @@ if (preloadBuild.status !== 0) {
   process.exit(preloadBuild.status ?? 1);
 }
 
+// About screen's build-date stamp (docs/TABS_BUILD_PLAN.md §2c) — a
+// one-shot write, same as the preload build above; not watched, so it
+// reflects "when npm run dev was started" rather than every edit, which is
+// fine for a dev-only build tag.
+console.log('[dev] writing build-info.json...');
+spawnSync('node', ['scripts/write-build-info.mjs'], { stdio: 'inherit', shell: process.platform === 'win32' });
+
 /** @type {import('node:child_process').ChildProcess[]} */
 const children = [];
 let shuttingDown = false;

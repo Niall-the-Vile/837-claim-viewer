@@ -1,7 +1,7 @@
 import { shortcutsGridEl } from './dom.js';
 import { toggleInspector } from './inspector.js';
 import { zoomBy, zoomToActualSize, fitPage, fitWidth, stepPage } from './preview.js';
-import { anyOverlayOpen, trapTabInOverlay, closeOverlay, openOverlay, openExportDialog, exportCurrentClaimSkipDialog } from './overlays.js';
+import { anyOverlayOpen, openOverlayId, trapTabInOverlay, closeOverlay, openOverlay, openExportDialog, exportCurrentClaimSkipDialog } from './overlays.js';
 import { activeTab } from './tabs.js';
 
 /**
@@ -68,6 +68,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
     title: 'Help',
     items: [
       { label: 'Keyboard shortcuts', keys: 'F1' },
+      { label: 'About Claim Viewer', keys: '—' },
       { label: 'Dismiss dialog', keys: 'Esc' },
     ],
   },
@@ -130,10 +131,8 @@ export function initShortcuts(deps: ShortcutDeps): void {
       return;
     }
     if (event.key === 'Escape') {
-      if (anyOverlayOpen()) {
-        closeOverlay('export');
-        closeOverlay('shortcuts');
-      }
+      const openId = openOverlayId();
+      if (openId) closeOverlay(openId);
       deps.closeAllMenus();
       return;
     }

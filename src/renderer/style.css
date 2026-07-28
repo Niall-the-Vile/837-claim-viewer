@@ -363,6 +363,37 @@ a:focus-visible {
 .menuPanel kbd {
   margin-left: auto;
 }
+/* Recent-files section + "Forget…" action (docs/TABS_BUILD_PLAN.md §2e) — the
+   separator/label sit inside the same .menuPanel that holds ordinary
+   .menuPanel button items, so recent-file entries (created dynamically as
+   real <button role="menuitem"> elements in src/renderer/main.ts) already
+   pick up the rules above with no extra class needed. */
+.menuSep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+.menuSectionLabel {
+  font: 600 9.5px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 4px 8px 2px;
+}
+.menuEmptyNote {
+  padding: 4px 8px 6px;
+  font: 400 12px var(--font-sans);
+  color: var(--ink-3);
+  font-style: italic;
+}
+.menuPanel button.recentFileItem {
+  gap: 8px;
+}
+.recentFileItem .tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* --- Toolbar --------------------------------------------------------- */
 

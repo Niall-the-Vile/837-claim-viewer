@@ -174,9 +174,23 @@ test.describe('837 Claim Viewer — E2E', () => {
       // leak; anything less would break the renderer. (getPathForFile drives
       // drag-and-drop; openExport opens the exported file's folder/PDF;
       // closeSession drops a tab's parsed claims from main-process memory —
-      // added in the tabs build, docs/TABS_BUILD_PLAN.md §2 / rule 7b.)
+      // added in the tabs build, docs/TABS_BUILD_PLAN.md §2 / rule 7b.
+      // getAppInfo/getSessionRestoreState/saveSession/forgetSession added by
+      // §2c's version/build stamp and §2e's session restore + recent files.)
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
-      expect(apiKeys).toEqual(['closeSession', 'exportPdf', 'getDetail', 'getPathForFile', 'getPdf', 'openClaim', 'openExport']);
+      expect(apiKeys).toEqual([
+        'closeSession',
+        'exportPdf',
+        'forgetSession',
+        'getAppInfo',
+        'getDetail',
+        'getPathForFile',
+        'getPdf',
+        'getSessionRestoreState',
+        'openClaim',
+        'openExport',
+        'saveSession',
+      ]);
 
       // Offline kill-switch (electron/main.ts's installOfflineKillSwitch):
       // an outbound fetch to a real external host must never resolve.

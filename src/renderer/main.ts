@@ -1,4 +1,4 @@
-import type { OpenClaimResultDto, ClaimSummaryDto, ClaimDetailDto } from '../../electron/preload.js';
+import type { OpenClaimResultDto, ClaimSummaryDto, ClaimDetailDto, StoredFileRefDto } from '../../electron/preload.js';
 import {
   titlebarFileNameEl,
   openBtn,
@@ -46,6 +46,11 @@ import {
   statusNoFileEl,
   exportConfirmBtn,
   warnCopyBtn,
+  aboutVersionEl,
+  aboutBuildDateEl,
+  forgetConfirmBtn,
+  recentFilesListEl,
+  recentFilesEmptyEl,
 } from './dom.js';
 import {
   state,
@@ -65,7 +70,7 @@ import {
 } from './tabs.js';
 import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, cancelInFlightRender } from './preview.js';
 import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText } from './inspector.js';
-import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog } from './overlays.js';
+import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog, openOverlay, closeOverlay } from './overlays.js';
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
 import { copyToClipboard } from './clipboard.js';
 import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliation } from './clipboardFormat.js';
@@ -340,6 +345,10 @@ async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean 
     tab.pageNum = 1;
   }
   tab.status = 'ready';
+  // The tab strip's data-tab-status reflects live status (testability for
+  // lazy restore, §2e — see tabs.ts's renderTabStrip) — keep it in sync
+  // even though only isActive is styled today.
+  renderTabStrip();
   if (tab.tabId !== state.activeTabId) return;
   syncScreenUI();
   if (needsReload) {
@@ -349,8 +358,29 @@ async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean 
   }
 }
 
-/** First-ever content load for a brand-new (or freshly-filled-placeholder) tab: claim 0's detail, then a fresh pdf.js document fit to the page. */
+/**
+ * Fills in `tab.sessionId` (and fileName/source/summaries) for a tab that
+ * only knows its `filePath` so far — a lazily-restored tab (§2e) whose
+ * `status` is still `'unloaded'`. Routes through the SAME `claimApi.openClaim`
+ * path/dedupe-by-resolved-path logic every other open goes through (main
+ * re-validates the extension allow-list + existsSync again here, exactly
+ * like a dropped path — the renderer never names a path main hasn't
+ * vetted). No-op if the tab already has a session or has no path at all.
+ */
+async function ensureSessionForTab(tab: TabState): Promise<void> {
+  if (tab.sessionId || !tab.filePath) return;
+  const result = await window.claimApi.openClaim(tab.filePath);
+  if (!result) throw new Error(`Could not open "${tab.fileName || tab.filePath}".`);
+  tab.sessionId = result.sessionId;
+  tab.fileName = result.fileName;
+  tab.source = result.source;
+  tab.summaries = result.summaries;
+  renderTabStrip();
+}
+
+/** First-ever content load for a brand-new (or freshly-filled-placeholder, or lazily-restored — §2e) tab: a session if it doesn't have one yet, then claim 0's detail, then a fresh pdf.js document fit to the page. */
 async function loadTabContent(tab: TabState): Promise<void> {
+  await ensureSessionForTab(tab);
   await loadClaimDetail(tab, 0);
   await ensureClaimRendered(tab, { forceReload: true });
 }
@@ -418,8 +448,34 @@ async function activateTabById(tabId: string): Promise<void> {
   } catch (err) {
     tab.status = 'error';
     tab.errorMessage = errorMessage(err);
+    renderTabStrip();
   }
   syncScreenUI();
+  await persistSession();
+}
+
+/**
+ * Session restore + recent files (docs/TABS_BUILD_PLAN.md §2e): writes the
+ * current open-tab paths + order + which is active to disk via
+ * claimApi.saveSession, so the next launch can recreate them. Called after
+ * every tab activation/close (the two places the open-tab list or the
+ * active one can change). A tab with no `filePath` yet (a brand-new
+ * placeholder still mid-open) is excluded — there's nothing restorable
+ * about it yet; the next persistSession() call once it fills in will
+ * include it. Best-effort: a failed write here must never disturb the UI
+ * (matches every other claimApi call this renderer treats as non-fatal on
+ * failure, e.g. closeTab's closeSession call).
+ */
+async function persistSession(): Promise<void> {
+  const loadedTabs = state.tabs.filter((t) => t.filePath !== '');
+  const tabs: StoredFileRefDto[] = loadedTabs.map((t) => ({ filePath: t.filePath, fileName: t.fileName }));
+  const active = activeTab();
+  const activeIndex = active ? loadedTabs.findIndex((t) => t.tabId === active.tabId) : -1;
+  try {
+    await window.claimApi.saveSession(tabs, activeIndex);
+  } catch {
+    // Best-effort — see doc comment above.
+  }
 }
 
 let lastClosedTabPath: string | null = null;
@@ -436,7 +492,10 @@ async function closeTabById(tabId: string): Promise<void> {
   syncScreenUI();
 
   if (wasActive && nextActiveTabId) {
+    // activateTabById persists the session itself once it's done.
     await activateTabById(nextActiveTabId);
+  } else {
+    await persistSession();
   }
 }
 
@@ -570,13 +629,132 @@ async function openDroppedClaimFile(filePath: string): Promise<void> {
   await performOpen({ kind: 'path', path: filePath });
 }
 
-/** Ctrl+Shift+T (§2b): reopens the most recently closed tab's file path, kept in renderer memory only (no persistent store yet — that's a later build, §2e). No-op if nothing has been closed yet this session. */
+/**
+ * Ctrl+Shift+T (§2b/§2e): reopens the most recently closed tab's file path
+ * (kept in renderer memory for the current run). Once nothing's been closed
+ * yet THIS run (e.g. right after a relaunch), falls back to the most recent
+ * entry in the persisted recent-files store (§2e: "can read from the same
+ * store") — skipping any path that's already open in a tab, so this never
+ * just re-focuses an already-visible tab instead of actually reopening one.
+ */
 async function reopenLastClosedTab(): Promise<void> {
   if (anyOverlayOpen()) return;
-  const path = lastClosedTabPath;
+  let path = lastClosedTabPath;
+  if (!path) {
+    const openPaths = new Set(state.tabs.map((t) => t.filePath));
+    path = cachedRecentFiles.find((r) => !openPaths.has(r.filePath))?.filePath ?? null;
+  }
   if (!path) return;
   lastClosedTabPath = null;
   await performOpen({ kind: 'path', path });
+}
+
+// ---------------------------------------------------------------------------
+// Recent files (File menu) + "Forget open tabs & recent files" + About
+// screen's version/build stamp (docs/TABS_BUILD_PLAN.md §2c/§2e).
+// ---------------------------------------------------------------------------
+
+/** Last-fetched recent-files list, kept around purely so reopenLastClosedTab's fallback (above) has something to read without an extra IPC round-trip on every Ctrl+Shift+T press. Refreshed whenever the File menu opens (see setupMenus below) and right after startup's session restore. */
+let cachedRecentFiles: StoredFileRefDto[] = [];
+
+function renderRecentFilesList(files: StoredFileRefDto[]): void {
+  recentFilesListEl.innerHTML = '';
+  recentFilesEmptyEl.hidden = files.length > 0;
+  for (const ref of files) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.className = 'recentFileItem';
+    const label = document.createElement('span');
+    label.className = 'tabLabel';
+    label.textContent = ref.fileName;
+    label.title = ref.filePath;
+    btn.append(label);
+    btn.addEventListener('click', () => {
+      void performOpen({ kind: 'path', path: ref.filePath });
+    });
+    recentFilesListEl.append(btn);
+  }
+}
+
+/** Refetches the recent-files list from main (re-validated there — a since-deleted recent file is silently omitted, per §2e) and repaints the File menu's list. Called each time the File menu is opened, so a file recently opened from ANOTHER tab/session of this same run is never stale by more than one menu-open. */
+async function refreshRecentFilesMenu(): Promise<void> {
+  try {
+    const restoreState = await window.claimApi.getSessionRestoreState();
+    cachedRecentFiles = restoreState.recentFiles;
+  } catch {
+    cachedRecentFiles = [];
+  }
+  renderRecentFilesList(cachedRecentFiles);
+}
+
+/** Help -> About Claim Viewer (§2c: version + build date; §2e: honest data-policy wording, written directly in index.html's #aboutOverlay markup). */
+async function openAboutDialog(): Promise<void> {
+  aboutVersionEl.textContent = 'Loading…';
+  aboutBuildDateEl.textContent = 'Loading…';
+  openOverlay('about');
+  try {
+    const info = await window.claimApi.getAppInfo();
+    aboutVersionEl.textContent = info.version;
+    aboutBuildDateEl.textContent = info.buildDate;
+  } catch (err) {
+    aboutVersionEl.textContent = 'unavailable';
+    aboutBuildDateEl.textContent = errorMessage(err);
+  }
+}
+
+function openForgetDialog(): void {
+  openOverlay('forget');
+}
+
+/** Forget dialog's "Forget" button: clears the on-disk session + recent list (does NOT touch tabs open in this window right now — see the dialog's own copy in index.html). */
+async function confirmForgetSession(): Promise<void> {
+  forgetConfirmBtn.disabled = true;
+  try {
+    await window.claimApi.forgetSession();
+    cachedRecentFiles = [];
+    renderRecentFilesList(cachedRecentFiles);
+    closeOverlay('forget');
+    showToast('Open tabs & recent files forgotten.', false);
+  } catch (err) {
+    showToast(errorMessage(err), true);
+  } finally {
+    forgetConfirmBtn.disabled = false;
+  }
+}
+
+/**
+ * Session restore (docs/TABS_BUILD_PLAN.md §2e), run once at startup:
+ * recreates each previously-open tab (already re-validated in main — a
+ * missing/deleted stored path never reaches here at all) in its stored
+ * order, as `status: 'unloaded'` placeholders carrying only their path/name,
+ * then activates whichever one was active before — which is what actually
+ * loads it, via the SAME loadTabContent -> ensureSessionForTab ->
+ * loadClaimDetail/ensureClaimRendered path every other tab activation uses.
+ * Every OTHER restored tab is left exactly as created: 'unloaded', no
+ * session, nothing parsed or rendered, until the user clicks it (lazy
+ * restore — never a slow, memory-heavy startup with many tabs).
+ */
+async function initSessionRestore(): Promise<void> {
+  let restoreState: { tabs: StoredFileRefDto[]; activeIndex: number; recentFiles: StoredFileRefDto[] };
+  try {
+    restoreState = await window.claimApi.getSessionRestoreState();
+  } catch {
+    return; // Never fail startup on a restore-state read failure.
+  }
+  cachedRecentFiles = restoreState.recentFiles;
+  renderRecentFilesList(cachedRecentFiles);
+
+  if (restoreState.tabs.length === 0) return;
+
+  const created = restoreState.tabs.map((ref) => createTab({ filePath: ref.filePath, fileName: ref.fileName, status: 'unloaded' }));
+  const activeIdx = restoreState.activeIndex >= 0 && restoreState.activeIndex < created.length ? restoreState.activeIndex : 0;
+  const toActivate = created[activeIdx];
+  if (!toActivate) return;
+
+  setActiveTab(toActivate.tabId);
+  syncScreenUI();
+  await activateTabById(toActivate.tabId);
 }
 
 const DROPPABLE_NAME_PATTERN = /\.(json|dat|edi|txt|837)$/i;
@@ -648,6 +826,11 @@ function setupMenus(): void {
       if (!wasOpen) {
         panel.hidden = false;
         trigger.setAttribute('aria-expanded', 'true');
+        // File menu's recent-files list (§2e) is rebuilt fresh every time
+        // it opens rather than kept live — cheap, and avoids a push channel
+        // this build doesn't otherwise need (see BUILD_QUEUE.md Build 4.1's
+        // note that batch export is the FIRST push channel; this isn't it).
+        if (m.dataset['menu'] === 'file') void refreshRecentFilesMenu();
       }
     });
   }
@@ -678,6 +861,12 @@ function runAction(action: string): void {
       break;
     case 'reopenClosedTab':
       void reopenLastClosedTab();
+      break;
+    case 'openForgetDialog':
+      openForgetDialog();
+      break;
+    case 'about':
+      void openAboutDialog();
       break;
     case 'zoomIn': {
       const tab = activeTab();
@@ -725,6 +914,7 @@ welcomeOpenBtn.addEventListener('click', () => void openClaimFlow());
 errorOpenBtn.addEventListener('click', () => void openClaimFlow());
 exportBtn.addEventListener('click', openExportDialog);
 exportConfirmBtn.addEventListener('click', () => void confirmExport());
+forgetConfirmBtn.addEventListener('click', () => void confirmForgetSession());
 
 errorCopyBtn.addEventListener('click', () => {
   copyToClipboard(errorDetailEl.textContent ?? '', 'Error details copied to the clipboard.');
@@ -849,3 +1039,4 @@ renderShortcuts();
 setupDragAndDrop();
 renderTabStrip();
 syncScreenUI();
+void initSessionRestore();

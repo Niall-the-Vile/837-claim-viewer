@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { dirname, join, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,8 @@ import type { Claim, FormType, WarningSeverity } from '../src/model/claim.js';
 import { loadClaims, renderClaim, claimSummary } from '../src/app/claimService.js';
 import { ClaimParseError } from '../src/sources/claimSource.js';
 import { composeName, composeAddressLine } from '../src/render/text.js';
+import * as sessionStore from '../src/app/persistence/sessionStore.js';
+import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
 
 /**
  * Electron main process: window lifecycle, the offline network kill-switch,
@@ -74,6 +76,76 @@ const sessions = new Map<string, ClaimSession>();
  * discipline the rest of this file follows.
  */
 let lastExportedPath: string | null = null;
+
+// ---------------------------------------------------------------------------
+// Session restore + recent files (docs/TABS_BUILD_PLAN.md §2e — an APPROVED
+// deliberate policy change) and the version/build stamp (§2c). Persistence
+// itself lives in the Electron-free src/app/persistence/sessionStore.ts
+// module (docs/BUILD_QUEUE.md rule 12) — this file is its ONLY caller,
+// always passing app.getPath('userData') as the base directory. What's
+// stored is file PATHS + tab order + which was active, plus a capped
+// recent-files list — never claim content (see that module's header).
+// ---------------------------------------------------------------------------
+
+function userDataDir(): string {
+  return app.getPath('userData');
+}
+
+/** Records `filePath`/`fileName` as the most-recently-opened file — called once per successful `openClaimAtPath` resolution, whether that created a brand-new session or focused an already-open one (both count as "just used"). Best-effort: a failed write here must never block opening the file itself. */
+async function recordRecentFile(filePath: string, fileName: string): Promise<void> {
+  try {
+    await sessionStore.addRecentFile(userDataDir(), { filePath, fileName });
+  } catch (err) {
+    console.warn(`[session] failed to record recent file: ${(err as Error).message}`);
+  }
+}
+
+interface AppInfoDto {
+  version: string;
+  buildDate: string;
+}
+
+interface BuildInfoFile {
+  buildDate: string;
+}
+
+/**
+ * Reads dist/electron/build-info.json (written by
+ * scripts/write-build-info.mjs as part of `npm run build:app` — see that
+ * script's header) — `__dirname` here IS dist/electron at runtime (both in
+ * the packaged app and in the unpacked `npm start`/E2E build), so this is a
+ * same-directory sibling read, no path guessing across dev vs. packaged
+ * layouts. Missing/corrupt file (e.g. `npm run dev`, which writes it once
+ * but doesn't watch it, or a source checkout that's never been built) is
+ * never fatal — the About screen just shows a fallback string instead of a
+ * date.
+ */
+function readBuildInfo(): BuildInfoFile | null {
+  const target = join(__dirname, 'build-info.json');
+  if (!existsSync(target)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(target, 'utf8'));
+    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as Record<string, unknown>)['buildDate'] === 'string') {
+      return { buildDate: (parsed as Record<string, unknown>)['buildDate'] as string };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+interface SessionRestoreStateDto {
+  /** Tabs to recreate, in order — already re-validated (extension allow-list + existsSync) exactly like a dropped path; a stored path that no longer exists is silently dropped, never surfaced as an error. */
+  tabs: StoredFileRef[];
+  /** Index into `tabs` of the one that was active, or -1 if `tabs` is empty. Recomputed against the FILTERED list (see registerIpcHandlers below), not the raw stored index. */
+  activeIndex: number;
+  recentFiles: StoredFileRef[];
+}
+
+/** A stored path is only ever handed back to the renderer if it still passes the exact same gate a dropped or dialog-picked path does — see hasAllowedOpenExtension below (defined further down, used here via a forward reference resolved at call time since both are plain function declarations). */
+function isRestorableFileRef(ref: StoredFileRef): boolean {
+  return hasAllowedOpenExtension(ref.filePath) && existsSync(ref.filePath);
+}
 
 // ---------------------------------------------------------------------------
 // Offline enforcement — installed before any window/content loads.
@@ -498,6 +570,11 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
   const resolvedPath = resolve(filePath);
   for (const [sessionId, existing] of sessions) {
     if (existing.filePath === resolvedPath) {
+      // Reopening (or restoring/lazily-loading) an already-open tab still
+      // counts as "just used" for the recent-files list (docs/TABS_BUILD_PLAN.md
+      // §2e) — fire-and-forget-with-logging via recordRecentFile, never
+      // awaited on the hot path of an already-open file.
+      void recordRecentFile(resolvedPath, existing.fileName);
       return {
         sessionId,
         filePath: resolvedPath,
@@ -532,6 +609,7 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
     const sessionId = randomUUID();
     const fileName = basename(filePath);
     sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims });
+    await recordRecentFile(resolvedPath, fileName);
     return {
       sessionId,
       filePath: resolvedPath,
@@ -670,6 +748,68 @@ function registerIpcHandlers(): void {
   // is a harmless no-op.
   ipcMain.handle('session:close', async (_event: IpcMainInvokeEvent, sessionId: unknown): Promise<void> => {
     if (typeof sessionId === 'string') sessions.delete(sessionId);
+  });
+
+  // App version (app.getVersion(), from package.json) + build-date stamp
+  // for the About screen (docs/TABS_BUILD_PLAN.md §2c) — the app deploys by
+  // replacing the .exe with no auto-update, so a bug report needs to name a
+  // build.
+  ipcMain.handle('app:getInfo', async (): Promise<AppInfoDto> => {
+    const buildInfo = readBuildInfo();
+    return { version: app.getVersion(), buildDate: buildInfo?.buildDate ?? 'unknown (unbuilt dev checkout)' };
+  });
+
+  // Session restore (docs/TABS_BUILD_PLAN.md §2e): what the renderer should
+  // recreate on launch. Every stored path is re-validated here — extension
+  // allow-list + existsSync, the SAME gate a dropped or dialog-picked path
+  // goes through (isRestorableFileRef/hasAllowedOpenExtension) — before
+  // it's ever handed back to the renderer; a path that no longer exists (or
+  // whose extension somehow isn't allow-listed, e.g. a hand-edited
+  // session.json) is silently dropped rather than surfaced as an error, per
+  // §2e's "never fail startup on it". activeIndex is recomputed against the
+  // FILTERED tabs list, not blindly copied from the stored one, so it never
+  // points past the end of what's actually being restored.
+  ipcMain.handle('session:getRestoreState', async (): Promise<SessionRestoreStateDto> => {
+    const stored = await sessionStore.loadSession(userDataDir());
+    const storedActiveRef = stored.activeIndex >= 0 ? stored.tabs[stored.activeIndex] : undefined;
+
+    const validTabs = stored.tabs.filter(isRestorableFileRef);
+    let activeIndex = -1;
+    if (validTabs.length > 0) {
+      const matched = storedActiveRef ? validTabs.findIndex((t) => t.filePath === storedActiveRef.filePath) : -1;
+      activeIndex = matched !== -1 ? matched : 0;
+    }
+
+    const recentFiles = stored.recentFiles.filter(isRestorableFileRef);
+
+    return { tabs: validTabs, activeIndex, recentFiles };
+  });
+
+  // Persists the renderer's current open-tab list + which one is active
+  // (docs/TABS_BUILD_PLAN.md §2e) — called after every tab open/close/
+  // activate (src/renderer/main.ts's persistSession). Every `{filePath,
+  // fileName}` pair here already came FROM main (it's exactly what
+  // dialog:openClaim/session:getRestoreState returned for that tab) —
+  // the renderer is round-tripping data main itself vetted, not naming a
+  // fresh path of its own choosing.
+  ipcMain.handle('session:save', async (_event: IpcMainInvokeEvent, tabs: unknown, activeIndex: unknown): Promise<void> => {
+    if (!Array.isArray(tabs)) return;
+    const validated: StoredFileRef[] = [];
+    for (const t of tabs) {
+      if (t && typeof t === 'object' && typeof (t as Record<string, unknown>)['filePath'] === 'string' && typeof (t as Record<string, unknown>)['fileName'] === 'string') {
+        validated.push({ filePath: (t as Record<string, unknown>)['filePath'] as string, fileName: (t as Record<string, unknown>)['fileName'] as string });
+      }
+    }
+    const idx = typeof activeIndex === 'number' && Number.isInteger(activeIndex) ? activeIndex : -1;
+    await sessionStore.saveOpenTabs(userDataDir(), validated, idx);
+  });
+
+  // File-menu "Forget open tabs & recent files" (docs/TABS_BUILD_PLAN.md
+  // §2e) — clears the stored session + recent list. Does not touch any tab
+  // currently open in this window; only what would be offered/restored on
+  // the NEXT launch.
+  ipcMain.handle('session:forget', async (): Promise<void> => {
+    await sessionStore.forgetAll(userDataDir());
   });
 }
 

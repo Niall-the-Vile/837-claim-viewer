@@ -8,6 +8,8 @@ import {
   manifestWarningsEl,
   exportConfirmBtn,
   shortcutsOverlayEl,
+  aboutOverlayEl,
+  forgetOverlayEl,
   toastEl,
   toastMessageEl,
   toastActionsEl,
@@ -69,10 +71,30 @@ let lastFocusedBeforeOverlay: HTMLElement | null = null;
  * opening one overlay can never cancel an in-flight close of the other.
  */
 const OVERLAY_EXIT_MS = 150; // keep in sync with .overlay.isClosing / .dialog's exit-animation duration in style.css
-const overlayCloseTimers: Record<'export' | 'shortcuts', number | undefined> = { export: undefined, shortcuts: undefined };
 
-function overlayElFor(id: 'export' | 'shortcuts'): HTMLDivElement {
-  return id === 'export' ? exportOverlayEl : shortcutsOverlayEl;
+/**
+ * The four modal overlays this app has (docs/TABS_BUILD_PLAN.md §2c/§2e
+ * added 'about'/'forget' to the original 'export'/'shortcuts' pair) — every
+ * open/close/focus-trap/Escape function below is generic over this list
+ * rather than special-casing each id, so a future 5th overlay is a
+ * one-line addition to OVERLAY_IDS/overlayElFor instead of touching every
+ * function in this file.
+ */
+export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget';
+const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget'];
+const overlayCloseTimers: Record<OverlayId, number | undefined> = { export: undefined, shortcuts: undefined, about: undefined, forget: undefined };
+
+function overlayElFor(id: OverlayId): HTMLDivElement {
+  switch (id) {
+    case 'export':
+      return exportOverlayEl;
+    case 'shortcuts':
+      return shortcutsOverlayEl;
+    case 'about':
+      return aboutOverlayEl;
+    case 'forget':
+      return forgetOverlayEl;
+  }
 }
 
 /** All focusable elements within `container`, in DOM order — used both to find the dialog's first control on open and to compute the Tab-trap boundary. */
@@ -81,7 +103,7 @@ export function focusableEls(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(selector));
 }
 
-export function openOverlay(id: 'export' | 'shortcuts'): void {
+export function openOverlay(id: OverlayId): void {
   // Reopening while a previous close is still fading out (fast double-toggle)
   // must win outright: drop the pending hide so it can't fire mid-reopen.
   const pendingClose = overlayCloseTimers[id];
@@ -105,7 +127,7 @@ export function openOverlay(id: 'export' | 'shortcuts'): void {
   dialog.focus();
 }
 
-export function closeOverlay(id: 'export' | 'shortcuts'): void {
+export function closeOverlay(id: OverlayId): void {
   const overlay = overlayElFor(id);
   if (overlay.hidden || overlay.classList.contains('isClosing')) return; // already closed, or already closing
   const restore = lastFocusedBeforeOverlay;
@@ -127,12 +149,18 @@ export function closeOverlay(id: 'export' | 'shortcuts'): void {
 }
 
 export function anyOverlayOpen(): boolean {
-  return !exportOverlayEl.hidden || !shortcutsOverlayEl.hidden;
+  return OVERLAY_IDS.some((id) => !overlayElFor(id).hidden);
+}
+
+/** The currently-open overlay's id, or null if none is open — used by the Escape handler (shortcuts.ts) to close only the one that's actually open, and internally by trapTabInOverlay below. */
+export function openOverlayId(): OverlayId | null {
+  return OVERLAY_IDS.find((id) => !overlayElFor(id).hidden) ?? null;
 }
 
 /** Tab/Shift+Tab trap for whichever overlay is currently open — called from the keydown handler (shortcuts.ts) whenever anyOverlayOpen() and the key is Tab. */
 export function trapTabInOverlay(event: KeyboardEvent): void {
-  const activeOverlay = !exportOverlayEl.hidden ? exportOverlayEl : !shortcutsOverlayEl.hidden ? shortcutsOverlayEl : null;
+  const openId = openOverlayId();
+  const activeOverlay = openId ? overlayElFor(openId) : null;
   if (!activeOverlay) return;
   const dialog = activeOverlay.querySelector<HTMLElement>('.dialog');
   if (!dialog) return;
@@ -218,16 +246,19 @@ export async function exportCurrentClaimSkipDialog(): Promise<void> {
   }
 }
 
-exportOverlayEl.addEventListener('click', (event) => {
-  if (event.target === exportOverlayEl) closeOverlay('export');
-});
-shortcutsOverlayEl.addEventListener('click', (event) => {
-  if (event.target === shortcutsOverlayEl) closeOverlay('shortcuts');
-});
+for (const id of OVERLAY_IDS) {
+  const el = overlayElFor(id);
+  el.addEventListener('click', (event) => {
+    if (event.target === el) closeOverlay(id);
+  });
+}
+function isOverlayId(value: string | undefined): value is OverlayId {
+  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget';
+}
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const id = btn.dataset['close'];
-    if (id === 'export' || id === 'shortcuts') closeOverlay(id);
+    if (isOverlayId(id)) closeOverlay(id);
   });
 });
 

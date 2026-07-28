@@ -266,6 +266,11 @@ export function renderTabStrip(): void {
     el.setAttribute('aria-selected', isActive ? 'true' : 'false');
     el.tabIndex = isActive ? 0 : -1;
     el.dataset['tabId'] = tab.tabId;
+    // Testability only (no behavior reads this): lets E2E assert lazy
+    // session restore (docs/TABS_BUILD_PLAN.md §2e) actually left a
+    // background tab 'unloaded' rather than eagerly loading every restored
+    // tab.
+    el.dataset['tabStatus'] = tab.status;
 
     const label = document.createElement('span');
     label.className = 'tabLabel';

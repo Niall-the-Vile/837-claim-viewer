@@ -30,3 +30,24 @@ npm test
 ## PHI / data policy
 Real claim files are **PHI** and must never be committed. Only **synthetic** fixtures live in
 `test/fixtures/`. `.gitignore` also excludes `/private-samples/` and `*.phi.json`.
+
+Claim **content** is never written to disk by this app — every form preview and PDF render
+happens fully in memory (`test/phi-at-rest.test.ts`), and closing a tab drops its parsed claim
+from main-process memory immediately. The one exception is an explicit, user-directed **export**:
+the app writes the rendered PDF only to a path the user picked in a save dialog.
+
+As of the multi-file tabs build (`docs/TABS_BUILD_PLAN.md` §2e — an approved, deliberate policy
+change), the app **does** persist a small amount of non-content state to `session.json` under
+`app.getPath('userData')` (`%AppData%\837 Claim Viewer` on Windows), so it can restore your open
+tabs on the next launch:
+- The **file paths** (and display names) of currently open tabs, their left-to-right order, and
+  which one was active.
+- A capped list of the **10 most recently opened** file paths, surfaced in the File menu.
+
+A file or folder name can be PHI-adjacent (e.g. it names a member), which is the accepted
+trade-off Niall signed off on. Claim content itself is never part of this file — see
+`src/app/persistence/sessionStore.ts` (the only module that writes it) and
+`test/persisted-artifacts.test.ts` (which asserts no PHI canary ever lands in it). Use
+**File → Forget open tabs & recent files…** at any time to clear both lists; the app's own About
+screen (Help → About Claim Viewer) states this same policy and shows the running build's
+version/date.

@@ -37,6 +37,16 @@
             <button type="button" role="menuitem" data-action="exportSkipDialog" data-menu-disable="export">Export this claim (skip dialog)<kbd>Ctrl+Shift+E</kbd></button>
             <button type="button" role="menuitem" data-action="close" data-menu-disable="export">Close tab<kbd>Ctrl+W</kbd></button>
             <button type="button" role="menuitem" data-action="reopenClosedTab">Reopen closed tab<kbd>Ctrl+Shift+T</kbd></button>
+            <div class="menuSep" role="separator"></div>
+            <!-- Recent files (docs/TABS_BUILD_PLAN.md §2e): rebuilt from
+                 claimApi.getSessionRestoreState() every time this menu
+                 opens (src/renderer/main.ts's setupMenus/refreshRecentFilesMenu) —
+                 never hand-maintained here. -->
+            <div class="menuSectionLabel" id="recentFilesLabel">Recent files</div>
+            <div id="recentFilesList" role="none"></div>
+            <div id="recentFilesEmpty" class="menuEmptyNote" hidden>No recent files</div>
+            <div class="menuSep" role="separator"></div>
+            <button type="button" role="menuitem" data-action="openForgetDialog">Forget open tabs &amp; recent files&hellip;</button>
           </div>
         </div>
         <div class="menu" data-menu="view">
@@ -55,6 +65,7 @@
           <button type="button" class="menuTrigger" data-menu-trigger="help" aria-haspopup="true" aria-expanded="false">Help</button>
           <div class="menuPanel" data-menu-panel="help" role="menu" hidden>
             <button type="button" role="menuitem" data-action="shortcuts">Keyboard shortcuts<kbd>F1</kbd></button>
+            <button type="button" role="menuitem" data-action="about">About Claim Viewer</button>
           </div>
         </div>
       </nav>
@@ -310,6 +321,67 @@
           </div>
           <div id="shortcutsGrid" class="shortcutsGrid"></div>
           <div class="shortcutsFootnote">F6 cycles the toolbar, the form preview and the inspector. Every control is reachable by keyboard.</div>
+        </div>
+      </div>
+
+      <!-- About dialog (docs/TABS_BUILD_PLAN.md §2c version/build stamp,
+           §2e honest data-policy wording — what's now persisted vs. what
+           never is). -->
+      <div id="aboutOverlay" class="overlay" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="aboutDialogTitle">About 837 Claim Viewer</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="about" aria-label="Close">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div class="dialogBody">
+            <div class="manifest">
+              <span class="manifestLabel">Version</span><span id="aboutVersion" class="mono"></span>
+              <span class="manifestLabel">Build date</span><span id="aboutBuildDate" class="mono"></span>
+            </div>
+            <div class="phiNotice">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+              <span>
+                Claim <b>content</b> is never written to disk &mdash; every form preview and PDF render
+                happens fully in memory, and closing a tab drops its parsed claim from memory
+                immediately. The <b>file paths</b> of your open tabs and a capped recent-files list
+                <b>are</b> saved on this machine, so the app can restore your tabs next time it
+                starts. A file or folder name can be PHI-adjacent &mdash; use
+                <span class="mono">File &rarr; Forget open tabs &amp; recent files</span> to clear
+                that trail at any time. Runs fully offline; nothing ever leaves this machine.
+              </span>
+            </div>
+          </div>
+          <div class="dialogFooter">
+            <button class="btn btnGhost" type="button" data-close="about">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- "Forget open tabs & recent files" confirm dialog (docs/TABS_BUILD_PLAN.md §2e). -->
+      <div id="forgetOverlay" class="overlay" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="forgetDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="forgetDialogTitle">Forget open tabs &amp; recent files?</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="forget" aria-label="Close">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div class="dialogBody">
+            <p class="exportIntro">
+              This clears the saved list of currently-open tabs and the recently-opened-files list
+              stored on this machine. Tabs open in this window right now stay open &mdash; they
+              just won&rsquo;t come back automatically next launch. This never touches an exported
+              PDF or the claim file itself.
+            </p>
+          </div>
+          <div class="dialogFooter">
+            <button class="btn btnGhost" type="button" data-close="forget">Cancel</button>
+            <button id="forgetConfirmBtn" class="btn btnPrimary" type="button">Forget</button>
+          </div>
         </div>
       </div>
 
