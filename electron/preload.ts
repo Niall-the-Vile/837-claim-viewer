@@ -20,6 +20,9 @@ export interface ClaimSummaryDto {
 }
 
 export interface OpenClaimResultDto {
+  sessionId: string;
+  /** Resolved absolute path of the opened file — see electron/main.ts's `OpenClaimResult.filePath` doc comment for why the renderer is allowed to see this one path. */
+  filePath: string;
   fileName: string;
   source: 'json' | 'x12';
   summaries: ClaimSummaryDto[];
@@ -116,14 +119,16 @@ const claimApi = Object.freeze({
    * filesystem paths.
    */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
-  /** Renders the claim at `index` (within the currently open file) to PDF bytes, for pdf.js preview. */
-  getPdf: (index: number): Promise<Uint8Array> => ipcRenderer.invoke('claim:getPdf', index),
-  /** Field-level data for the claim at `index`, for the inspector drawer (see ClaimDetailDto). */
-  getDetail: (index: number): Promise<ClaimDetailDto> => ipcRenderer.invoke('claim:getDetail', index),
-  /** Opens a native save-file dialog (PHI-free default name) and writes the rendered PDF for the claim at `index`. Resolves the saved path, or `null` if the user cancels. */
-  exportPdf: (index: number): Promise<string | null> => ipcRenderer.invoke('dialog:exportPdf', index),
+  /** Renders the claim at `index` within the given tab's session to PDF bytes, for pdf.js preview. `sessionId` is validated in main exactly like `index` (see electron/main.ts's getSessionClaim). */
+  getPdf: (sessionId: string, index: number): Promise<Uint8Array> => ipcRenderer.invoke('claim:getPdf', sessionId, index),
+  /** Field-level data for the claim at `index` within the given tab's session, for the inspector drawer (see ClaimDetailDto). */
+  getDetail: (sessionId: string, index: number): Promise<ClaimDetailDto> => ipcRenderer.invoke('claim:getDetail', sessionId, index),
+  /** Opens a native save-file dialog (PHI-free default name) and writes the rendered PDF for the claim at `index` within the given tab's session. Resolves the saved path, or `null` if the user cancels. */
+  exportPdf: (sessionId: string, index: number): Promise<string | null> => ipcRenderer.invoke('dialog:exportPdf', sessionId, index),
   /** "Open containing folder" / "Open PDF" toast actions after a successful export — acts on the last path exportPdf resolved in main, never on a path passed from here. Rejects if nothing has been exported yet this session. */
   openExport: (mode: OpenExportMode): Promise<void> => ipcRenderer.invoke('shell:openExport', mode),
+  /** Drops one tab's session in main — its parsed claims (PHI) leave main-process memory immediately (docs/TABS_BUILD_PLAN.md §2). Called when a tab closes. */
+  closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
 });
 
 export type ClaimApi = typeof claimApi;

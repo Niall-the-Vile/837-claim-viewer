@@ -1,7 +1,7 @@
 import type { ClaimDetailDto } from '../../electron/preload.js';
 import type { FormType } from '../model/claim.js';
 import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl } from './dom.js';
-import { state } from './tabs.js';
+import { state, currentScreen, type TabState } from './tabs.js';
 
 /**
  * Inspector drawer rendering (plus the small formatting helpers it — and a
@@ -58,7 +58,7 @@ function boxTags(formType: FormType): { patient: string; insured: string; provid
 // ---------------------------------------------------------------------------
 
 export function updateInspectorVisibility(): void {
-  const inWorkspace = state.screen === 'workspace';
+  const inWorkspace = currentScreen() === 'workspace';
   // `hidden` is only for "no claim loaded at all" (nothing to represent
   // either way). Ctrl+D / the inspector toggle button never touch `hidden`
   // — they only toggle `.collapsed` (style.css), a visual-only collapse, so
@@ -147,19 +147,19 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
   return details;
 }
 
-export function renderInspector(detail: ClaimDetailDto): void {
+export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   inspectorBodyEl.innerHTML = '';
   const tags = boxTags(detail.formType);
 
   // Provenance
   const provRows: InspRow[] = [
-    { key: 'Source file', value: state.fileName },
-    { key: 'Format', value: state.source === 'json' ? 'Clearinghouse claim JSON' : 'X12 837 interchange' },
+    { key: 'Source file', value: tab.fileName },
+    { key: 'Format', value: tab.source === 'json' ? 'Clearinghouse claim JSON' : 'X12 837 interchange' },
     { key: 'claim_form', value: orDash(detail.claimFormRaw) },
     { key: 'Claim ID', value: orDash(detail.claimId) },
   ];
-  if (state.summaries.length > 1) {
-    provRows.push({ key: 'Claim in file', value: `${state.currentIndex + 1} of ${state.summaries.length}` });
+  if (tab.summaries.length > 1) {
+    provRows.push({ key: 'Claim in file', value: `${tab.currentIndex + 1} of ${tab.summaries.length}` });
   }
   inspectorBodyEl.append(buildGroup('prov', 'Provenance', 'source', false, provRows, true));
 
@@ -308,7 +308,7 @@ export function renderInspector(detail: ClaimDetailDto): void {
   rawCaret.textContent = '▸';
   const rawLabel = document.createElement('span');
   rawLabel.className = 'inspGroupLabel';
-  rawLabel.textContent = state.source === 'json' ? 'Raw JSON fields' : 'Raw 837 segments';
+  rawLabel.textContent = tab.source === 'json' ? 'Raw JSON fields' : 'Raw 837 segments';
   rawSummary.append(rawCaret, rawLabel);
   rawDetails.append(rawSummary);
   const rawBody = document.createElement('div');

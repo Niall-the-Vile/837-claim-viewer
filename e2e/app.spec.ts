@@ -172,9 +172,11 @@ test.describe('837 Claim Viewer — E2E', () => {
       // The frozen contextBridge surface — exactly these functions, see
       // electron/preload.ts's `claimApi`. Anything more would be a bridge
       // leak; anything less would break the renderer. (getPathForFile drives
-      // drag-and-drop; openExport opens the exported file's folder/PDF.)
+      // drag-and-drop; openExport opens the exported file's folder/PDF;
+      // closeSession drops a tab's parsed claims from main-process memory —
+      // added in the tabs build, docs/TABS_BUILD_PLAN.md §2 / rule 7b.)
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
-      expect(apiKeys).toEqual(['exportPdf', 'getDetail', 'getPathForFile', 'getPdf', 'openClaim', 'openExport']);
+      expect(apiKeys).toEqual(['closeSession', 'exportPdf', 'getDetail', 'getPathForFile', 'getPdf', 'openClaim', 'openExport']);
 
       // Offline kill-switch (electron/main.ts's installOfflineKillSwitch):
       // an outbound fetch to a real external host must never resolve.

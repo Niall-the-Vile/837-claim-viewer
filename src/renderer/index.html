@@ -35,7 +35,8 @@
             <button type="button" role="menuitem" data-action="open">Open a claim file&hellip;<kbd>Ctrl+O</kbd></button>
             <button type="button" role="menuitem" data-action="export" data-menu-disable="export">Export PDF&hellip;<kbd>Ctrl+E</kbd></button>
             <button type="button" role="menuitem" data-action="exportSkipDialog" data-menu-disable="export">Export this claim (skip dialog)<kbd>Ctrl+Shift+E</kbd></button>
-            <button type="button" role="menuitem" data-action="close" data-menu-disable="export">Close file<kbd>Ctrl+W</kbd></button>
+            <button type="button" role="menuitem" data-action="close" data-menu-disable="export">Close tab<kbd>Ctrl+W</kbd></button>
+            <button type="button" role="menuitem" data-action="reopenClosedTab">Reopen closed tab<kbd>Ctrl+Shift+T</kbd></button>
           </div>
         </div>
         <div class="menu" data-menu="view">
@@ -57,6 +58,14 @@
           </div>
         </div>
       </nav>
+
+      <!-- Tab strip: one tab per open claim file (docs/TABS_BUILD_PLAN.md §2).
+           Built/updated entirely from src/renderer/tabs.ts's `state.tabs` —
+           hidden outright whenever no tabs are open (screen is derived as
+           'welcome' in that case; see tabs.ts's currentScreen()).
+           Horizontally scrolling strip (§2b: overflow behavior), active tab
+           kept scrolled into view. -->
+      <div id="tabStrip" role="tablist" aria-label="Open claim files" hidden></div>
 
       <!-- Toolbar -->
       <div id="toolbar">

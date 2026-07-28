@@ -13,6 +13,8 @@ function requireEl<T extends HTMLElement>(id: string): T {
 
 export const titlebarFileNameEl = requireEl<HTMLSpanElement>('titlebarFileName');
 
+export const tabStripEl = requireEl<HTMLDivElement>('tabStrip');
+
 export const openBtn = requireEl<HTMLButtonElement>('openBtn');
 export const exportBtn = requireEl<HTMLButtonElement>('exportBtn');
 

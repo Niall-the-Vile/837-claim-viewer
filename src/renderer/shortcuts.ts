@@ -2,18 +2,29 @@ import { shortcutsGridEl } from './dom.js';
 import { toggleInspector } from './inspector.js';
 import { zoomBy, zoomToActualSize, fitPage, fitWidth, stepPage } from './preview.js';
 import { anyOverlayOpen, trapTabInOverlay, closeOverlay, openOverlay, openExportDialog, exportCurrentClaimSkipDialog } from './overlays.js';
+import { activeTab } from './tabs.js';
 
 /**
  * The keyboard shortcuts sheet's content (KEY_GROUPS + rendering it + the
  * F1 open action) and the global keydown dispatcher. Pure-moved out of
- * main.ts — see docs/TABS_BUILD_PLAN.md §2 Item 0.
+ * main.ts — see docs/TABS_BUILD_PLAN.md §2 Item 0 — then extended with the
+ * tab shortcuts (§2): Ctrl+Tab / Ctrl+Shift+Tab cycle, Ctrl+W closes the
+ * *tab* (previously "close file"), Ctrl+Shift+T reopens the last closed
+ * tab, Ctrl+1..7 jump to a tab.
+ *
+ * Ctrl+8 / Ctrl+9 are already the long-standing fit-width / fit-page
+ * shortcuts (below, unchanged) — rather than silently stealing them for
+ * "jump to tab 8/9" (which would regress a shortcut users already rely on
+ * for a feature this build doesn't touch), tab-jump is scoped to Ctrl+1..7.
+ * A tab strip with 8+ tabs still has every tab reachable via Ctrl+Tab
+ * cycling or a click; it just has no direct-jump chord past 7.
  *
  * A handful of actions the dispatcher needs (menu-close, F6 region cycling,
- * open/close-file, theme toggle, claim stepping) still live in main.ts and
- * aren't imported directly here — importing them would create a main.ts <->
- * shortcuts.ts cycle (main.ts must import initShortcuts from this file to
- * wire it up). Instead they're passed into initShortcuts() as callbacks,
- * per the task's circular-import guidance.
+ * open/close-tab, theme toggle, claim stepping, tab cycling/jumping/reopen)
+ * still live in main.ts and aren't imported directly here — importing them
+ * would create a main.ts <-> shortcuts.ts cycle (main.ts must import
+ * initShortcuts from this file to wire it up). Instead they're passed into
+ * initShortcuts() as callbacks, per the task's circular-import guidance.
  */
 
 // ---------------------------------------------------------------------------
@@ -27,7 +38,8 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Open a claim file', keys: 'Ctrl+O' },
       { label: 'Export this claim…', keys: 'Ctrl+E' },
       { label: 'Export this claim (skip dialog)', keys: 'Ctrl+Shift+E' },
-      { label: 'Close file', keys: 'Ctrl+W' },
+      { label: 'Close tab', keys: 'Ctrl+W' },
+      { label: 'Reopen closed tab', keys: 'Ctrl+Shift+T' },
     ],
   },
   {
@@ -47,6 +59,8 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
     items: [
       { label: 'Previous / next form page', keys: 'Ctrl+← / Ctrl+→' },
       { label: 'Previous / next claim (837 file)', keys: 'PageUp / PageDown' },
+      { label: 'Next / previous tab', keys: 'Ctrl+Tab / Ctrl+Shift+Tab' },
+      { label: 'Jump to tab 1–7', keys: 'Ctrl+1 … Ctrl+7' },
     ],
   },
   {
@@ -94,9 +108,12 @@ export interface ShortcutDeps {
   closeAllMenus: () => void;
   cycleRegionFocus: (delta: number) => void;
   openClaimFlow: () => void | Promise<void>;
-  closeFile: () => void;
+  closeActiveTab: () => void | Promise<void>;
   toggleTheme: () => void;
   stepClaim: (delta: number) => void | Promise<void>;
+  cycleTab: (delta: number) => void;
+  jumpToTab: (oneBasedIndex: number) => void;
+  reopenLastClosedTab: () => void | Promise<void>;
 }
 
 export function initShortcuts(deps: ShortcutDeps): void {
@@ -137,6 +154,15 @@ export function initShortcuts(deps: ShortcutDeps): void {
     const ctrlOrCmd = event.ctrlKey || event.metaKey;
     if (!ctrlOrCmd) return;
 
+    // Tab cycling: Ctrl+Tab / Ctrl+Shift+Tab. Checked ahead of the
+    // lowercase-key switch below since 'Tab' isn't a single printable
+    // character the same way the rest of the shortcuts are.
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      deps.cycleTab(event.shiftKey ? -1 : 1);
+      return;
+    }
+
     if (event.shiftKey && event.key.toLowerCase() === 'l') {
       event.preventDefault();
       deps.toggleTheme();
@@ -145,6 +171,11 @@ export function initShortcuts(deps: ShortcutDeps): void {
     if (event.shiftKey && event.key.toLowerCase() === 'e') {
       event.preventDefault();
       void exportCurrentClaimSkipDialog();
+      return;
+    }
+    if (event.shiftKey && event.key.toLowerCase() === 't') {
+      event.preventDefault();
+      void deps.reopenLastClosedTab();
       return;
     }
 
@@ -163,37 +194,61 @@ export function initShortcuts(deps: ShortcutDeps): void {
         break;
       case 'w':
         event.preventDefault();
-        deps.closeFile();
+        void deps.closeActiveTab();
         break;
       case '+':
-      case '=':
+      case '=': {
         event.preventDefault();
-        void zoomBy(0.1);
+        const tab = activeTab();
+        if (tab) void zoomBy(tab, 0.1);
         break;
-      case '-':
+      }
+      case '-': {
         event.preventDefault();
-        void zoomBy(-0.1);
+        const tab = activeTab();
+        if (tab) void zoomBy(tab, -0.1);
         break;
-      case '0':
+      }
+      case '0': {
         event.preventDefault();
-        void zoomToActualSize();
+        const tab = activeTab();
+        if (tab) void zoomToActualSize(tab);
         break;
-      case '9':
+      }
+      case '9': {
         event.preventDefault();
-        void fitPage();
+        const tab = activeTab();
+        if (tab) void fitPage(tab);
         break;
-      case '8':
+      }
+      case '8': {
         event.preventDefault();
-        void fitWidth();
+        const tab = activeTab();
+        if (tab) void fitWidth(tab);
         break;
-      case 'arrowleft':
+      }
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
         event.preventDefault();
-        void stepPage(-1);
+        deps.jumpToTab(Number(event.key));
         break;
-      case 'arrowright':
+      case 'arrowleft': {
         event.preventDefault();
-        void stepPage(1);
+        const tab = activeTab();
+        if (tab) void stepPage(tab, -1);
         break;
+      }
+      case 'arrowright': {
+        event.preventDefault();
+        const tab = activeTab();
+        if (tab) void stepPage(tab, 1);
+        break;
+      }
     }
   });
 }

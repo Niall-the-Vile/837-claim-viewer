@@ -45,17 +45,33 @@ import {
   statusNoFileEl,
   exportConfirmBtn,
 } from './dom.js';
-import { state, type Screen } from './tabs.js';
-import { loadPdfDocument, renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage } from './preview.js';
+import {
+  state,
+  currentScreen,
+  activeTab,
+  findTabById,
+  findTabBySessionId,
+  createTab,
+  closeTab,
+  setActiveTab,
+  setActivePdfDoc,
+  loadPdfDocument,
+  renderTabStrip,
+  initTabStrip,
+  type TabState,
+  type NewTabInput,
+} from './tabs.js';
+import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, cancelInFlightRender } from './preview.js';
 import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText } from './inspector.js';
 import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog } from './overlays.js';
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
 
 /**
- * Claim Viewer renderer chrome: title bar, menu bar, toolbar (open/export,
- * zoom, page + claim steppers, inspector toggle), the data-warnings banner,
- * the pdf.js form preview, the inspector drawer, and the export/shortcuts
- * dialogs — matching docs/design/ClaimViewer_v2.dc.html.
+ * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
+ * (open/export, zoom, page + claim steppers, inspector toggle), the
+ * data-warnings banner, the pdf.js form preview, the inspector drawer, and
+ * the export/shortcuts dialogs — matching docs/design/ClaimViewer_v2.dc.html
+ * plus the tabs strip (docs/TABS_BUILD_PLAN.md §2/§2b).
  *
  * Sandbox-safe by construction: this file never touches Node or Electron
  * APIs directly — the only bridge to the main process is the frozen
@@ -64,15 +80,17 @@ import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
  * the page's `script-src 'self'` CSP (see index.html / electron/main.ts's
  * installOfflineKillSwitch) is never at odds with the UI.
  *
- * This file is init + wiring: the DOM handles live in dom.ts, the state
- * singleton in tabs.ts, pdf.js load/render/zoom/paging in preview.ts, the
- * inspector drawer in inspector.ts, the export dialog/shortcuts sheet
- * overlay mechanics/toast in overlays.ts, and the keyboard shortcuts sheet
- * content + global keydown dispatcher in shortcuts.ts (pure-moved out of
- * this file — see docs/TABS_BUILD_PLAN.md §2 Item 0). What's left here is
- * theme, the loading-floor timing, screen/toolbar visibility, claim
- * loading/stepping, open/close-file, the menu bar, and wiring everything
- * together.
+ * This file is init + wiring: the DOM handles live in dom.ts, per-tab state
+ * + the tab strip + the pdf.js lifecycle helper live in tabs.ts, pdf.js
+ * load/render/zoom/paging in preview.ts, the inspector drawer in
+ * inspector.ts, the export dialog/shortcuts sheet overlay mechanics/toast in
+ * overlays.ts, and the keyboard shortcuts sheet content + global keydown
+ * dispatcher in shortcuts.ts. What's left here is theme, the loading-floor
+ * timing, screen/toolbar visibility (all DERIVED from tab state — see
+ * tabs.ts's currentScreen()), the two claim-loading lifecycle primitives
+ * every tab-content path shares (loadClaimDetail / ensureClaimRendered),
+ * tab open/close/activate/cycle orchestration, the menu bar, and wiring
+ * everything together.
  */
 
 // ---------------------------------------------------------------------------
@@ -82,11 +100,11 @@ import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
 // surface this task doesn't touch).
 // ---------------------------------------------------------------------------
 
-function provenanceText(summary: ClaimSummaryDto, index: number): string {
-  if (state.source === 'json') return `Rendered from JSON claim ${summary.claimId || index + 1}`;
+function provenanceText(tab: TabState, summary: ClaimSummaryDto, index: number): string {
+  if (tab.source === 'json') return `Rendered from JSON claim ${summary.claimId || index + 1}`;
   const kind =
     summary.formType === 'ub04' ? 'institutional' : summary.formType === 'dental' ? 'dental' : summary.formType === 'unsupported' ? 'unsupported' : 'professional';
-  return `837 claim ${index + 1} of ${state.summaries.length} — ${kind}`;
+  return `837 claim ${index + 1} of ${tab.summaries.length} — ${kind}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,52 +152,29 @@ function toggleTheme(): void {
 
 /**
  * Claim files parse in milliseconds — fast enough that #loadingScreen would
- * otherwise flash on and off inside a single frame (or not render at all
- * before the next paint), which reads as a stutter rather than "it's
- * working" (spec requirement 1). openClaimFlow() / openDroppedClaimFile()
- * wrap the read/parse call in this so whatever happens next — success,
- * parse failure, or the user cancelling the native picker — never leaves
- * the loading screen up for less than LOADING_MIN_VISIBLE_MS. Intentionally
- * NOT covered by prefers-reduced-motion (see style.css's reduced-motion
- * block): this is a perceived-performance guarantee, not decorative motion.
+ * otherwise flash on and off inside a single frame, which reads as a
+ * stutter rather than "it's working" (spec requirement 1). Applies to a
+ * user-initiated FILE OPEN only (docs/TABS_BUILD_PLAN.md §2's amendment to
+ * the original loading-floor note) — never to tab activation, claim
+ * stepping, or background-tab reload, all of which route through
+ * ensureClaimRendered() below without this delay. In practice that also
+ * means it only ever fires for the very first tab: opening an ADDITIONAL
+ * file while another tab is already showing doesn't touch the visible
+ * screen at all (the existing tab just keeps rendering while the new one
+ * loads in the background, like a browser opening a new tab), so there is
+ * no loading screen for that case to flash in the first place — see
+ * performOpen() below.
  */
 const LOADING_MIN_VISIBLE_MS = 1000;
 
-async function withLoadingFloor<T>(work: Promise<T>): Promise<T> {
-  const shownAt = performance.now();
-  try {
-    return await work;
-  } finally {
-    const remaining = LOADING_MIN_VISIBLE_MS - (performance.now() - shownAt);
-    if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
-  }
-}
-
-/**
- * Holds the loading screen for the floor duration counted from NOW.
- *
- * openClaimFlow can't wrap claimApi.openClaim() in withLoadingFloor, because
- * that one call BOTH opens the native file picker and reads/parses the chosen
- * file — so the floor would start ticking while the picker was still open. By
- * the time a file was actually chosen the floor had long since elapsed, and
- * the loading state flicked past before it could paint. That was invisible on
- * the welcome screen (the loading panel simply sat there while you browsed)
- * but obvious when a document was already open: the workspace appeared to
- * jump straight to the new claim with no loading state at all.
- *
- * Counting from after the picker closes is what makes it genuinely visible.
- */
-async function holdLoadingScreen(): Promise<void> {
-  if (state.screen !== 'loading') showScreen('loading');
-  await new Promise((resolve) => window.setTimeout(resolve, LOADING_MIN_VISIBLE_MS));
-}
-
 // ---------------------------------------------------------------------------
-// Screen / visibility management
+// Screen / visibility management — DERIVED from tab state (tabs.ts's
+// currentScreen()), never an independent flag. syncScreenUI() just paints
+// the DOM to match whatever that currently says.
 // ---------------------------------------------------------------------------
 
-function showScreen(screen: Screen): void {
-  state.screen = screen;
+function syncScreenUI(): void {
+  const screen = currentScreen();
   welcomeScreenEl.hidden = screen !== 'welcome';
   loadingScreenEl.hidden = screen !== 'loading';
   errorScreenEl.hidden = screen !== 'error';
@@ -189,16 +184,26 @@ function showScreen(screen: Screen): void {
   statusNoFileEl.hidden = screen === 'workspace';
   if (screen !== 'workspace') warnBannerEl.hidden = true;
 
+  const tab = activeTab();
+  titlebarFileNameEl.textContent = tab && tab.fileName ? tab.fileName : 'no file open';
+  if (screen === 'error') {
+    errorDetailEl.textContent = `Problem: ${tab?.errorMessage ?? ''}`;
+  }
+  if (screen === 'loading') {
+    loadingLabelEl.textContent = 'Reading and parsing the claim file…';
+  }
+
   updateToolbarVisibility();
   updateInspectorVisibility();
 }
 
 function updateToolbarVisibility(): void {
-  const hasFile = state.screen === 'workspace';
+  const tab = activeTab();
+  const hasFile = currentScreen() === 'workspace' && tab !== null;
   zoomSepEl.hidden = !hasFile;
   zoomGroupEl.hidden = !hasFile;
-  pageGroupEl.hidden = !hasFile || state.pageCount <= 1;
-  claimGroupEl.hidden = !hasFile || state.summaries.length <= 1;
+  pageGroupEl.hidden = !hasFile || !tab || tab.pageCount <= 1;
+  claimGroupEl.hidden = !hasFile || !tab || tab.summaries.length <= 1;
   inspectorToggleBtn.hidden = !hasFile;
   exportBtn.disabled = !hasFile;
   document.querySelectorAll<HTMLButtonElement>('[data-menu-disable="export"]').forEach((btn) => {
@@ -207,7 +212,7 @@ function updateToolbarVisibility(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Warnings banner / status bar
+// Warnings banner / status bar / claim-detail-driven chrome
 // ---------------------------------------------------------------------------
 
 function renderWarnBanner(detail: ClaimDetailDto): void {
@@ -222,8 +227,8 @@ function renderWarnBanner(detail: ClaimDetailDto): void {
   warnMessagesEl.textContent = shown.join('  ·  ') + extra;
 }
 
-function renderStatusBar(summary: ClaimSummaryDto, detail: ClaimDetailDto): void {
-  statusFileNameEl.textContent = state.fileName;
+function renderStatusBar(tab: TabState, summary: ClaimSummaryDto, detail: ClaimDetailDto): void {
+  statusFileNameEl.textContent = tab.fileName;
   statusFormTypeEl.textContent = formTypeText(summary.formType);
   const warnCount = detail.warnings.length;
   statusWarnBtnEl.textContent = warnCount === 0 ? 'No warnings' : warnCount === 1 ? '1 data warning' : `${warnCount} data warnings`;
@@ -232,23 +237,13 @@ function renderStatusBar(summary: ClaimSummaryDto, detail: ClaimDetailDto): void
   statusTotalsEl.textContent = `${lineCount} line${lineCount === 1 ? '' : 's'} · ${formatMoney(detail.totals.totalCharge)} billed`;
 }
 
-// ---------------------------------------------------------------------------
-// Claim loading / stepping
-// ---------------------------------------------------------------------------
+/** Paints every piece of shared chrome that's driven by the active tab's cached claim-detail data (provenance chip, warnings banner, status bar, inspector, claim stepper). Called both right after a fresh claimApi.getDetail() fetch (loadClaimDetail) and on plain tab activation, where the data is already cached on the tab and nothing needs re-fetching. */
+function renderActiveTabChrome(tab: TabState): void {
+  const summary = tab.summaries[tab.currentIndex];
+  const detail = tab.detail;
+  if (!summary || !detail) return;
 
-async function loadCurrentClaim(isNewFile: boolean): Promise<void> {
-  const index = state.currentIndex;
-  const summary = state.summaries[index];
-  if (!summary) return;
-
-  const [detail, bytes] = await Promise.all([window.claimApi.getDetail(index), window.claimApi.getPdf(index)]);
-  state.detail = detail;
-
-  state.pdfDoc = await loadPdfDocument(bytes);
-  state.pageCount = state.pdfDoc.numPages;
-  state.pageNum = 1;
-
-  provenanceChipTextEl.textContent = provenanceText(summary, index);
+  provenanceChipTextEl.textContent = provenanceText(tab, summary, tab.currentIndex);
   // No field anywhere in Claim/ClaimSummaryDto/ClaimDetailDto distinguishes
   // "sample data" from a real claim, so the chip the design shows for demo
   // data is never shown here — there is nothing to key it off honestly.
@@ -256,103 +251,292 @@ async function loadCurrentClaim(isNewFile: boolean): Promise<void> {
   unsupportedNoteEl.hidden = summary.formType !== 'unsupported';
 
   renderWarnBanner(detail);
-  renderStatusBar(summary, detail);
-  renderInspector(detail);
+  renderStatusBar(tab, summary, detail);
+  renderInspector(tab, detail);
 
-  claimStepLabelEl.textContent = `Claim ${index + 1} of ${state.summaries.length}`;
-  prevClaimBtn.disabled = index <= 0;
-  nextClaimBtn.disabled = index >= state.summaries.length - 1;
+  claimStepLabelEl.textContent = `Claim ${tab.currentIndex + 1} of ${tab.summaries.length}`;
+  prevClaimBtn.disabled = tab.currentIndex <= 0;
+  nextClaimBtn.disabled = tab.currentIndex >= tab.summaries.length - 1;
 
   updateToolbarVisibility();
+}
 
-  if (isNewFile) {
-    await fitPage(true);
-  } else {
-    await renderPdfPage(true);
+// ---------------------------------------------------------------------------
+// Claim loading — the two lifecycle primitives every content path
+// (activation, claim stepping, this build's fresh-open, and later builds'
+// lazy restore / fast mode) routes through, per docs/TABS_BUILD_PLAN.md §2.
+// ---------------------------------------------------------------------------
+
+/** Fetches claim-detail data for `index` on `tab` and — only if `tab` is still the active tab once the fetch resolves — paints every piece of chrome that depends on it. Inspector-and-friends only; never touches pdf.js/the canvas (see ensureClaimRendered). */
+async function loadClaimDetail(tab: TabState, index: number): Promise<void> {
+  if (!tab.sessionId) return;
+  const summary = tab.summaries[index];
+  if (!summary) return;
+  tab.currentIndex = index;
+  const detail = await window.claimApi.getDetail(tab.sessionId, index);
+  tab.detail = detail;
+  if (tab.tabId === state.activeTabId) {
+    renderActiveTabChrome(tab);
   }
 }
 
+/**
+ * Ensures `tab.pdfDoc` reflects `tab.currentIndex` (rebuilding it via
+ * claimApi.getPdf + loadPdfDocument, through the leak-safe setActivePdfDoc,
+ * whenever it's missing or `forceReload` says the claim index just
+ * changed), then — only if `tab` is the active tab — paints it onto the
+ * shared canvas. Safe to call for a background tab: the pdf.js document
+ * still gets rebuilt (or left alone) as needed, but the shared canvas is
+ * never touched for a tab that isn't currently showing.
+ */
+async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean } = {}): Promise<void> {
+  if (!tab.sessionId) return;
+  const needsReload = opts.forceReload === true || !tab.pdfDoc;
+  if (needsReload) {
+    const bytes = await window.claimApi.getPdf(tab.sessionId, tab.currentIndex);
+    const doc = await loadPdfDocument(bytes);
+    await setActivePdfDoc(tab, doc);
+    tab.pageCount = doc.numPages;
+    tab.pageNum = 1;
+  }
+  tab.status = 'ready';
+  if (tab.tabId !== state.activeTabId) return;
+  syncScreenUI();
+  if (needsReload) {
+    await fitPage(tab, true);
+  } else {
+    await renderPdfPage(tab, true);
+  }
+}
+
+/** First-ever content load for a brand-new (or freshly-filled-placeholder) tab: claim 0's detail, then a fresh pdf.js document fit to the page. */
+async function loadTabContent(tab: TabState): Promise<void> {
+  await loadClaimDetail(tab, 0);
+  await ensureClaimRendered(tab, { forceReload: true });
+}
+
 async function stepClaim(delta: number): Promise<void> {
-  if (state.screen !== 'workspace') return;
-  // The export dialog's manifest (form/lines/total/warnings) is rendered
-  // once, from the claim at the moment it opened, and never re-rendered —
-  // stepping to a different claim while it's open would silently export a
-  // claim other than the one the manifest still shows (the MAJOR finding
-  // this guards). Simplest correct fix: no claim navigation while ANY
-  // overlay is open, mirroring the Escape special-casing below.
+  if (currentScreen() !== 'workspace') return;
+  // No claim navigation while any overlay is open — mirrors the Escape
+  // special-casing elsewhere (the export dialog's manifest is rendered once
+  // from the claim at the moment it opened, and never re-rendered).
   if (anyOverlayOpen()) return;
-  const next = state.currentIndex + delta;
-  if (next < 0 || next >= state.summaries.length) return;
-  state.currentIndex = next;
+  const tab = activeTab();
+  if (!tab) return;
+  const next = tab.currentIndex + delta;
+  if (next < 0 || next >= tab.summaries.length) return;
   try {
-    await loadCurrentClaim(false);
+    await loadClaimDetail(tab, next);
+    // A different claim index means a genuinely different PDF — this is
+    // the "claim step" leak-fix site: forceReload always destroys the old
+    // pdfDoc via setActivePdfDoc before the new one is built.
+    await ensureClaimRendered(tab, { forceReload: true });
   } catch (err) {
     showToast(errorMessage(err), true);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Open / close file
+// Tab activation / close / cycling
 // ---------------------------------------------------------------------------
 
-function renderErrorScreen(): void {
-  errorDetailEl.textContent = `Problem: ${state.errorMessage}`;
+/**
+ * The one place a tab becomes the active tab and its content gets ensured
+ * on screen — used by tab-strip clicks, the open flow's dedupe-focus path,
+ * closing the active tab (picks a new one), and Ctrl+Tab / Ctrl+1-7.
+ *
+ * Background-tab memory release (§2b) lives here: switching AWAY from a
+ * tab releases its pdf.js document (through setActivePdfDoc — the same
+ * leak-safe helper every other pdfDoc reassignment uses), rebuilt lazily on
+ * next activation by ensureClaimRendered's `!tab.pdfDoc` check. Any
+ * in-flight render for the outgoing tab is cancelled first
+ * (cancelInFlightRender) so its paint can never land on the canvas after
+ * the newly active tab starts its own render (docs/TABS_BUILD_PLAN.md §2
+ * watch-out (b)).
+ */
+async function activateTabById(tabId: string): Promise<void> {
+  const previousTab = activeTab();
+  const switchingAway = previousTab !== null && previousTab.tabId !== tabId;
+  if (switchingAway) cancelInFlightRender();
+
+  setActiveTab(tabId);
+  const tab = activeTab();
+  syncScreenUI();
+
+  if (switchingAway && previousTab) {
+    await setActivePdfDoc(previousTab, null);
+  }
+  if (!tab) return;
+
+  if (tab.detail) renderActiveTabChrome(tab);
+  try {
+    if (tab.status !== 'ready') {
+      await loadTabContent(tab);
+    } else {
+      await ensureClaimRendered(tab);
+    }
+  } catch (err) {
+    tab.status = 'error';
+    tab.errorMessage = errorMessage(err);
+  }
+  syncScreenUI();
 }
 
-/** Adopts an already-fetched open result into state — shared by the native-dialog open flow and the drag-and-drop open flow below. */
-function applyOpenedClaimFile(result: OpenClaimResultDto): void {
-  if (result.summaries.length === 0) {
-    throw new Error('This file contains no claims.');
+let lastClosedTabPath: string | null = null;
+
+async function closeTabById(tabId: string): Promise<void> {
+  const tab = findTabById(tabId);
+  if (tab && tab.filePath) {
+    lastClosedTabPath = tab.filePath; // Ctrl+Shift+T target (§2b)
   }
-  state.fileName = result.fileName;
-  state.source = result.source;
-  state.summaries = result.summaries;
-  state.currentIndex = 0;
-  titlebarFileNameEl.textContent = result.fileName;
+  const wasActive = state.activeTabId === tabId;
+  if (wasActive) cancelInFlightRender();
+
+  const { nextActiveTabId } = await closeTab(tabId);
+  syncScreenUI();
+
+  if (wasActive && nextActiveTabId) {
+    await activateTabById(nextActiveTabId);
+  }
+}
+
+async function closeActiveTab(): Promise<void> {
+  if (anyOverlayOpen()) return;
+  const tab = activeTab();
+  if (!tab) return;
+  await closeTabById(tab.tabId);
+}
+
+function cycleTab(delta: number): void {
+  if (anyOverlayOpen()) return;
+  if (state.tabs.length === 0) return;
+  const idx = state.tabs.findIndex((t) => t.tabId === state.activeTabId);
+  const from = idx === -1 ? 0 : idx;
+  const next = (((from + delta) % state.tabs.length) + state.tabs.length) % state.tabs.length;
+  const target = state.tabs[next];
+  if (target) void activateTabById(target.tabId);
+}
+
+function jumpToTab(oneBasedIndex: number): void {
+  if (anyOverlayOpen()) return;
+  const target = state.tabs[oneBasedIndex - 1];
+  if (target) void activateTabById(target.tabId);
+}
+
+// ---------------------------------------------------------------------------
+// Open file (native dialog / drag-drop / reopen-last-closed all share one
+// path)
+// ---------------------------------------------------------------------------
+
+function tabInputFromResult(result: OpenClaimResultDto): NewTabInput {
+  return { sessionId: result.sessionId, fileName: result.fileName, filePath: result.filePath, source: result.source, summaries: result.summaries };
+}
+
+function fillPlaceholder(tab: TabState, result: OpenClaimResultDto): TabState {
+  tab.sessionId = result.sessionId;
+  tab.fileName = result.fileName;
+  tab.filePath = result.filePath;
+  tab.source = result.source;
+  tab.summaries = result.summaries;
+  tab.currentIndex = 0;
+  renderTabStrip();
+  return tab;
+}
+
+type OpenSource = { kind: 'dialog' } | { kind: 'path'; path: string };
+
+/**
+ * The single implementation behind openClaimFlow (Ctrl+O / the Open
+ * buttons), openDroppedClaimFile (drag-and-drop), and reopenLastClosedTab
+ * (Ctrl+Shift+T) — all three just differ in how claimApi.openClaim() is
+ * invoked (no argument opens the native dialog; a path skips straight to
+ * reading that file, same as a drop).
+ *
+ * If there are no tabs open yet, a bare placeholder tab (status 'loading')
+ * is created first so currentScreen() has something to derive 'loading'
+ * from during the IPC round-trip — still fully tab-state-driven, never an
+ * independent screen flag. If a tab is ALREADY open, the existing tab stays
+ * visible/interactive throughout (no placeholder, no loading screen) while
+ * the new file loads in the background, like a browser opening a new tab —
+ * see LOADING_MIN_VISIBLE_MS's doc comment for why the loading floor only
+ * ever applies to the placeholder case in practice.
+ *
+ * Same-file-twice dedupe (§2b): if the resolved session already belongs to
+ * one of this renderer's tabs (main's openClaimAtPath returns the SAME
+ * sessionId for a path that's already open), that tab is focused instead of
+ * a duplicate being created. The tab that ends up owning a sessionId is
+ * decided IMMEDIATELY once the IPC result arrives — before the loading
+ * floor's artificial delay below — specifically so a second, concurrent
+ * open of the same brand-new file (racing in while the first one's
+ * placeholder is still mid-floor) reliably finds it via
+ * findTabBySessionId() instead of both independently deciding "not a
+ * duplicate yet" and creating two tabs for one session.
+ */
+async function performOpen(source: OpenSource): Promise<void> {
+  const isFirstTab = state.tabs.length === 0;
+  const placeholder = isFirstTab ? createTab() : null;
+  if (placeholder) syncScreenUI();
+
+  try {
+    const result = source.kind === 'dialog' ? await window.claimApi.openClaim() : await window.claimApi.openClaim(source.path);
+
+    if (!result) {
+      if (placeholder) {
+        await closeTab(placeholder.tabId);
+        syncScreenUI();
+      }
+      return;
+    }
+
+    const existing = findTabBySessionId(result.sessionId);
+    let tab: TabState;
+    if (existing && existing !== placeholder) {
+      if (placeholder) await closeTab(placeholder.tabId);
+      tab = existing;
+    } else if (placeholder) {
+      tab = fillPlaceholder(placeholder, result);
+    } else {
+      tab = createTab(tabInputFromResult(result));
+    }
+
+    // The loading floor only ever applies to a genuinely new placeholder
+    // tab that's about to show its very first content (see
+    // LOADING_MIN_VISIBLE_MS's doc comment) — not to the dedupe-focus path
+    // above, which just activates an already-live tab.
+    if (placeholder && tab === placeholder) {
+      await new Promise((resolve) => window.setTimeout(resolve, LOADING_MIN_VISIBLE_MS));
+    }
+
+    await activateTabById(tab.tabId);
+  } catch (err) {
+    if (placeholder) {
+      placeholder.status = 'error';
+      placeholder.errorMessage = errorMessage(err);
+      syncScreenUI();
+    } else {
+      // A background open failing must never disturb whatever's already on
+      // screen — just surface it as a toast.
+      showToast(errorMessage(err), true);
+    }
+  }
 }
 
 async function openClaimFlow(): Promise<void> {
-  const previousScreen = state.screen;
-  loadingLabelEl.textContent = 'Reading and parsing the claim file…';
-  showScreen('loading');
-
-  try {
-    const result: OpenClaimResultDto | null = await window.claimApi.openClaim();
-    if (!result) {
-      // User cancelled the native file picker — return to whatever was
-      // showing before (or the welcome screen, if we were on it already).
-      showScreen(previousScreen === 'loading' ? 'welcome' : previousScreen);
-      return;
-    }
-    // Only now — with the picker closed and a real file chosen — is there
-    // work worth showing a loading state for. See holdLoadingScreen().
-    await holdLoadingScreen();
-    applyOpenedClaimFile(result);
-    showScreen('workspace');
-    await loadCurrentClaim(true);
-  } catch (err) {
-    state.errorMessage = errorMessage(err);
-    renderErrorScreen();
-    showScreen('error');
-  }
+  await performOpen({ kind: 'dialog' });
 }
 
-/** Drag-and-drop open (welcome screen + workspace preview pane, spec §4): same read/parse/adopt path as openClaimFlow, but claimApi.openClaim is given the dropped file's path so it skips the native dialog — see setupDragAndDrop() below. */
+/** Drag-and-drop open (welcome screen + workspace preview pane, spec §4) — see setupDragAndDrop() below. */
 async function openDroppedClaimFile(filePath: string): Promise<void> {
-  loadingLabelEl.textContent = 'Reading and parsing the claim file…';
-  showScreen('loading');
+  await performOpen({ kind: 'path', path: filePath });
+}
 
-  try {
-    const result = await withLoadingFloor(window.claimApi.openClaim(filePath));
-    if (!result) throw new Error('Could not open the dropped file.');
-    applyOpenedClaimFile(result);
-    showScreen('workspace');
-    await loadCurrentClaim(true);
-  } catch (err) {
-    state.errorMessage = errorMessage(err);
-    renderErrorScreen();
-    showScreen('error');
-  }
+/** Ctrl+Shift+T (§2b): reopens the most recently closed tab's file path, kept in renderer memory only (no persistent store yet — that's a later build, §2e). No-op if nothing has been closed yet this session. */
+async function reopenLastClosedTab(): Promise<void> {
+  if (anyOverlayOpen()) return;
+  const path = lastClosedTabPath;
+  if (!path) return;
+  lastClosedTabPath = null;
+  await performOpen({ kind: 'path', path });
 }
 
 const DROPPABLE_NAME_PATTERN = /\.(json|dat|edi|txt|837)$/i;
@@ -365,11 +549,11 @@ function firstDroppableFile(dataTransfer: DataTransfer | null): File | null {
   return null;
 }
 
-/** Wires the welcome screen + workspace preview pane (both live inside #previewPane) as a single drop target for .json/.dat/.edi/.txt/.837 claim files (spec §4 / design ClaimViewer_v2.dc.html:562). Dropping while a file is already loading is ignored rather than racing two loads. */
+/** Wires the welcome screen + workspace preview pane (both live inside #previewPane) as a single drop target for .json/.dat/.edi/.txt/.837 claim files (spec §4 / design ClaimViewer_v2.dc.html:562). Dropping while the (sole, first-tab) loading screen is up is ignored rather than racing two loads; dropping onto an existing workspace opens the file into a new tab in the background, same as Ctrl+O. */
 function setupDragAndDrop(): void {
   previewPaneEl.addEventListener('dragover', (event) => {
     event.preventDefault();
-    if (state.screen === 'loading') return;
+    if (currentScreen() === 'loading') return;
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     previewPaneEl.classList.add('isDragOver');
   });
@@ -383,7 +567,7 @@ function setupDragAndDrop(): void {
   previewPaneEl.addEventListener('drop', (event) => {
     event.preventDefault();
     previewPaneEl.classList.remove('isDragOver');
-    if (state.screen === 'loading') return;
+    if (currentScreen() === 'loading') return;
     const dropped = firstDroppableFile(event.dataTransfer);
     if (!dropped) return;
     // `File.prototype.path` was removed; claimApi.getPathForFile is the
@@ -392,19 +576,6 @@ function setupDragAndDrop(): void {
     const filePath = window.claimApi.getPathForFile(dropped);
     if (filePath) void openDroppedClaimFile(filePath);
   });
-}
-
-function closeFile(): void {
-  state.fileName = '';
-  state.source = null;
-  state.summaries = [];
-  state.currentIndex = 0;
-  state.detail = null;
-  state.pdfDoc = null;
-  state.pageNum = 1;
-  state.pageCount = 1;
-  titlebarFileNameEl.textContent = 'no file open';
-  showScreen('welcome');
 }
 
 // ---------------------------------------------------------------------------
@@ -463,23 +634,36 @@ function runAction(action: string): void {
       void exportCurrentClaimSkipDialog();
       break;
     case 'close':
-      closeFile();
+      void closeActiveTab();
       break;
-    case 'zoomIn':
-      void zoomBy(0.1);
+    case 'reopenClosedTab':
+      void reopenLastClosedTab();
       break;
-    case 'zoomOut':
-      void zoomBy(-0.1);
+    case 'zoomIn': {
+      const tab = activeTab();
+      if (tab) void zoomBy(tab, 0.1);
       break;
-    case 'zoomReset':
-      void zoomToActualSize();
+    }
+    case 'zoomOut': {
+      const tab = activeTab();
+      if (tab) void zoomBy(tab, -0.1);
       break;
-    case 'fitPage':
-      void fitPage();
+    }
+    case 'zoomReset': {
+      const tab = activeTab();
+      if (tab) void zoomToActualSize(tab);
       break;
-    case 'fitWidth':
-      void fitWidth();
+    }
+    case 'fitPage': {
+      const tab = activeTab();
+      if (tab) void fitPage(tab);
       break;
+    }
+    case 'fitWidth': {
+      const tab = activeTab();
+      if (tab) void fitWidth(tab);
+      break;
+    }
     case 'toggleInspector':
       toggleInspector();
       break;
@@ -510,18 +694,41 @@ errorCopyBtn.addEventListener('click', () => {
   );
 });
 
-zoomInBtn.addEventListener('click', () => void zoomBy(0.1));
-zoomOutBtn.addEventListener('click', () => void zoomBy(-0.1));
-fitPageBtn.addEventListener('click', () => void fitPage());
-fitWidthBtn.addEventListener('click', () => void fitWidth());
+zoomInBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void zoomBy(tab, 0.1);
+});
+zoomOutBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void zoomBy(tab, -0.1);
+});
+fitPageBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void fitPage(tab);
+});
+fitWidthBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void fitWidth(tab);
+});
 
-prevPageBtn.addEventListener('click', () => void stepPage(-1));
-nextPageBtn.addEventListener('click', () => void stepPage(1));
+prevPageBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void stepPage(tab, -1);
+});
+nextPageBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (tab) void stepPage(tab, 1);
+});
 prevClaimBtn.addEventListener('click', () => void stepClaim(-1));
 nextClaimBtn.addEventListener('click', () => void stepClaim(1));
 
 inspectorToggleBtn.addEventListener('click', toggleInspector);
 themeToggleBtn.addEventListener('click', toggleTheme);
+
+initTabStrip({
+  onActivate: (tabId) => void activateTabById(tabId),
+  onClose: (tabId) => void closeTabById(tabId),
+});
 
 /**
  * Toolbar -> form preview -> inspector, in that order (spec §8 / index.html's
@@ -529,13 +736,13 @@ themeToggleBtn.addEventListener('click', toggleTheme);
  * #pdfScroll and #inspector only count while the workspace screen is
  * actually showing: both live inside #workspaceScreen, and `hidden` is only
  * ever set on that ancestor (not on them directly), so checking
- * `state.screen` here — rather than each element's own `.hidden` — is what
- * keeps F6 from trying to focus a preview/inspector that isn't rendered.
- * The inspector is additionally skipped while visually collapsed, so F6
- * never parks focus in a `.collapsed` (width:0) drawer.
+ * `currentScreen()` here — rather than each element's own `.hidden` — is
+ * what keeps F6 from trying to focus a preview/inspector that isn't
+ * rendered. The inspector is additionally skipped while visually collapsed,
+ * so F6 never parks focus in a `.collapsed` (width:0) drawer.
  */
 function f6Regions(): HTMLElement[] {
-  const inWorkspace = state.screen === 'workspace';
+  const inWorkspace = currentScreen() === 'workspace';
   const regions: Array<HTMLElement | null> = [
     document.getElementById('toolbar'),
     inWorkspace ? pdfScrollEl : null,
@@ -551,7 +758,7 @@ function cycleRegionFocus(delta: number): void {
   const current = document.activeElement;
   const currentIdx = regions.findIndex((r) => current instanceof Node && r.contains(current));
   const fromIdx = currentIdx === -1 ? (delta > 0 ? -1 : 0) : currentIdx;
-  const nextIdx = ((fromIdx + delta) % regions.length + regions.length) % regions.length;
+  const nextIdx = (((fromIdx + delta) % regions.length) + regions.length) % regions.length;
   const target = regions[nextIdx]!;
   const target0 = focusableEls(target)[0];
   (target0 ?? target).focus();
@@ -561,9 +768,12 @@ initShortcuts({
   closeAllMenus: () => closeAllMenus(),
   cycleRegionFocus,
   openClaimFlow,
-  closeFile,
+  closeActiveTab,
   toggleTheme,
   stepClaim,
+  cycleTab,
+  jumpToTab,
+  reopenLastClosedTab,
 });
 
 // ---------------------------------------------------------------------------
@@ -574,4 +784,5 @@ initTheme();
 setupMenus();
 renderShortcuts();
 setupDragAndDrop();
-showScreen('welcome');
+renderTabStrip();
+syncScreenUI();

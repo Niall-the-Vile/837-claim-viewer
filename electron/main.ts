@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } from 'elect
 import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
-import { dirname, join, basename, extname } from 'node:path';
+import { dirname, join, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { Claim, FormType, WarningSeverity } from '../src/model/claim.js';
@@ -16,11 +16,16 @@ import { composeName, composeAddressLine } from '../src/render/text.js';
  * The renderer (sandboxed, contextIsolation:true) never sees a raw Claim
  * object — only claim summaries (for the stepper UI), field-level DTOs (for
  * the inspector), and rendered PDF bytes (for preview/export). It does
- * handle two narrow filesystem-path exceptions, both already
+ * handle a few narrow filesystem-path exceptions, all already
  * user-disclosed/user-supplied rather than main-process-secret: the export
- * save path (shown back to the user in the export toast) and a
- * drag-and-drop open path (resolved from a `File` the user just dropped via
- * `webUtils.getPathForFile`, never read off disk directly by the renderer).
+ * save path (shown back to the user in the export toast), a drag-and-drop
+ * open path (resolved from a `File` the user just dropped via
+ * `webUtils.getPathForFile`, never read off disk directly by the renderer),
+ * and — since the tabs build (docs/TABS_BUILD_PLAN.md §2) — the resolved
+ * path of a file the renderer itself just asked main to open, echoed back on
+ * `dialog:openClaim`'s result purely so a tab can remember "reopen this same
+ * path" (same-file-twice dedupe, Ctrl+Shift+T) without main tracking any
+ * renderer-side state.
  * See electron/preload.ts for the frozen bridge that enforces this boundary.
  */
 
@@ -42,18 +47,23 @@ const BUILT_RENDERER_INDEX = join(__dirname, '..', 'renderer', 'index.html');
 const IS_DEV = !existsSync(BUILT_RENDERER_INDEX);
 
 interface ClaimSession {
+  /** `resolve()`d absolute path — the dedupe key `openClaimAtPath` uses to detect "this file is already open in another tab" (docs/TABS_BUILD_PLAN.md §2b). */
+  filePath: string;
   fileName: string;
+  source: 'json' | 'x12';
   claims: Claim[];
 }
 
 /**
- * The currently open file's parsed claims, kept in main-process memory
- * only, keyed implicitly by "the one open session" — this is a
- * single-window, single-claim-file-at-a-time viewer (see
- * docs/UI_REQUIREMENTS_v2_single_claim.md §1), so one slot is sufficient.
- * Opening a new file replaces it; closing the window clears it.
+ * Every open tab's parsed claims, kept in main-process memory only, keyed by
+ * a per-open sessionId (docs/ROADMAP.md §1 / TABS_BUILD_PLAN.md §2 — the
+ * multi-file-tabs build). Each renderer tab owns exactly one entry here;
+ * `dialog:openClaim` creates one (or reuses an existing one for the same
+ * resolved path — see openClaimAtPath), and `session:close` drops one so its
+ * PHI leaves memory the moment its tab closes. Closing the window clears all
+ * of them (see the window-all-closed handler below).
  */
-let currentSession: ClaimSession | null = null;
+const sessions = new Map<string, ClaimSession>();
 
 /**
  * The absolute path of the last claim PDF this session exported, or `null`
@@ -214,6 +224,16 @@ interface ClaimSummaryDto {
 }
 
 interface OpenClaimResult {
+  sessionId: string;
+  /**
+   * The resolved absolute path of the opened file. A deliberate, narrow
+   * widening of "the renderer never sees a main-resolved filesystem path"
+   * (see this file's top comment): tabs need it to detect "reopen the file
+   * this tab already has open" purely client-side and to remember a closed
+   * tab's path for Ctrl+Shift+T (docs/TABS_BUILD_PLAN.md §2b) — it is never
+   * used for anything but re-issuing this same openClaim call.
+   */
+  filePath: string;
   fileName: string;
   source: 'json' | 'x12';
   summaries: ClaimSummaryDto[];
@@ -406,6 +426,37 @@ function isRealPackagedApp(): boolean {
   return app.isPackaged;
 }
 
+/**
+ * Cursor into the `;`-separated CLAIM_VIEWER_E2E_OPEN queue (see
+ * nextE2EOpenPath below) — module-level so it advances across multiple
+ * dialog:openClaim invocations within one launched app, which is exactly
+ * the "open file A, then open file B" multi-tab scenario the queue exists
+ * for (docs/TABS_BUILD_PLAN.md §2).
+ */
+let e2eOpenQueueIndex = 0;
+
+/**
+ * TEST-ONLY SEAM (extended for tabs — approved amendment to guardrail §1.5,
+ * see docs/TABS_BUILD_PLAN.md §2): CLAIM_VIEWER_E2E_OPEN may be a single
+ * path (unchanged, still works) or a `;`-separated list, consumed one entry
+ * per dialog:openClaim call so a test can open several files in sequence
+ * without a native picker. Once the queue is exhausted, the last entry is
+ * sticky (re-opening it lands on openClaimAtPath's existing-session dedupe,
+ * so a test that calls open() more times than it supplied paths just
+ * re-focuses the last one). The `!isRealPackagedApp()` gate below is
+ * byte-for-byte the same guard as before this change — only the value's
+ * shape (single path -> queue) is new.
+ */
+function nextE2EOpenPath(): string | undefined {
+  const raw = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_OPEN'] : undefined;
+  if (!raw) return undefined;
+  const parts = raw.split(';').filter((p) => p !== '');
+  if (parts.length === 0) return undefined;
+  const idx = Math.min(e2eOpenQueueIndex, parts.length - 1);
+  e2eOpenQueueIndex += 1;
+  return parts[idx];
+}
+
 const OPEN_FILE_EXTENSIONS = new Set(['.json', '.dat', '.edi', '.txt', '.837']);
 
 /** Same extension allow-list as the native open dialog's file filter (below), enforced again here because this is also the entry point for the drag-and-drop IPC, where the renderer hands over a path a user dropped rather than one a filtered OS dialog already constrained. */
@@ -413,31 +464,86 @@ function hasAllowedOpenExtension(filePath: string): boolean {
   return OPEN_FILE_EXTENSIONS.has(extname(filePath).toLowerCase());
 }
 
-/** Shared by every dialog:openClaim path — the native picker, the E2E seam, and a drag-and-drop path: read, parse, and adopt `filePath` as the current session. */
+/**
+ * Opens for a not-yet-open path that are still in flight (read + parse not
+ * finished, no `sessions` entry committed yet), keyed by resolved path —
+ * see openClaimAtPath's doc comment for why this exists.
+ */
+const inFlightOpensByPath = new Map<string, Promise<OpenClaimResult>>();
+
+/**
+ * Shared by every dialog:openClaim path — the native picker, the E2E seam,
+ * and a drag-and-drop path: read, parse, and adopt `filePath` as a new
+ * session — UNLESS a session for this same resolved path is already open
+ * (or already being opened), in which case that session is returned as-is
+ * (no re-read, re-parse, or duplicate entry). This is the "open the same
+ * file twice focuses the existing tab, not a duplicate" behavior
+ * (docs/TABS_BUILD_PLAN.md §2b) — the renderer decides "is this already one
+ * of my tabs?" purely by comparing the returned `sessionId` to its own tab
+ * list, so the dedupe only has to happen here, once, by path.
+ *
+ * The `inFlightOpensByPath` map closes a real race the committed-`sessions`
+ * check alone can't: two concurrent `dialog:openClaim` calls for the SAME
+ * brand-new path (e.g. a script/E2E firing Open twice back-to-back, faster
+ * than one read+parse completes) would otherwise both miss the `sessions`
+ * loop below — neither has committed yet — and each independently create
+ * its own session for the same file. Routing every not-yet-committed open
+ * through the SAME in-flight promise means the second caller gets back
+ * the first caller's sessionId instead.
+ */
 async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
-  let text: string;
-  try {
-    text = await readFile(filePath, 'utf8');
-  } catch (err) {
-    throw new Error(`Could not read "${basename(filePath)}": ${(err as Error).message}`);
+  const resolvedPath = resolve(filePath);
+  for (const [sessionId, existing] of sessions) {
+    if (existing.filePath === resolvedPath) {
+      return {
+        sessionId,
+        filePath: resolvedPath,
+        fileName: existing.fileName,
+        source: existing.source,
+        summaries: existing.claims.map(claimSummary),
+      };
+    }
   }
 
-  let loaded: { source: 'json' | 'x12'; claims: Claim[] };
-  try {
-    loaded = loadClaims(text);
-  } catch (err) {
-    // Re-throw as a plain Error: ipcMain.handle only reliably serializes
-    // Error.message across the bridge, and ClaimParseError's friendly
-    // message is exactly what the renderer should show.
-    throw new Error(err instanceof ClaimParseError ? err.message : (err as Error).message);
-  }
+  const inFlight = inFlightOpensByPath.get(resolvedPath);
+  if (inFlight) return inFlight;
 
-  currentSession = { fileName: basename(filePath), claims: loaded.claims };
-  return {
-    fileName: currentSession.fileName,
-    source: loaded.source,
-    summaries: loaded.claims.map(claimSummary),
-  };
+  const task = (async (): Promise<OpenClaimResult> => {
+    let text: string;
+    try {
+      text = await readFile(filePath, 'utf8');
+    } catch (err) {
+      throw new Error(`Could not read "${basename(filePath)}": ${(err as Error).message}`);
+    }
+
+    let loaded: { source: 'json' | 'x12'; claims: Claim[] };
+    try {
+      loaded = loadClaims(text);
+    } catch (err) {
+      // Re-throw as a plain Error: ipcMain.handle only reliably serializes
+      // Error.message across the bridge, and ClaimParseError's friendly
+      // message is exactly what the renderer should show.
+      throw new Error(err instanceof ClaimParseError ? err.message : (err as Error).message);
+    }
+
+    const sessionId = randomUUID();
+    const fileName = basename(filePath);
+    sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims });
+    return {
+      sessionId,
+      filePath: resolvedPath,
+      fileName,
+      source: loaded.source,
+      summaries: loaded.claims.map(claimSummary),
+    };
+  })();
+
+  inFlightOpensByPath.set(resolvedPath, task);
+  try {
+    return await task;
+  } finally {
+    inFlightOpensByPath.delete(resolvedPath);
+  }
 }
 
 function registerIpcHandlers(): void {
@@ -462,7 +568,7 @@ function registerIpcHandlers(): void {
     // Playwright/Electron E2E tests (e2e/app.spec.ts) can't drive the native
     // OS file-picker. When CLAIM_VIEWER_E2E_OPEN is set to a file path, skip
     // dialog.showOpenDialog and use that path directly — everything below
-    // this point (readFile -> loadClaims -> currentSession) is the exact
+    // this point (readFile -> loadClaims -> sessions.set) is the exact
     // same code the real dialog handler runs. Gated on !isRealPackagedApp()
     // in addition to the env var (see that function's doc comment): the env
     // var alone was reachable, in principle, by any environment variable an
@@ -470,7 +576,7 @@ function registerIpcHandlers(): void {
     // of the var was never sufficient on its own to prove this is a test
     // run. With the added guard the seam is provably unreachable in the
     // asar-packed app regardless of what's in the environment.
-    const e2eOpenPath = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_OPEN'] : undefined;
+    const e2eOpenPath = nextE2EOpenPath();
     let filePath: string;
     if (e2eOpenPath) {
       filePath = e2eOpenPath;
@@ -491,22 +597,22 @@ function registerIpcHandlers(): void {
     return openClaimAtPath(filePath);
   });
 
-  ipcMain.handle('claim:getPdf', async (_event: IpcMainInvokeEvent, index: unknown): Promise<Uint8Array> => {
-    const claim = getSessionClaim(index);
+  ipcMain.handle('claim:getPdf', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<Uint8Array> => {
+    const claim = getSessionClaim(sessionId, index);
     return renderClaim(claim);
   });
 
   // Read-only inspector data for the renderer's inspector drawer (see
   // ClaimDetailDto above). Same validated-index pattern as claim:getPdf —
-  // getSessionClaim throws a plain, renderer-safe Error for "no file open"
+  // getSessionClaim throws a plain, renderer-safe Error for "no such session"
   // or an out-of-range index.
-  ipcMain.handle('claim:getDetail', async (_event: IpcMainInvokeEvent, index: unknown): Promise<ClaimDetailDto> => {
-    const claim = getSessionClaim(index);
+  ipcMain.handle('claim:getDetail', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<ClaimDetailDto> => {
+    const claim = getSessionClaim(sessionId, index);
     return buildClaimDetail(claim);
   });
 
-  ipcMain.handle('dialog:exportPdf', async (event: IpcMainInvokeEvent, index: unknown): Promise<string | null> => {
-    const claim = getSessionClaim(index);
+  ipcMain.handle('dialog:exportPdf', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<string | null> => {
+    const claim = getSessionClaim(sessionId, index);
     const win = BrowserWindow.fromWebContents(event.sender);
 
     // --- TEST-ONLY SEAM ----------------------------------------------------
@@ -552,14 +658,26 @@ function registerIpcHandlers(): void {
     }
     throw new Error(`Invalid open mode: ${String(mode)}.`);
   });
+
+  // Drops one tab's session — its parsed claims (PHI) leave main-process
+  // memory immediately, same "cleared on close" guarantee the old
+  // single-session model gave on window close, now scoped per tab
+  // (docs/TABS_BUILD_PLAN.md §2). Closing a sessionId that doesn't exist
+  // (e.g. a placeholder tab whose open was cancelled before it ever got one)
+  // is a harmless no-op.
+  ipcMain.handle('session:close', async (_event: IpcMainInvokeEvent, sessionId: unknown): Promise<void> => {
+    if (typeof sessionId === 'string') sessions.delete(sessionId);
+  });
 }
 
-function getSessionClaim(index: unknown): Claim {
-  if (!currentSession) throw new Error('No claim file is open.');
-  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= currentSession.claims.length) {
+function getSessionClaim(sessionId: unknown, index: unknown): Claim {
+  if (typeof sessionId !== 'string' || sessionId === '') throw new Error('No claim file is open.');
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error('No claim file is open.');
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= session.claims.length) {
     throw new Error(`Invalid claim index: ${String(index)}.`);
   }
-  return currentSession.claims[index]!;
+  return session.claims[index]!;
 }
 
 /**
@@ -670,6 +788,6 @@ void app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  currentSession = null;
+  sessions.clear();
   if (process.platform !== 'darwin') app.quit();
 });

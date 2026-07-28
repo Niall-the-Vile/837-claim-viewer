@@ -15,7 +15,7 @@ import {
   toastOpenPdfBtn,
   toastCloseBtn,
 } from './dom.js';
-import { state } from './tabs.js';
+import { activeTab } from './tabs.js';
 import { formatMoney, formTypeText } from './inspector.js';
 
 /**
@@ -161,8 +161,10 @@ export function trapTabInOverlay(event: KeyboardEvent): void {
 
 export function openExportDialog(): void {
   if (exportBtn.disabled) return;
-  const summary = state.summaries[state.currentIndex];
-  const detail = state.detail;
+  const tab = activeTab();
+  if (!tab) return;
+  const summary = tab.summaries[tab.currentIndex];
+  const detail = tab.detail;
   if (!summary || !detail) return;
 
   exportIntroEl.textContent = `Export this claim (${summary.claimId || 'claim'}) as a PDF.`;
@@ -177,13 +179,15 @@ export function openExportDialog(): void {
 }
 
 export async function confirmExport(): Promise<void> {
+  const tab = activeTab();
+  if (!tab || !tab.sessionId) return;
   exportConfirmBtn.disabled = true;
   exportConfirmBtn.textContent = 'Exporting…';
   try {
     // claimApi.exportPdf opens its own native save-file dialog (with a
     // PHI-free default name) and writes the PDF; it resolves the saved
     // path, or null if the user cancels that dialog.
-    const path = await window.claimApi.exportPdf(state.currentIndex);
+    const path = await window.claimApi.exportPdf(tab.sessionId, tab.currentIndex);
     closeOverlay('export');
     // The export "done" state (Open containing folder / Open PDF, design
     // ClaimViewer_v2.dc.html:776-777 / spec §7) lives in the toast rather
@@ -204,8 +208,10 @@ export async function confirmExport(): Promise<void> {
 export async function exportCurrentClaimSkipDialog(): Promise<void> {
   if (exportBtn.disabled) return;
   if (anyOverlayOpen()) return;
+  const tab = activeTab();
+  if (!tab || !tab.sessionId) return;
   try {
-    const path = await window.claimApi.exportPdf(state.currentIndex);
+    const path = await window.claimApi.exportPdf(tab.sessionId, tab.currentIndex);
     if (path) showToast(`Exported to ${path}`, false, true);
   } catch (err) {
     showToast(errorMessage(err), true);
