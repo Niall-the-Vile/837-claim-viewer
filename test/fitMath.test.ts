@@ -8,13 +8,16 @@ import { computeFitPageZoom, computeFitWidthZoom, type FitSize } from '../src/re
  * argument (the upstream measurement is already scale-correct by
  * construction; a correction here would be a bug, not a fix). What this
  * file proves: the math itself is correct for ordinary fit-page/fit-width
- * scenarios, AND — the actual §9 acceptance criterion — that feeding it
- * the SAME available/base sizes always yields the SAME zoom regardless of
- * anything about scale, i.e. there is no hidden scale dependency to find.
- * The complementary, equally-required half of this (that #pdfScroll's real
- * getBoundingClientRect measurement is ITSELF unaffected by --ui-scale in
- * the actual running app) is verified in e2e/uiScale.spec.ts, which a pure
- * unit test structurally cannot check.
+ * scenarios, against hardcoded expected values.
+ *
+ * It does NOT prove §9's scale-invariance acceptance criterion, and no unit
+ * test can — the thing that could break is the upstream getBoundingClientRect
+ * measurement, not this arithmetic. The sole proof of that criterion is
+ * e2e/uiScale.spec.ts's "fitWidth yields the same PDF zoom% at 175% as at
+ * 100%", which re-issues fitWidth in the running app at both scales and
+ * compares #zoomLabel. This file previously claimed that role for two
+ * self-comparison tests that any implementation would have passed
+ * (docs/AUDIT_BUILD2.md).
  */
 
 describe('fitMath: computeFitPageZoom', () => {
@@ -54,30 +57,37 @@ describe('fitMath: computeFitWidthZoom', () => {
   });
 });
 
-describe('fitMath: scale-invariance (docs/UI_REQUIREMENTS_v3_queued_features.md §9 acceptance criterion)', () => {
+describe('fitMath: exact expected values', () => {
   /**
-   * The DoD requires "fitWidth at 175% yields the same PDF zoom value as at
-   * 100%". Since #pdfScroll is deliberately kept outside every zoomed chrome
-   * region (see fitMath.ts/preview.ts's doc comments), the SAME real avail/
-   * base measurements are what these functions receive at every --ui-scale
-   * setting — so proving these are pure functions of (avail, base) alone,
-   * with no other hidden input, IS the unit-level proof of that invariant.
-   * Calling each function twice with identical inputs (standing in for "the
-   * same real window size measured at 100% and at 175%") must always agree.
+   * This block replaces two tests that called each function twice with
+   * identical inputs and asserted the results matched, under the heading
+   * "the unit-level proof" of §9's scale-invariance criterion. Both
+   * functions are one-line arithmetic over (avail, base) with no module or
+   * global read, so that equality holds for ANY implementation — including a
+   * wrong one that divided by a hidden --ui-scale global, since the same
+   * global would be read both times. They proved nothing and mislabelled
+   * themselves as the acceptance proof (docs/AUDIT_BUILD2.md).
+   *
+   * The REAL proof of §9's criterion is e2e/uiScale.spec.ts's "fitWidth
+   * yields the same PDF zoom% at 175% as at 100%", which re-issues fitWidth
+   * in the running app at both scales and compares #zoomLabel. A unit test
+   * structurally cannot check it, because the thing that could break is the
+   * upstream getBoundingClientRect measurement, not this arithmetic.
+   *
+   * What IS worth pinning here is the arithmetic itself, against hardcoded
+   * numbers rather than against a second call to the same function.
    */
-  it('computeFitPageZoom is a pure function of its inputs — same avail/base always yields the same zoom', () => {
-    const avail: FitSize = { width: 850, height: 1100 };
-    const base: FitSize = { width: 612, height: 792 };
-    const first = computeFitPageZoom(avail, base);
-    const second = computeFitPageZoom({ ...avail }, { ...base });
-    expect(second).toBe(first);
+  it('computeFitWidthZoom divides available width (less the gutter) by base width', () => {
+    expect(computeFitWidthZoom({ width: 900, height: 1100 }, { width: 612, height: 792 })).toBeCloseTo((900 - 4) / 612, 10);
   });
 
-  it('computeFitWidthZoom is a pure function of its inputs — same avail/base always yields the same zoom', () => {
-    const avail: FitSize = { width: 850, height: 1100 };
-    const base: FitSize = { width: 612, height: 792 };
-    const first = computeFitWidthZoom(avail, base);
-    const second = computeFitWidthZoom({ ...avail }, { ...base });
-    expect(second).toBe(first);
+  it('computeFitPageZoom takes the binding axis, exactly — and applies NO gutter', () => {
+    // Width-bound: 600/612 = 0.980 vs height 1200/792 = 1.515.
+    // Note the absence of the -4 gutter: fitWidth subtracts it, fitPage does
+    // not. Asserting hardcoded values is what makes that asymmetry visible;
+    // a self-comparison would have been satisfied by either behaviour.
+    expect(computeFitPageZoom({ width: 600, height: 1200 }, { width: 612, height: 792 })).toBeCloseTo(600 / 612, 10);
+    // Height-bound: 400/792 = 0.505 vs 2000/612 = 3.268.
+    expect(computeFitPageZoom({ width: 2000, height: 400 }, { width: 612, height: 792 })).toBeCloseTo(400 / 792, 10);
   });
 });

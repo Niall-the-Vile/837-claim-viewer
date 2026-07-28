@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { renderedCanvasSize, waitForFirstRender, UNRENDERED_CANVAS_WIDTH } from './support/canvas.js';
 
 /**
  * Multi-file tabs (docs/ROADMAP.md §1 / docs/TABS_BUILD_PLAN.md §2/§2b): the
@@ -380,6 +381,11 @@ test.describe('837 Claim Viewer — E2E — multi-file tabs', () => {
 
       await page.locator('#welcomeOpenBtn').click();
       await expect(page.locator('#workspaceScreen')).toBeVisible();
+      // #workspaceScreen becomes visible BEFORE the first render is awaited,
+      // so this baseline must wait — otherwise fp1 can be the blank 300x150
+      // default canvas, and the "switching back restores fp1" poll below
+      // would then never match a real render (docs/AUDIT_BUILD2.md).
+      await waitForFirstRender(page);
       const fp1 = await fingerprint();
       expect(fp1.length).toBeGreaterThan(100); // a real, non-blank render, not just an empty canvas data URL
 
@@ -427,8 +433,10 @@ test.describe('837 Claim Viewer — E2E — multi-file tabs', () => {
       await expect(tab1).toHaveClass(/isActive/);
       await expect(page.locator('#claimGroup')).toBeHidden(); // tab 1 = single-claim JSON
       await expect(page.locator('#provenanceChipText')).toContainText('JSON');
-      const canvas = await page.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
-      expect(canvas.width).toBeGreaterThan(0);
+      // `> 0` would be vacuous: an unrendered #pdfCanvas reports the 300x150
+      // HTML default, not 0x0 (docs/AUDIT_BUILD2.md, e2e/support/canvas.ts).
+      const canvas = await renderedCanvasSize(page);
+      expect(canvas.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
       expect(canvas.height).toBeGreaterThan(0);
 
       expect(pageErrors).toEqual([]);

@@ -221,11 +221,61 @@ group's prior `open` state on the first keystroke to restore it **verbatim** on
 `Esc` — otherwise clearing a search would silently destroy the user's layout.
 
 ### Not done and why
-- **Adversarial audit not yet run** for this build. Build 1's audit found 33 confirmed
-  defects including a wrong-claim export, so this is a real gap, not a formality —
-  it should run before this build is treated as trustworthy.
 - 13 SHOULD FIX items + coverage gaps from `docs/AUDIT_BUILD1.md` still open.
 - Builds 3-6 not started.
+
+### Audit → `build-2-audited` (commits `82acc68`, `edcbb3c`)
+The adversarial audit ran after the initial tag and returned **23 CONFIRMED of 30
+verified**, verdict *"NOT trustworthy as tagged"*. It was right. Full write-up in
+`docs/AUDIT_BUILD2.md`; the short version:
+
+- **Two BLOCKING data defects.** `occurrenceCodes.ts` had a clean three-code leftward
+  transcription shift through the therapy series (39/44/45 carrying 44/45/46's labels,
+  46 missing entirely). `valueCodes.ts` decoded two different codes to the **identical
+  string**, and put peritoneal dialysis on `68` with no `67` key — the same off-by-one
+  pattern. Both re-derived wholesale from source rather than patched.
+- **Two more wrong tables.** Condition code 81 decoded as a cost outlier (it is the
+  <39-weeks-gestation attestation) and collided with CC 61; type-of-bill frequency
+  letters K/M/P carried an **invented "QIM" acronym on two different letters**, landing
+  on the headline "Type of bill" row.
+- **A ninth defect the audit missed**, caught by the new duplicate-label check on its
+  first run: three revenue codes decoding to one bare string.
+- **Four MAJOR non-data findings**: 64-char decode truncation that merged discharge
+  status 05/85 and dropped trailing modifiers; a search snapshot that replayed one
+  claim's layout onto another; the shortcuts dialog rendering its only close button
+  off-screen at 175%; and the whole preview-pane state layer sitting outside every
+  zoomed region, so UI scale did nothing to the first screen or any parse-error message.
+
+**The lesson worth keeping.** This build's defect class was new: not a crash or a layout
+glitch, but the app *confidently displaying false information* beside real dollar
+figures, with a fully green suite. The cause was structural — eight code tables shipped
+with four spot-check assertions between them. `test/decodeTables.test.ts` now pins the
+corrected values and, more importantly, adds mechanical checks needing no code-set
+knowledge: no placeholder labels, and **no two codes in one table sharing a decoded
+string**. That check catches a transcription shift on its own.
+
+Two existing tests **actively resisted** their own fixes (a "POS 27 is unrecognized"
+fixture that was really a table gap, and an E2E anchored on standard NUBC codes being
+undecodable). Both repointed at invariants that cannot go stale as the tables grow.
+
+Sourcing discipline: the audit ran offline and flagged that its own suggested labels
+were unverified. Every replacement came from Noridian JE/JF Part A reference tables
+instead. Where a source could not settle a flagged code it was **omitted rather than
+relabelled** — one guess is not an improvement on another. One conflict on value code 66
+is recorded as open rather than silently resolved.
+
+### Verification after the audit fixes
+- typecheck: **pass** (3 configs)
+- vitest: 202 → **258**, pass
+- Playwright E2E: 47 → **49**, pass
+- screenshots: 8 specs, regenerated
+- exe rebuilt; asar verified to carry the **corrected values**, not just the filenames
+  (occurrence 44/45/46, `OCCURRENCE_SPAN_CODES`, value 67/68/69, condition 81, TOB
+  K/M/P — and "QIM" appearing exactly once, in the comment explaining why it must never
+  appear again)
+- **Every new assertion confirmed to fail against pre-fix code**: 26 of 44 new
+  code-table assertions fail at `build-2-green`; with `style.css` reverted and the app
+  rebuilt, exactly the two new 175% tests fail and the other four pass.
 
 ### Verification
 - typecheck: **pass** (3 configs)

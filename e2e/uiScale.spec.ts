@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { renderedCanvasSize, waitForFirstRender, UNRENDERED_CANVAS_WIDTH } from './support/canvas.js';
 
 /**
  * View menu's "UI text scale" (docs/UI_REQUIREMENTS_v3_queued_features.md §9
@@ -367,6 +368,13 @@ test.describe('837 Claim Viewer — E2E — UI text scale (docs/UI_REQUIREMENTS_
       // --- Direction 1: cycling UI scale must not touch the PDF's zoom%,
       // its canvas pixel buffer (i.e. it's never silently re-rendered), or
       // its zoom mode.
+      //
+      // The wait is load-bearing: main.ts reveals #workspaceScreen BEFORE
+      // awaiting the first render, and an unrendered #pdfCanvas reports the
+      // 300x150 HTML default rather than 0x0. Without it this could baseline
+      // {300,150} and compare it against a real render three scale-cycles
+      // later — an intermittent red (docs/AUDIT_BUILD2.md).
+      await waitForFirstRender(page);
       const before = await page.evaluate(() => {
         const canvas = document.getElementById('pdfCanvas') as HTMLCanvasElement;
         return { zoomLabel: document.getElementById('zoomLabel')!.textContent, canvasW: canvas.width, canvasH: canvas.height };

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { renderedCanvasSize, UNRENDERED_CANVAS_WIDTH } from './support/canvas.js';
 
 /**
  * Session restore + recent files (docs/TABS_BUILD_PLAN.md §2e — an APPROVED
@@ -110,8 +111,8 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
         // the 837I's 2-claim stepper and a real rendered canvas.
         await expect(page2.locator('#claimGroup')).toBeVisible();
         await expect(page2.locator('#claimStepLabel')).toHaveText('Claim 1 of 2');
-        const canvas2 = await page2.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
-        expect(canvas2.width).toBeGreaterThan(0);
+        const canvas2 = await renderedCanvasSize(page2);
+        expect(canvas2.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
         expect(canvas2.height).toBeGreaterThan(0);
 
         // Activating the lazy tab loads it on demand.
@@ -183,8 +184,10 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
         await expect(page2.locator('.tab').first()).toHaveClass(/isActive/);
         await expect(page2.locator('#claimGroup')).toBeVisible(); // tab 2 (837I) still fully functional
         await expect(page2.locator('#claimStepLabel')).toHaveText('Claim 1 of 2');
-        const canvas = await page2.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
-        expect(canvas.width).toBeGreaterThan(0);
+        // `> 0` would be vacuous: an unrendered #pdfCanvas reports the
+        // 300x150 HTML default, not 0x0 (docs/AUDIT_BUILD2.md).
+        const canvas = await renderedCanvasSize(page2);
+        expect(canvas.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
         expect(canvas.height).toBeGreaterThan(0);
       } finally {
         await app2.close();

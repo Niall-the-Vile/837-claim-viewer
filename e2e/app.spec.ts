@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { renderedCanvasSize, UNRENDERED_CANVAS_WIDTH } from './support/canvas.js';
 
 /**
  * End-to-end test of the actual packaged behavior: a real Electron process,
@@ -234,9 +235,11 @@ test.describe('837 Claim Viewer — E2E', () => {
       expect(await visibleStateScreens(page)).toEqual(['workspaceScreen']);
 
       // Preview: the pdf.js canvas actually has pixels (a real render, not
-      // just an empty <canvas>).
-      const canvasSize = await page.locator('#pdfCanvas').evaluate((el: HTMLCanvasElement) => ({ width: el.width, height: el.height }));
-      expect(canvasSize.width).toBeGreaterThan(0);
+      // just an empty <canvas>). `> 0` used to be the assertion here, which
+      // an UNrendered canvas satisfies — it reports the 300x150 HTML default,
+      // not 0x0 (docs/AUDIT_BUILD2.md).
+      const canvasSize = await renderedCanvasSize(page);
+      expect(canvasSize.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
       expect(canvasSize.height).toBeGreaterThan(0);
 
       // Export: opens the dialog, confirms, and the E2E-seam "save" path
