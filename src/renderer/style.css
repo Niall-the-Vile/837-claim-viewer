@@ -642,14 +642,57 @@ a:focus-visible {
   background: var(--warn-border);
 }
 .warnMessages {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+.warnMessages .mono {
+  font-family: var(--font-mono);
+}
+
+/* Per-warning entry (docs/TABS_BUILD_PLAN.md §2f item 4): severity glyph +
+   explicit word + message, so a blocking "Warning" is never visually
+   indistinguishable from an FYI "Note" — filed as *critical* by the
+   colour-blind reviewer, so shape (triangle vs circle) carries the
+   distinction, not colour alone. */
+.warnItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   font: 400 12.5px var(--font-sans);
   color: var(--ink-2);
+}
+.warnItemWord {
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.warnItemMsg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.warnMessages .mono {
-  font-family: var(--font-mono);
+.warnItemExtra {
+  font: 400 12.5px var(--font-sans);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Severity glyph — shared by the warnings banner (above) and the
+   inspector's "Data warnings" rows (below): a filled triangle for
+   `warning`, an outlined circle for `info`/"Note" (src/renderer/icons.ts). */
+.sevGlyph {
+  flex: none;
+  display: inline-flex;
+}
+.sevGlyphWarn {
+  color: var(--gold);
+}
+.sevGlyphNote {
+  color: var(--ink-3);
 }
 
 /* --- Body / preview / inspector --------------------------------------- */
@@ -1170,14 +1213,45 @@ a:focus-visible {
   border-color: var(--warn-border);
   color: var(--gold);
 }
+/* "Copy service lines as TSV" button, service-lines group header only
+   (docs/TABS_BUILD_PLAN.md §2f item 1) — sits inside <summary>; its click
+   handler calls preventDefault()/stopPropagation() so clicking it copies
+   instead of toggling the group open/closed. */
+.inspGroupCopyBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.inspGroupCopyBtn:hover {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
 .inspGroupBody {
   padding: 2px 12px 12px 26px;
 }
 .inspRow {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: baseline;
-  padding: 3.5px 0;
+  padding: 3.5px 2px;
+  border-radius: 3px;
+}
+/* Roving-tabindex composite (docs/TABS_BUILD_PLAN.md §2f item 2 / §3a): one
+   row per group is a real tab stop at a time; arrow keys move the roving
+   index (inspector.ts). Match the tab strip / toolbar's existing
+   focus-visible treatment rather than the browser default outline. */
+.inspRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 .inspRowKey {
   width: 118px;
@@ -1203,6 +1277,48 @@ a:focus-visible {
 }
 .inspRowVal.isOk {
   color: var(--accent);
+}
+/* Click-to-copy affordance on every field row (§2f item 2): hidden until
+   the row is hovered or focused, so the grid doesn't look button-covered
+   at rest. Not a separate Tab stop (tabindex="-1" in inspector.ts) — the
+   roving-tabindex row itself is the keyboard target; Ctrl+C on the focused
+   row copies, matching the icon's visible action. */
+.rowCopyBtn {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+}
+.inspRow:hover .rowCopyBtn,
+.inspRow:focus .rowCopyBtn,
+.inspRow:focus-within .rowCopyBtn {
+  opacity: 1;
+}
+.rowCopyBtn:hover {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+/* Plain-English explanation line under a warning row (§2f item 6,
+   warningExplanations.ts) — indented under the severity glyph, dimmed and
+   italic so it reads as a caption rather than another data field. */
+.inspRow.inspRowExplain {
+  padding-top: 0;
+  padding-bottom: 6px;
+}
+.inspRow.inspRowExplain .inspRowVal {
+  padding-left: 17px; /* aligns under the glyph+word of the row above */
+  font: 400 11px var(--font-sans);
+  font-style: italic;
+  color: var(--ink-3);
 }
 .inspEmpty {
   padding: 3.5px 0;
@@ -1262,6 +1378,28 @@ a:focus-visible {
 }
 .statusWarnBtn.hasWarnings {
   color: var(--gold);
+}
+/* "Copy claim summary" (docs/TABS_BUILD_PLAN.md §2f item 3) — the status
+   bar already renders this same header-block data (file name/form type/
+   warnings/totals; renderStatusBar in main.ts), so it's the summary
+   header this button copies from. */
+.statusCopyBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.statusCopyBtn:hover {
+  background: var(--accent-tint);
+  color: var(--ink);
 }
 .dim {
   color: var(--ink-3);

@@ -45,6 +45,7 @@ export const warnBannerEl = requireEl<HTMLDivElement>('warnBanner');
 export const warnCountEl = requireEl<HTMLSpanElement>('warnCount');
 export const warnMessagesEl = requireEl<HTMLSpanElement>('warnMessages');
 export const warnReviewBtn = requireEl<HTMLButtonElement>('warnReviewBtn');
+export const warnCopyBtn = requireEl<HTMLButtonElement>('warnCopyBtn');
 
 export const welcomeScreenEl = requireEl<HTMLDivElement>('welcomeScreen');
 export const welcomeOpenBtn = requireEl<HTMLButtonElement>('welcomeOpenBtn');
@@ -74,6 +75,7 @@ export const statusFileNameEl = requireEl<HTMLSpanElement>('statusFileName');
 export const statusFormTypeEl = requireEl<HTMLSpanElement>('statusFormType');
 export const statusWarnBtnEl = requireEl<HTMLButtonElement>('statusWarnBtn');
 export const statusTotalsEl = requireEl<HTMLSpanElement>('statusTotals');
+export const copySummaryBtn = requireEl<HTMLButtonElement>('copySummaryBtn');
 export const statusNoFileEl = requireEl<HTMLSpanElement>('statusNoFile');
 
 export const exportOverlayEl = requireEl<HTMLDivElement>('exportOverlay');

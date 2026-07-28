@@ -40,6 +40,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Export this claim (skip dialog)', keys: 'Ctrl+Shift+E' },
       { label: 'Close tab', keys: 'Ctrl+W' },
       { label: 'Reopen closed tab', keys: 'Ctrl+Shift+T' },
+      { label: 'Copy service lines as TSV', keys: 'Ctrl+Shift+C' },
     ],
   },
   {
@@ -114,6 +115,7 @@ export interface ShortcutDeps {
   cycleTab: (delta: number) => void;
   jumpToTab: (oneBasedIndex: number) => void;
   reopenLastClosedTab: () => void | Promise<void>;
+  copyServiceLinesTsv: () => void;
 }
 
 export function initShortcuts(deps: ShortcutDeps): void {
@@ -176,6 +178,11 @@ export function initShortcuts(deps: ShortcutDeps): void {
     if (event.shiftKey && event.key.toLowerCase() === 't') {
       event.preventDefault();
       void deps.reopenLastClosedTab();
+      return;
+    }
+    if (event.shiftKey && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      deps.copyServiceLinesTsv();
       return;
     }
 

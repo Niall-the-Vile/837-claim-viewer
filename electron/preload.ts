@@ -74,6 +74,8 @@ export interface ClaimDetailDto {
   serviceLines: Array<{
     line: number;
     dates: string;
+    /** CMS-1500 Box 24B place-of-service; '' on institutional/dental lines (see electron/main.ts's buildClaimDetail). Added for the copy-service-lines-as-TSV formatter (docs/TABS_BUILD_PLAN.md §2f item 1) — not shown elsewhere in the inspector today. */
+    placeOfService: string;
     procCode: string;
     modifiers: string;
     diagPointers: string;

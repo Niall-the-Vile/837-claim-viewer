@@ -2,40 +2,35 @@ import type { ClaimDetailDto } from '../../electron/preload.js';
 import type { FormType } from '../model/claim.js';
 import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl } from './dom.js';
 import { state, currentScreen, type TabState } from './tabs.js';
+import { copyToClipboard } from './clipboard.js';
+import { formatServiceLinesTsv, reconciliationVerdict } from './clipboardFormat.js';
+import { explainWarning } from './warningExplanations.js';
+import { ICON_COPY, ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 
 /**
- * Inspector drawer rendering (plus the small formatting helpers it — and a
- * couple of other renderer modules — need). Pure-moved out of main.ts — see
- * docs/TABS_BUILD_PLAN.md §2 Item 0.
+ * Inspector drawer rendering. Pure-moved out of main.ts — see
+ * docs/TABS_BUILD_PLAN.md §2 Item 0 — then extended for §2f (clipboard/copy
+ * suite + warning presentation): per-row click-to-copy with a roving-
+ * tabindex composite (role=list/listitem, arrow keys move focus, Ctrl+C
+ * copies the focused row), the "Copy service lines as TSV" button on the
+ * service-lines group header, severity glyph + explicit word on warning
+ * rows, a plain-English explanation line under each warning
+ * (warningExplanations.ts), and a plain-language reconciliation verdict.
  *
- * `formatMoney`/`formTypeText` are exported because main.ts's status bar and
- * overlays.ts's export dialog also format the same way; they're kept here
- * (rather than duplicated) so overlays.ts and main.ts can both depend on
- * this file without inspector.ts ever needing to depend back on either of
- * them (see the task's circular-import hazard note).
+ * `formatMoney`/`formTypeText` are re-exported (now defined in format.ts,
+ * see that file's header) because main.ts's status bar and overlays.ts's
+ * export dialog also format the same way.
  */
 
-export function formatMoney(n: number): string {
-  const v = Number.isFinite(n) ? n : 0;
-  const sign = v < 0 ? '-' : '';
-  return `${sign}$${Math.abs(v).toFixed(2)}`;
-}
+// formatMoney/formTypeText now live in format.ts (a DOM-free module —
+// clipboardFormat.ts's formatters need them without pulling in dom.ts/
+// tabs.ts's module-level side effects); re-exported here unchanged so
+// main.ts/overlays.ts's existing imports keep working.
+export { formatMoney, formTypeText } from './format.js';
+import { formatMoney, formTypeText, severityWord } from './format.js';
 
 function orDash(value: string): string {
   return value === '' ? '—' : value;
-}
-
-export function formTypeText(formType: FormType): string {
-  switch (formType) {
-    case 'cms1500':
-      return 'Professional — CMS-1500';
-    case 'ub04':
-      return 'Institutional — UB-04';
-    case 'dental':
-      return 'Dental — ADA';
-    case 'unsupported':
-      return 'Unsupported form';
-  }
 }
 
 /** Box/FL/Item numbers the inspector's field-group tags cite, per form type — mirrors the design's per-form box references. */
@@ -83,6 +78,10 @@ interface InspRow {
   key: string;
   value: string;
   variant?: 'dim' | 'warn' | 'ok';
+  /** Severity glyph (docs/TABS_BUILD_PLAN.md §2f item 4) — only set on the warning rows in the "Data warnings" group. */
+  glyph?: 'warning' | 'note';
+  /** Renders as a dimmed, italic caption row with no key label (§2f item 6's plain-English explanation line) rather than a normal field row. */
+  isExplanation?: boolean;
 }
 
 function syncCaret(details: HTMLDetailsElement): void {
@@ -96,7 +95,10 @@ function updateExpandAllLabel(): void {
   expandAllBtn.textContent = allOpen ? 'Collapse all' : 'Expand all';
 }
 
-function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, rows: InspRow[], defaultOpen: boolean): HTMLDetailsElement {
+/** Appended into a group's <summary>, after the tag — currently only the "Copy service lines as TSV" button (§2f item 1). Its click handler must call preventDefault()/stopPropagation() (see buildLinesCopyBtn below) so activating it copies instead of toggling the <details> — per the HTML spec, <summary>'s click-to-toggle activation behavior is itself skipped when the triggering click event's default was prevented. */
+type SummaryExtra = HTMLElement;
+
+function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, rows: InspRow[], defaultOpen: boolean, summaryExtra?: SummaryExtra): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'inspGroup';
   details.dataset['groupId'] = id;
@@ -114,6 +116,7 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
   tagEl.className = 'inspGroupTag' + (tagWarn ? ' isWarn' : '');
   tagEl.textContent = tag;
   summaryEl.append(caret, labelEl, tagEl);
+  if (summaryExtra) summaryEl.append(summaryExtra);
   details.append(summaryEl);
 
   const body = document.createElement('div');
@@ -124,18 +127,63 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
     empty.textContent = 'Nothing parsed for this section.';
     body.append(empty);
   } else {
+    // role="list"/"listitem" + roving tabindex (§2f item 2 / §3a): the
+    // inspector body becomes a keyboard-navigable composite of ONE tab stop
+    // per group (the first row) rather than one per row — Up/Down/Home/End
+    // (delegated listener below) move the roving index, Tab leaves the
+    // composite in a single press. Explanation rows (isExplanation) are
+    // still real listitems (so Down from a warning naturally lands on its
+    // caption before the next warning), just styled as a caption.
+    body.setAttribute('role', 'list');
+    let firstRowEl: HTMLElement | null = null;
     for (const row of rows) {
       const rowEl = document.createElement('div');
-      rowEl.className = 'inspRow';
-      const keyEl = document.createElement('span');
-      keyEl.className = 'inspRowKey';
-      keyEl.textContent = row.key;
+      rowEl.className = 'inspRow' + (row.isExplanation ? ' inspRowExplain' : '');
+      rowEl.setAttribute('role', 'listitem');
+      rowEl.tabIndex = -1;
+
+      if (row.glyph) {
+        const glyphEl = document.createElement('span');
+        glyphEl.className = `sevGlyph sevGlyph${row.glyph === 'warning' ? 'Warn' : 'Note'}`;
+        glyphEl.innerHTML = row.glyph === 'warning' ? ICON_SEVERITY_WARNING : ICON_SEVERITY_NOTE;
+        rowEl.append(glyphEl);
+      }
+
+      if (!row.isExplanation) {
+        const keyEl = document.createElement('span');
+        keyEl.className = 'inspRowKey';
+        keyEl.textContent = row.key;
+        rowEl.append(keyEl);
+      }
+
       const valEl = document.createElement('span');
       valEl.className = 'inspRowVal' + (row.variant ? ` is${row.variant.charAt(0).toUpperCase()}${row.variant.slice(1)}` : '');
       valEl.textContent = row.value;
-      rowEl.append(keyEl, valEl);
+      rowEl.append(valEl);
+
+      // Accessible name explicit rather than relying on content-derived
+      // accname computation (§2f item 4: "assert the accessible name
+      // contains the severity word") — deterministic across browsers/AT.
+      if (row.glyph) rowEl.setAttribute('aria-label', `${row.key}: ${row.value}`);
+
+      if (!row.isExplanation) {
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'rowCopyBtn';
+        copyBtn.tabIndex = -1; // not its own Tab stop — Ctrl+C on the focused row is the keyboard path (see the delegated keydown listener below)
+        copyBtn.setAttribute('aria-label', `Copy ${row.key}`);
+        copyBtn.innerHTML = ICON_COPY;
+        copyBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          copyToClipboard(row.value, `${row.key} copied to the clipboard.`);
+        });
+        rowEl.append(copyBtn);
+      }
+
       body.append(rowEl);
+      if (!firstRowEl) firstRowEl = rowEl;
     }
+    if (firstRowEl) firstRowEl.tabIndex = 0;
   }
   details.append(body);
 
@@ -145,6 +193,69 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
   });
 
   return details;
+}
+
+// ---------------------------------------------------------------------------
+// Roving tabindex + Ctrl+C: one delegated listener on inspectorBodyEl
+// (attached once, at module load — rows are torn down/rebuilt on every
+// renderInspector() call via inspectorBodyEl.innerHTML = '', so a listener
+// attached per-row would leak; delegation avoids that entirely). §2f item 2
+// / §3a: Up/Down/Home/End move the roving index within the row's own
+// group; Ctrl+C copies the focused row's value via the same copyToClipboard
+// helper the hover/focus icon button uses.
+// ---------------------------------------------------------------------------
+
+inspectorBodyEl.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement;
+  const row = target.closest<HTMLElement>('.inspRow');
+  if (!row) return;
+
+  const ctrlOrCmd = event.ctrlKey || event.metaKey;
+  if (ctrlOrCmd && event.key.toLowerCase() === 'c') {
+    event.preventDefault();
+    const key = row.querySelector('.inspRowKey')?.textContent ?? row.getAttribute('aria-label') ?? 'Value';
+    const value = row.querySelector('.inspRowVal')?.textContent ?? '';
+    copyToClipboard(value, `${key} copied to the clipboard.`);
+    return;
+  }
+
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') return;
+  const body = row.closest<HTMLElement>('.inspGroupBody');
+  if (!body) return;
+  const rows = Array.from(body.querySelectorAll<HTMLElement>('.inspRow'));
+  const currentIdx = rows.indexOf(row);
+  if (currentIdx === -1) return;
+
+  let nextIdx = currentIdx;
+  if (event.key === 'ArrowDown') nextIdx = Math.min(currentIdx + 1, rows.length - 1);
+  else if (event.key === 'ArrowUp') nextIdx = Math.max(currentIdx - 1, 0);
+  else if (event.key === 'Home') nextIdx = 0;
+  else if (event.key === 'End') nextIdx = rows.length - 1;
+  if (nextIdx === currentIdx) return;
+
+  event.preventDefault();
+  rows[currentIdx]!.tabIndex = -1;
+  rows[nextIdx]!.tabIndex = 0;
+  rows[nextIdx]!.focus();
+});
+
+/** The "Copy service lines as TSV" button placed in the service-lines group's <summary> (§2f item 1) — also used by the Ctrl+Shift+C shortcut (shortcuts.ts/main.ts call formatServiceLinesTsv directly, so this button and the shortcut share the exact same formatter). */
+function buildLinesCopyBtn(detail: ClaimDetailDto): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'inspGroupCopyBtn';
+  btn.title = 'Copy service lines as TSV (Ctrl+Shift+C)';
+  btn.setAttribute('aria-label', 'Copy service lines as TSV');
+  btn.innerHTML = ICON_COPY;
+  btn.addEventListener('click', (event) => {
+    // Prevents <summary>'s native click-to-toggle activation (HTML spec:
+    // skipped when the event's default was prevented) so clicking this
+    // button copies without also collapsing/expanding the group.
+    event.preventDefault();
+    event.stopPropagation();
+    copyToClipboard(formatServiceLinesTsv(detail), 'Service lines copied to the clipboard.');
+  });
+  return btn;
 }
 
 export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
@@ -163,18 +274,30 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   }
   inspectorBodyEl.append(buildGroup('prov', 'Provenance', 'source', false, provRows, true));
 
-  // Data warnings
+  // Data warnings — severity glyph + explicit word (§2f item 4: 'warning' ->
+  // filled triangle + "Warning", 'info' -> outlined circle + "Note"; there
+  // are only ever these two WarningSeverity values, see src/model/claim.ts)
+  // plus a plain-English explanation line under each, keyed by warning code
+  // (§2f item 6, warningExplanations.ts).
   const hasWarnings = detail.warnings.length > 0;
   const warnRows: InspRow[] = hasWarnings
-    ? detail.warnings.map((w) => ({
-        key: w.severity === 'warning' ? 'Warning' : 'Info',
-        value: w.message,
-        // Conditionally spread rather than `variant: cond ? 'warn' : undefined`
-        // — exactOptionalPropertyTypes (tsconfig.json) treats an explicit
-        // `undefined` as distinct from "property omitted" for an optional
-        // field, so assigning it directly would fail to typecheck.
-        ...(w.severity === 'warning' ? { variant: 'warn' as const } : {}),
-      }))
+    ? detail.warnings.flatMap((w) => {
+        const rows: InspRow[] = [
+          {
+            key: severityWord(w.severity),
+            value: w.message,
+            glyph: w.severity === 'warning' ? 'warning' : 'note',
+            // Conditionally spread rather than `variant: cond ? 'warn' : undefined`
+            // — exactOptionalPropertyTypes (tsconfig.json) treats an explicit
+            // `undefined` as distinct from "property omitted" for an optional
+            // field, so assigning it directly would fail to typecheck.
+            ...(w.severity === 'warning' ? { variant: 'warn' as const } : {}),
+          },
+        ];
+        const explanation = explainWarning(w.code);
+        if (explanation) rows.push({ key: '', value: explanation, variant: 'dim', isExplanation: true });
+        return rows;
+      })
     : [{ key: 'Status', value: 'No warnings — this claim reconciles cleanly.', variant: 'ok' }];
   inspectorBodyEl.append(buildGroup('warn', 'Data warnings', String(detail.warnings.length), hasWarnings, warnRows, hasWarnings));
 
@@ -271,9 +394,13 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
     parts.push(formatMoney(l.charge));
     return { key: `Line ${l.line}`, value: parts.join('  ·  ') };
   });
-  inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false));
+  inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false, buildLinesCopyBtn(detail)));
 
-  // Reconciliation
+  // Reconciliation (§2f item 5: the existing figures plus an explicit
+  // signed delta — unchanged from before — and a plain-language verdict row
+  // beneath it. Display only: the 0.005 mismatch threshold and the
+  // charge-total-mismatch warning it drives are untouched, both still live
+  // in electron/main.ts's buildClaimDetail / src/sources/*/*.ts.)
   const delta = detail.totals.delta;
   const reconciles = Math.abs(delta) < 0.005;
   inspectorBodyEl.append(
@@ -291,6 +418,7 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
           value: reconciles ? '$0.00 — reconciles' : `${delta > 0 ? '+' : ''}${formatMoney(delta)}`,
           variant: reconciles ? 'ok' : 'warn',
         },
+        { key: 'Verdict', value: reconciliationVerdict(delta), variant: reconciles ? 'ok' : 'warn' },
         { key: 'Amount paid', value: formatMoney(detail.totals.amountPaid) },
       ],
       !reconciles,

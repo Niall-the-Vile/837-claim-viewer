@@ -287,6 +287,8 @@ interface ClaimDetailDto {
   serviceLines: Array<{
     line: number;
     dates: string;
+    /** CMS-1500 Box 24B place-of-service; '' on institutional/dental lines (see buildClaimDetail below). Added for the copy-service-lines-as-TSV formatter (docs/TABS_BUILD_PLAN.md §2f item 1) — not shown elsewhere in the inspector today. */
+    placeOfService: string;
     procCode: string;
     modifiers: string;
     diagPointers: string;
@@ -372,6 +374,7 @@ function buildClaimDetail(claim: Claim): ClaimDetailDto {
     serviceLines: claim.serviceLines.map((line, i) => ({
       line: i + 1,
       dates: line.thruDate === '' || line.thruDate === line.fromDate ? line.fromDate : `${line.fromDate} - ${line.thruDate}`,
+      placeOfService: line.placeOfService,
       procCode: line.procCode,
       modifiers: line.modifiers.join(' '),
       diagPointers: line.diagPointers.join(''),

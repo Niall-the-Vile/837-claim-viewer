@@ -42,8 +42,10 @@ import {
   statusFormTypeEl,
   statusWarnBtnEl,
   statusTotalsEl,
+  copySummaryBtn,
   statusNoFileEl,
   exportConfirmBtn,
+  warnCopyBtn,
 } from './dom.js';
 import {
   state,
@@ -65,6 +67,10 @@ import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, c
 import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText } from './inspector.js';
 import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog } from './overlays.js';
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
+import { copyToClipboard } from './clipboard.js';
+import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliation } from './clipboardFormat.js';
+import { severityWord } from './format.js';
+import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -215,6 +221,14 @@ function updateToolbarVisibility(): void {
 // Warnings banner / status bar / claim-detail-driven chrome
 // ---------------------------------------------------------------------------
 
+/**
+ * §2f item 4: each shown warning gets its own severity glyph + explicit
+ * word (never colour alone — filed as *critical* by the colour-blind
+ * reviewer), built as real DOM nodes (not one joined textContent string,
+ * the pre-tabs-build-item-4 approach) so a mixed warning+info banner can
+ * show the right shape per entry. Same "first 2, then +N more" truncation
+ * as before.
+ */
 function renderWarnBanner(detail: ClaimDetailDto): void {
   if (detail.warnings.length === 0) {
     warnBannerEl.hidden = true;
@@ -222,9 +236,35 @@ function renderWarnBanner(detail: ClaimDetailDto): void {
   }
   warnBannerEl.hidden = false;
   warnCountEl.textContent = detail.warnings.length === 1 ? '1 data warning' : `${detail.warnings.length} data warnings`;
-  const shown = detail.warnings.slice(0, 2).map((w) => w.message);
-  const extra = detail.warnings.length > 2 ? ` (+${detail.warnings.length - 2} more)` : '';
-  warnMessagesEl.textContent = shown.join('  ·  ') + extra;
+
+  warnMessagesEl.innerHTML = '';
+  const shown = detail.warnings.slice(0, 2);
+  for (const w of shown) {
+    const item = document.createElement('span');
+    item.className = 'warnItem';
+    item.setAttribute('aria-label', `${severityWord(w.severity)}: ${w.message}`);
+
+    const glyph = document.createElement('span');
+    glyph.className = `sevGlyph sevGlyph${w.severity === 'warning' ? 'Warn' : 'Note'}`;
+    glyph.innerHTML = w.severity === 'warning' ? ICON_SEVERITY_WARNING : ICON_SEVERITY_NOTE;
+
+    const word = document.createElement('span');
+    word.className = 'warnItemWord';
+    word.textContent = severityWord(w.severity);
+
+    const msg = document.createElement('span');
+    msg.className = 'warnItemMsg';
+    msg.textContent = w.message;
+
+    item.append(glyph, word, document.createTextNode(' — '), msg);
+    warnMessagesEl.append(item);
+  }
+  if (detail.warnings.length > 2) {
+    const extra = document.createElement('span');
+    extra.className = 'warnItemExtra';
+    extra.textContent = `+${detail.warnings.length - 2} more`;
+    warnMessagesEl.append(extra);
+  }
 }
 
 function renderStatusBar(tab: TabState, summary: ClaimSummaryDto, detail: ClaimDetailDto): void {
@@ -687,11 +727,33 @@ exportBtn.addEventListener('click', openExportDialog);
 exportConfirmBtn.addEventListener('click', () => void confirmExport());
 
 errorCopyBtn.addEventListener('click', () => {
-  const text = errorDetailEl.textContent ?? '';
-  void navigator.clipboard.writeText(text).then(
-    () => showToast('Error details copied to the clipboard.', false),
-    () => showToast('Could not copy to the clipboard.', true),
-  );
+  copyToClipboard(errorDetailEl.textContent ?? '', 'Error details copied to the clipboard.');
+});
+
+// ---------------------------------------------------------------------------
+// Clipboard/copy suite (docs/TABS_BUILD_PLAN.md §2f items 1 and 3) — the
+// service-lines-TSV button lives in inspector.ts (next to the group it
+// copies from) and Ctrl+Shift+C below calls the same formatter; these two
+// live here because copySummaryBtn/warnCopyBtn sit in chrome main.ts
+// already owns (status bar / warnings banner).
+// ---------------------------------------------------------------------------
+
+function copyServiceLinesTsv(): void {
+  const tab = activeTab();
+  if (!tab?.detail) return;
+  copyToClipboard(formatServiceLinesTsv(tab.detail), 'Service lines copied to the clipboard.');
+}
+
+copySummaryBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (!tab?.detail) return;
+  copyToClipboard(formatClaimSummary(tab.detail), 'Claim summary copied to the clipboard.');
+});
+
+warnCopyBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (!tab?.detail) return;
+  copyToClipboard(formatWarningsAndReconciliation(tab.detail), 'Warnings and reconciliation copied to the clipboard.');
 });
 
 zoomInBtn.addEventListener('click', () => {
@@ -774,6 +836,7 @@ initShortcuts({
   cycleTab,
   jumpToTab,
   reopenLastClosedTab,
+  copyServiceLinesTsv,
 });
 
 // ---------------------------------------------------------------------------
