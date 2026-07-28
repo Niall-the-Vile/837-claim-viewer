@@ -11,6 +11,17 @@ import { ClaimParseError } from '../src/sources/claimSource.js';
 import { composeName, composeAddressLine } from '../src/render/text.js';
 import * as sessionStore from '../src/app/persistence/sessionStore.js';
 import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
+import {
+  decodePlaceOfService,
+  decodeRevenueCode,
+  decodeModifier,
+  decodeDischargeStatus,
+  decodeConditionCode,
+  decodeOccurrenceCode,
+  decodeValueCode,
+  decodeTypeOfBill,
+  type CodedValue,
+} from '../src/model/decode.js';
 
 /**
  * Electron main process: window lifecycle, the offline network kill-switch,
@@ -147,6 +158,8 @@ interface SessionRestoreStateDto {
   /** Index into `tabs` of the one that was active, or -1 if `tabs` is empty. Recomputed against the FILTERED list (see registerIpcHandlers below), not the raw stored index. */
   activeIndex: number;
   recentFiles: StoredFileRef[];
+  /** View menu's UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md §9), one of 100/125/150/175 — always a concrete number here (unlike sessionStore's own optional field): "never explicitly saved yet" is resolved to 100 on this side of the bridge. */
+  uiScale: sessionStore.UiScaleValue;
 }
 
 /** A stored path is only ever handed back to the renderer if it still passes the exact same gate a dropped or dialog-picked path does — see hasAllowedOpenExtension below (defined further down, used here via a forward reference resolved at call time since both are plain function declarations). */
@@ -319,6 +332,33 @@ interface OpenClaimResult {
 }
 
 /**
+ * Institutional (UB-04) claim-level coded fields, decoded (docs/BUILD_QUEUE.md
+ * Build 2.2) — `null` (the whole property, not just its contents) on every
+ * non-institutional claim (cms1500/dental/unsupported), mirroring how
+ * `Claim.institutional` itself is only present for UB-04 claims. Every coded
+ * field here is a `CodedValue` (`{ raw, decoded }`, src/model/decode.ts) so
+ * the renderer never has to look anything up itself — see that module's
+ * header and docs/UI_REQUIREMENTS_v3_queued_features.md §2.
+ */
+interface InstitutionalDetailDto {
+  typeOfBill: {
+    /** The raw FL04 value exactly as the claim carries it. */
+    raw: string;
+    facilityType: CodedValue;
+    billClassification: CodedValue;
+    frequency: CodedValue;
+    /** One combined human-readable phrase, e.g. "Hospital, Outpatient, Admit through discharge claim" — see decodeTypeOfBill. */
+    combined: string | null;
+  };
+  /** FL17 patient discharge status. */
+  patientStatus: CodedValue;
+  conditionCodes: CodedValue[];
+  occurrenceCodes: Array<CodedValue & { date: string }>;
+  occurrenceSpans: Array<CodedValue & { from: string; through: string }>;
+  valueCodes: Array<CodedValue & { amount: number }>;
+}
+
+/**
  * Field-level DTO for the renderer's inspector drawer — everything the
  * design's box-tagged field groups (Patient / Insured / Providers /
  * Diagnoses / Service lines), Reconciliation group, and raw view need, and
@@ -326,7 +366,8 @@ interface OpenClaimResult {
  * Record<string, unknown> escaping typed shape — that's flattened to
  * `rawText` here instead). Every field is a plain string/number/boolean —
  * no optional properties — so this survives structured-clone across the IPC
- * bridge without ambiguity.
+ * bridge without ambiguity. `institutional` is the one nullable exception,
+ * matching `referring`/`facility` above it and `Claim.institutional` itself.
  */
 interface ClaimDetailDto {
   claimId: string;
@@ -368,16 +409,24 @@ interface ClaimDetailDto {
     dates: string;
     /** CMS-1500 Box 24B place-of-service; '' on institutional/dental lines (see buildClaimDetail below). Added for the copy-service-lines-as-TSV formatter (docs/TABS_BUILD_PLAN.md §2f item 1) — not shown elsewhere in the inspector today. */
     placeOfService: string;
+    /** Plain-English decoding of `placeOfService` (docs/BUILD_QUEUE.md Build 2.2) — `null` when blank (institutional/dental lines) or unrecognized. `placeOfService` itself is untouched/still raw so clipboardFormat.ts's TSV export keeps emitting the raw code. */
+    placeOfServiceDecoded: string | null;
     procCode: string;
     modifiers: string;
+    /** One CodedValue per entry in `modifiers` (split on the same whitespace `modifiers.join(' ')` used to build it), decoded (docs/BUILD_QUEUE.md Build 2.2). `modifiers` itself is untouched/still the raw joined string used by the TSV export and the composite service-line summary. */
+    modifierDecodings: CodedValue[];
     diagPointers: string;
     charge: number;
     units: string;
     revenueCode: string;
+    /** Plain-English decoding of `revenueCode` (docs/BUILD_QUEUE.md Build 2.2) — `null` when blank (professional lines) or unrecognized. `revenueCode` itself is untouched/still raw. */
+    revenueCodeDecoded: string | null;
     revenueDescription: string;
     toothNumbers: string;
     toothSurfaces: string;
   }>;
+  /** Institutional (UB-04) claim-level coded fields, decoded — `null` for every non-institutional claim. See InstitutionalDetailDto above. */
+  institutional: InstitutionalDetailDto | null;
   totals: {
     totalCharge: number;
     amountPaid: number;
@@ -454,16 +503,20 @@ function buildClaimDetail(claim: Claim): ClaimDetailDto {
       line: i + 1,
       dates: line.thruDate === '' || line.thruDate === line.fromDate ? line.fromDate : `${line.fromDate} - ${line.thruDate}`,
       placeOfService: line.placeOfService,
+      placeOfServiceDecoded: decodePlaceOfService(line.placeOfService).decoded,
       procCode: line.procCode,
       modifiers: line.modifiers.join(' '),
+      modifierDecodings: line.modifiers.map((m) => decodeModifier(m)),
       diagPointers: line.diagPointers.join(''),
       charge: line.charge,
       units: line.units,
       revenueCode: line.revenueCode ?? '',
+      revenueCodeDecoded: decodeRevenueCode(line.revenueCode ?? '').decoded,
       revenueDescription: line.revenueDescription ?? '',
       toothNumbers: line.toothNumbers ?? '',
       toothSurfaces: line.toothSurfaces ?? '',
     })),
+    institutional: buildInstitutionalDetail(claim),
     totals: {
       totalCharge: claim.totals.totalCharge,
       amountPaid: claim.totals.amountPaid,
@@ -472,6 +525,27 @@ function buildClaimDetail(claim: Claim): ClaimDetailDto {
     },
     warnings: claim.warnings.map((w) => ({ code: w.code, severity: w.severity, message: w.message })),
     rawText: JSON.stringify(claim.raw, null, 2),
+  };
+}
+
+/** Builds the decoded institutional (UB-04) detail block (docs/BUILD_QUEUE.md Build 2.2) — `null` when `claim.institutional` is absent (every non-UB04 claim). */
+function buildInstitutionalDetail(claim: Claim): InstitutionalDetailDto | null {
+  const inst = claim.institutional;
+  if (!inst) return null;
+  const tob = decodeTypeOfBill(inst.typeOfBill);
+  return {
+    typeOfBill: {
+      raw: tob.raw,
+      facilityType: tob.facilityType,
+      billClassification: tob.billClassification,
+      frequency: tob.frequency,
+      combined: tob.combined,
+    },
+    patientStatus: decodeDischargeStatus(inst.patientStatus),
+    conditionCodes: inst.conditionCodes.map((c) => decodeConditionCode(c)),
+    occurrenceCodes: inst.occurrenceCodes.map((o) => ({ ...decodeOccurrenceCode(o.code), date: o.date })),
+    occurrenceSpans: inst.occurrenceSpans.map((s) => ({ ...decodeOccurrenceCode(s.code), from: s.from, through: s.through })),
+    valueCodes: inst.valueCodes.map((v) => ({ ...decodeValueCode(v.code), amount: v.amount })),
   };
 }
 
@@ -834,7 +908,7 @@ function registerIpcHandlers(): void {
 
     const recentFiles = stored.recentFiles.filter(isRestorableFileRef);
 
-    return { tabs: validTabs, activeIndex, recentFiles };
+    return { tabs: validTabs, activeIndex, recentFiles, uiScale: stored.uiScale ?? 100 };
   });
 
   // Persists the renderer's current open-tab list + which one is active
@@ -862,6 +936,18 @@ function registerIpcHandlers(): void {
   // the NEXT launch.
   ipcMain.handle('session:forget', async (): Promise<void> => {
     await sessionStore.forgetAll(userDataDir());
+  });
+
+  // View menu's UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md
+  // §9 / docs/BUILD_QUEUE.md 2.0) — persisted inside the SAME session.json as
+  // tabs/recentFiles (rule 12: one mechanism, never a second userData file),
+  // via src/renderer/features/uiScale.ts's cycleUiScale. Only one of the four
+  // menu-offered values is ever trusted from the renderer; anything else
+  // (a tampered/future-caller invoke) is silently ignored rather than
+  // persisted, same defensive posture as session:save's tab validation above.
+  ipcMain.handle('settings:saveUiScale', async (_event: IpcMainInvokeEvent, scale: unknown): Promise<void> => {
+    if (typeof scale !== 'number' || !sessionStore.UI_SCALE_VALUES.includes(scale as sessionStore.UiScaleValue)) return;
+    await sessionStore.saveUiScale(userDataDir(), scale as sessionStore.UiScaleValue);
   });
 }
 

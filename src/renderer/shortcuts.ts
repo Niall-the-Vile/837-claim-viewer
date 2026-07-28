@@ -53,6 +53,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Fit width', keys: 'Ctrl+8' },
       { label: 'Toggle inspector', keys: 'Ctrl+D' },
       { label: 'Light / dark', keys: 'Ctrl+Shift+L' },
+      { label: 'UI text scale — cycle 100/125/150/175%', keys: '—' },
     ],
   },
   {

@@ -115,6 +115,30 @@
   --skeleton-2: #e9e7e2;
   --skeleton-shimmer: rgba(255, 255, 255, 0.75);
   --overlay-scrim: rgba(12, 12, 11, 0.42);
+
+  /*
+   * View menu's UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md §9
+   * / docs/BUILD_QUEUE.md 2.0) — a plain multiplier (1 / 1.25 / 1.5 / 1.75),
+   * set on documentElement by src/renderer/features/uiScale.ts. Applied
+   * below as CSS `zoom` (never webFrame/webContents.setZoomFactor — those
+   * also scale the pdf.js canvas and change devicePixelRatio, corrupting the
+   * #pdfCanvas assertions in e2e/app.spec.ts and breaking the independent
+   * per-tab PDF zoom control) to the app CHROME ONLY: #titlebar, #menubar
+   * (and its dropdowns, its descendants), #tabStrip, #toolbar, .warnBanner,
+   * #inspector, #statusBar, .dialog, #toast — each zoomed INDEPENDENTLY as a
+   * standalone subtree, deliberately never via a shared ancestor with
+   * #pdfScroll/#pdfCanvas (#app/#body/#previewPane carry NO zoom). That's
+   * what keeps the PDF preview completely unaffected without needing a
+   * compensating reciprocal zoom anywhere: nested/compounding CSS zoom is
+   * exactly the "obvious but wrong" trap this spec warns about (a
+   * shell-wide zoom with a `zoom: calc(1/var(--ui-scale))` cancel on
+   * #pdfScroll would still leave getBoundingClientRect readings on that
+   * subtree vulnerable to compounding rounding error) — here #pdfScroll
+   * simply never inherits any ambient zoom in the first place, so
+   * preview.ts's fit-page/fit-width/zoom-at-pointer math needs no scale
+   * correction at all (see preview.ts's availableViewport doc comment).
+   */
+  --ui-scale: 1;
 }
 
 :root[data-theme='dark'] {
@@ -293,6 +317,7 @@ a:focus-visible {
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   gap: 10px;
+  zoom: var(--ui-scale);
 }
 #titlebarAppName {
   font: 600 12px var(--font-sans);
@@ -322,6 +347,7 @@ a:focus-visible {
   border-bottom: 1px solid var(--border);
   gap: 2px;
   position: relative;
+  zoom: var(--ui-scale);
 }
 .menu {
   position: relative;
@@ -353,7 +379,12 @@ a:focus-visible {
   position: absolute;
   top: calc(100% + 3px);
   left: 0;
-  min-width: 230px;
+  /* §9 mandatory sub-task 1: hard px width converted to a relative unit
+     (already inside #menubar's zoomed subtree above, so this grows with the
+     setting either way — converted anyway per the spec's "any other hard px
+     width/max-width in the chrome"). calc(Npx-worth em / 13) reproduces the
+     original 230px exactly against body's 13px base font-size. */
+  min-width: calc(230em / 13);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 5px;
@@ -400,6 +431,16 @@ a:focus-visible {
 .menuPanel kbd {
   margin-left: auto;
 }
+/* View menu's UI text scale item (docs/UI_REQUIREMENTS_v3_queued_features.md
+   §9) — a plain current-value indicator, not a keyboard shortcut, so it's
+   its own class rather than reusing <kbd> (design ClaimViewer_v2.dc.html's
+   command-palette mock shows the same action with "—" in the shortcut
+   column, confirming it has none). */
+.menuValueLabel {
+  margin-left: auto;
+  font: 500 11px var(--font-mono);
+  color: var(--ink-3);
+}
 /* Recent-files section + "Forget…" action (docs/TABS_BUILD_PLAN.md §2e) — the
    separator/label sit inside the same .menuPanel that holds ordinary
    .menuPanel button items, so recent-file entries (created dynamically as
@@ -444,6 +485,7 @@ a:focus-visible {
   border-bottom: 1px solid var(--border);
   min-height: 52px;
   flex-wrap: wrap;
+  zoom: var(--ui-scale);
 }
 .toolGroup {
   display: flex;
@@ -628,6 +670,7 @@ a:focus-visible {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+  zoom: var(--ui-scale);
 }
 .tab {
   flex: 0 0 auto;
@@ -685,6 +728,7 @@ a:focus-visible {
      reasoning as .stateScreen above: renderWarnBanner()/showScreen() only
      ever flip `hidden` synchronously, never delay it. */
   animation: warnBannerEnter 200ms ease-out;
+  zoom: var(--ui-scale);
 }
 @keyframes warnBannerEnter {
   from {
@@ -1168,7 +1212,11 @@ a:focus-visible {
 
 /* Inspector drawer */
 #inspector {
-  width: 372px;
+  /* §9 mandatory sub-task 1: was a hard `372px`. Converted to a relative
+     unit (calc(Npx-worth em / 13) reproduces the original 372px exactly
+     against body's 13px base font-size) so it scales explicitly rather than
+     relying solely on `zoom` below to carry it. */
+  width: calc(372em / 13);
   /* flex-basis: auto (not a px value) on purpose — see the comment below on
      why the collapse/expand needs `width` itself to drive the box size. */
   flex: 0 0 auto;
@@ -1178,6 +1226,12 @@ a:focus-visible {
   flex-direction: column;
   min-height: 0;
   opacity: 1;
+  /* §9: the inspector is one of the enumerated "chrome" regions — zoomed as
+     its own independent subtree (see :root's --ui-scale comment). #body,
+     which #inspector and #previewPane are both flex children of, carries no
+     zoom of its own, so this only ever makes #inspector's OWN rendered
+     footprint bigger — #previewPane/#pdfScroll never inherit it. */
+  zoom: var(--ui-scale);
   /*
    * Animates the collapse/expand (spec requirement 5). This used to declare
    * `flex: 0 0 372px` / `.collapsed { flex: 0 0 0; }`, which silently made
@@ -1422,6 +1476,7 @@ a:focus-visible {
   padding: 0 12px;
   font: 400 11.5px var(--font-sans);
   color: var(--ink-2);
+  zoom: var(--ui-scale);
 }
 .statusFileGroup {
   display: flex;
@@ -1522,14 +1577,32 @@ a:focus-visible {
   }
 }
 .dialog {
-  width: 600px;
-  max-width: calc(100vw - 48px);
+  /* §9 mandatory sub-task 1: was a hard `600px`. */
+  width: calc(600em / 13);
+  /*
+   * `vw` always resolves against the REAL window viewport, never a zoomed
+   * ancestor's local coordinate space — .overlay (this dialog's parent)
+   * intentionally carries no zoom of its own, so `100vw` here is the actual
+   * window width. But .dialog itself IS zoomed below, and that zoom is
+   * applied AFTER this max-width already constrains its local (pre-zoom)
+   * box — a plain `calc(100vw - 48px)` cap would still let the zoomed
+   * result exceed the real window at 175%. Dividing the budget by the
+   * active scale first keeps the FINAL on-screen width within the window
+   * regardless of --ui-scale (the same reasoning the DoD's "no control
+   * exceeds the viewport" geometry check exists to catch).
+   */
+  max-width: calc((100vw - 48px) / var(--ui-scale));
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
   overflow: hidden;
   animation: dialogEnter 180ms ease-out;
+  /* §9: dialogs are one of the enumerated chrome regions. Zoomed on .dialog
+     itself, not .overlay (the full-bleed scrim stays real-viewport-sized so
+     it always covers the whole window; flex centering in .overlay still
+     centers the bigger zoomed box correctly). */
+  zoom: var(--ui-scale);
 }
 @keyframes dialogEnter {
   from {
@@ -1555,7 +1628,8 @@ a:focus-visible {
   }
 }
 .dialogWide {
-  width: 720px;
+  /* §9 mandatory sub-task 1: was a hard `720px`. */
+  width: calc(720em / 13);
 }
 .dialogTitlebar {
   height: 34px;
@@ -1660,7 +1734,10 @@ a:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  max-width: 460px;
+  /* §9 mandatory sub-task 1: was a hard `460px`, converted the same way as
+     .dialog above; also made viewport/scale-aware (like .dialog's max-width)
+     so a zoomed toast never overflows the real window at high --ui-scale. */
+  max-width: min(calc(460em / 13), calc((100vw - 40px) / var(--ui-scale)));
   padding: 10px 10px 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -1670,6 +1747,12 @@ a:focus-visible {
   color: var(--ink);
   /* Fades/slides up from the bottom-right on show (spec requirement 3). */
   animation: toastEnter 200ms ease-out;
+  /* §9: the toast is one of the enumerated chrome regions, zoomed as its own
+     independent subtree — see :root's --ui-scale comment. #app (its
+     positioning parent) carries no zoom, so `right`/`bottom` above are real
+     offsets from the actual window edges; the box itself just renders
+     bigger, as if it had more effective padding on each corner. */
+  zoom: var(--ui-scale);
 }
 .toast.isError {
   border-color: var(--clay);

@@ -102,6 +102,9 @@ export const forgetConfirmBtn = requireEl<HTMLButtonElement>('forgetConfirmBtn')
 export const recentFilesListEl = requireEl<HTMLDivElement>('recentFilesList');
 export const recentFilesEmptyEl = requireEl<HTMLDivElement>('recentFilesEmpty');
 
+// View menu's "UI text scale" action (docs/UI_REQUIREMENTS_v3_queued_features.md §9).
+export const uiScaleValueLabelEl = requireEl<HTMLSpanElement>('uiScaleValueLabel');
+
 export const toastEl = requireEl<HTMLDivElement>('toast');
 export const toastMessageEl = requireEl<HTMLSpanElement>('toastMessage');
 export const toastActionsEl = requireEl<HTMLDivElement>('toastActions');

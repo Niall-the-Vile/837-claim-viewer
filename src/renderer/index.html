@@ -60,6 +60,16 @@
             <button type="button" role="menuitem" data-action="fitWidth">Fit width<kbd>Ctrl+8</kbd></button>
             <button type="button" role="menuitem" data-action="toggleInspector">Toggle inspector<kbd>Ctrl+D</kbd></button>
             <button type="button" role="menuitem" data-action="toggleTheme">Light / dark<kbd>Ctrl+Shift+L</kbd></button>
+            <div class="menuSep" role="separator"></div>
+            <!-- UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md §9):
+                 a single cycling action (100 -> 125 -> 150 -> 175 -> 100),
+                 matching the design's cycleUiScale affordance — see
+                 src/renderer/features/uiScale.ts. Scales the app chrome
+                 ONLY, independently of per-tab PDF zoom above. -->
+            <button type="button" role="menuitem" data-action="cycleUiScale">
+              UI text scale
+              <span id="uiScaleValueLabel" class="menuValueLabel">100%</span>
+            </button>
           </div>
         </div>
         <div class="menu" data-menu="help">

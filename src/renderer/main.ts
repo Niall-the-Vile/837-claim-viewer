@@ -78,6 +78,7 @@ import { copyToClipboard } from './clipboard.js';
 import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliation } from './clipboardFormat.js';
 import { severityWord } from './format.js';
 import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
+import { initUiScale, cycleUiScale } from './features/uiScale.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -990,6 +991,9 @@ function runAction(action: string): void {
     case 'toggleTheme':
       toggleTheme();
       break;
+    case 'cycleUiScale':
+      cycleUiScale();
+      break;
     case 'shortcuts':
       openShortcuts();
       break;
@@ -1131,3 +1135,4 @@ setupDragAndDrop();
 renderTabStrip();
 syncScreenUI();
 void initSessionRestore();
+void initUiScale();

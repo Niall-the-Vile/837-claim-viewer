@@ -28,6 +28,28 @@ export interface OpenClaimResultDto {
   summaries: ClaimSummaryDto[];
 }
 
+/** `{ raw, decoded }` for a single coded field — structurally identical to `src/model/decode.ts`'s `CodedValue` (declared again here for the same "no main-process import in the renderer's type surface" reason as the DTOs around it). `decoded` is `null` for a blank or unrecognized raw code (docs/BUILD_QUEUE.md Build 2.2) — never the string "Unknown". */
+export interface CodedValueDto {
+  raw: string;
+  decoded: string | null;
+}
+
+/** Institutional (UB-04) claim-level coded fields, decoded — structurally identical to electron/main.ts's `InstitutionalDetailDto`. `null` on every non-institutional claim. */
+export interface InstitutionalDetailDto {
+  typeOfBill: {
+    raw: string;
+    facilityType: CodedValueDto;
+    billClassification: CodedValueDto;
+    frequency: CodedValueDto;
+    combined: string | null;
+  };
+  patientStatus: CodedValueDto;
+  conditionCodes: CodedValueDto[];
+  occurrenceCodes: Array<CodedValueDto & { date: string }>;
+  occurrenceSpans: Array<CodedValueDto & { from: string; through: string }>;
+  valueCodes: Array<CodedValueDto & { amount: number }>;
+}
+
 /**
  * Field-level DTO for the inspector drawer. Structurally identical to the
  * `ClaimDetailDto` built in electron/main.ts's `buildClaimDetail` (that's
@@ -76,16 +98,24 @@ export interface ClaimDetailDto {
     dates: string;
     /** CMS-1500 Box 24B place-of-service; '' on institutional/dental lines (see electron/main.ts's buildClaimDetail). Added for the copy-service-lines-as-TSV formatter (docs/TABS_BUILD_PLAN.md §2f item 1) — not shown elsewhere in the inspector today. */
     placeOfService: string;
+    /** Plain-English decoding of `placeOfService` (docs/BUILD_QUEUE.md Build 2.2) — `null` when blank or unrecognized. `placeOfService` itself stays raw. */
+    placeOfServiceDecoded: string | null;
     procCode: string;
     modifiers: string;
+    /** One CodedValueDto per entry in `modifiers` (docs/BUILD_QUEUE.md Build 2.2). `modifiers` itself stays the raw joined string. */
+    modifierDecodings: CodedValueDto[];
     diagPointers: string;
     charge: number;
     units: string;
     revenueCode: string;
+    /** Plain-English decoding of `revenueCode` (docs/BUILD_QUEUE.md Build 2.2) — `null` when blank or unrecognized. `revenueCode` itself stays raw. */
+    revenueCodeDecoded: string | null;
     revenueDescription: string;
     toothNumbers: string;
     toothSurfaces: string;
   }>;
+  /** Institutional (UB-04) claim-level coded fields, decoded — `null` for every non-institutional claim. */
+  institutional: InstitutionalDetailDto | null;
   totals: {
     totalCharge: number;
     amountPaid: number;
@@ -109,10 +139,16 @@ export interface StoredFileRefDto {
   fileName: string;
 }
 
+/** The four values the View menu's UI text scale ever cycles through (docs/UI_REQUIREMENTS_v3_queued_features.md §9) — structurally identical to `src/app/persistence/sessionStore.ts`'s `UI_SCALE_VALUES`/`UiScaleValue`. */
+export const UI_SCALE_VALUES = [100, 125, 150, 175] as const;
+export type UiScaleValue = (typeof UI_SCALE_VALUES)[number];
+
 export interface SessionRestoreStateDto {
   tabs: StoredFileRefDto[];
   activeIndex: number;
   recentFiles: StoredFileRefDto[];
+  /** Always a concrete one of UI_SCALE_VALUES — main resolves "never saved yet" to 100 before this crosses the bridge. */
+  uiScale: UiScaleValue;
 }
 
 const claimApi = Object.freeze({
@@ -156,6 +192,8 @@ const claimApi = Object.freeze({
   saveSession: (tabs: StoredFileRefDto[], activeIndex: number): Promise<void> => ipcRenderer.invoke('session:save', tabs, activeIndex),
   /** File-menu "Forget open tabs & recent files" (docs/TABS_BUILD_PLAN.md §2e) — clears the stored session + recent list on disk. Does not close any tab currently open in this window. */
   forgetSession: (): Promise<void> => ipcRenderer.invoke('session:forget'),
+  /** Persists the View menu's UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md §9) inside the same session.json — called every time src/renderer/features/uiScale.ts cycles it. Main silently ignores anything outside UI_SCALE_VALUES rather than persisting it. */
+  saveUiScale: (scale: UiScaleValue): Promise<void> => ipcRenderer.invoke('settings:saveUiScale', scale),
 });
 
 export type ClaimApi = typeof claimApi;

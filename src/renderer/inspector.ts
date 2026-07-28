@@ -1,4 +1,4 @@
-import type { ClaimDetailDto } from '../../electron/preload.js';
+import type { ClaimDetailDto, InstitutionalDetailDto } from '../../electron/preload.js';
 import type { FormType } from '../model/claim.js';
 import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl } from './dom.js';
 import { state, currentScreen, type TabState } from './tabs.js';
@@ -20,6 +20,20 @@ import { ICON_COPY, ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js
  * `formatMoney`/`formTypeText` are re-exported (now defined in format.ts,
  * see that file's header) because main.ts's status bar and overlays.ts's
  * export dialog also format the same way.
+ *
+ * docs/BUILD_QUEUE.md Build 2.2 (plain-English decoding of public CMS code
+ * sets — place of service, type of bill, discharge status, revenue codes,
+ * condition/occurrence/value codes, common modifiers): decoding itself
+ * happens in MAIN (electron/main.ts's buildClaimDetail) — this file is a
+ * pure view layer over the `{ raw, decoded }` pairs already on the DTO. A
+ * row that carries a non-null `InspRow.decoded` renders the decoded text as
+ * a visually distinguished (italic, muted — see the inline style set in
+ * buildGroup below; style.css is owned by another build tonight, so this
+ * uses the SAME `--ink-3` custom property style.css already defines for
+ * dim/explanation text, applied inline rather than via a new class) sibling
+ * of the raw value — never replacing it, never inside the `.inspRowVal`
+ * element the copy path reads from, so click-to-copy and Ctrl+C keep
+ * emitting the raw code exactly as before (see the keydown handler below).
  */
 
 // formatMoney/formTypeText now live in format.ts (a DOM-free module —
@@ -82,6 +96,22 @@ interface InspRow {
   glyph?: 'warning' | 'note';
   /** Renders as a dimmed, italic caption row with no key label (§2f item 6's plain-English explanation line) rather than a normal field row. */
   isExplanation?: boolean;
+  /**
+   * Plain-English decoding of `value` (docs/BUILD_QUEUE.md Build 2.2) — set
+   * only when a lookup succeeded (never the literal "Unknown"; an
+   * unrecognized or blank raw code simply omits this property and the row
+   * shows the raw value alone, per docs/UI_REQUIREMENTS_v3_queued_features.md
+   * §2). Rendered as a visually distinct sibling of the raw value, never
+   * folded into it — see buildGroup and the module header above for why
+   * that split matters for copy/Ctrl+C.
+   */
+  decoded?: string | null;
+}
+
+/** Long decodings truncate for display, with the untruncated text always available in the row's `title` (docs/UI_REQUIREMENTS_v3_queued_features.md §2). */
+const DECODED_TRUNCATE_LEN = 64;
+function truncateDecoded(text: string): string {
+  return text.length > DECODED_TRUNCATE_LEN ? `${text.slice(0, DECODED_TRUNCATE_LEN - 1)}…` : text;
 }
 
 function syncCaret(details: HTMLDetailsElement): void {
@@ -158,7 +188,35 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
 
       const valEl = document.createElement('span');
       valEl.className = 'inspRowVal' + (row.variant ? ` is${row.variant.charAt(0).toUpperCase()}${row.variant.slice(1)}` : '');
-      valEl.textContent = row.value;
+      if (row.decoded) {
+        // Raw stays in its own child span (.inspRowValRaw) so the Ctrl+C
+        // keydown handler below can read ONLY the raw text — the decoded
+        // sibling is visible but deliberately outside what copy emits (see
+        // this file's header comment and docs/BUILD_QUEUE.md Build 2.2's
+        // "raw value stays copyable verbatim" requirement).
+        const rawEl = document.createElement('span');
+        rawEl.className = 'inspRowValRaw';
+        rawEl.textContent = row.value;
+        valEl.append(rawEl);
+
+        const decodedEl = document.createElement('span');
+        decodedEl.className = 'inspRowValDecoded';
+        // Inline style, not a new style.css class — style.css is owned by
+        // a different build tonight (see this file's header). `--ink-3` is
+        // the same dim-text custom property style.css already defines
+        // (used today by .inspRowVal.isDim / the explanation-row caption),
+        // so this stays correctly themed in light/dark without touching
+        // that file, and is visually distinct (italic + dimmed) from the
+        // raw value next to it, per docs/UI_REQUIREMENTS_v3_queued_features.md
+        // §2 ("distinguish decoded text ... so nobody mistakes our lookup
+        // for something the claim actually said").
+        decodedEl.setAttribute('style', 'font-style: italic; color: var(--ink-3); margin-left: 4px;');
+        decodedEl.textContent = `· ${truncateDecoded(row.decoded)}`;
+        decodedEl.title = row.decoded;
+        valEl.append(decodedEl);
+      } else {
+        valEl.textContent = row.value;
+      }
       rowEl.append(valEl);
 
       // Accessible name explicit rather than relying on content-derived
@@ -227,7 +285,11 @@ inspectorBodyEl.addEventListener('keydown', (event) => {
     event.preventDefault();
     event.stopPropagation();
     const key = row.querySelector('.inspRowKey')?.textContent ?? row.getAttribute('aria-label') ?? 'Value';
-    const value = row.querySelector('.inspRowVal')?.textContent ?? '';
+    // .inspRowValRaw exists only on a decoded row (docs/BUILD_QUEUE.md
+    // Build 2.2) and holds ONLY the raw code; falling back to the whole
+    // .inspRowVal textContent for every other row is unchanged from before
+    // this build. Either way this never picks up the decoded sibling span.
+    const value = row.querySelector('.inspRowValRaw')?.textContent ?? row.querySelector('.inspRowVal')?.textContent ?? '';
     copyToClipboard(value, `${key} copied to the clipboard.`);
     return;
   }
@@ -251,6 +313,63 @@ inspectorBodyEl.addEventListener('keydown', (event) => {
   rows[nextIdx]!.tabIndex = 0;
   rows[nextIdx]!.focus();
 });
+
+/**
+ * Rows for the "Billing details" group — institutional (UB-04) claim-level
+ * coded fields, decoded (docs/BUILD_QUEUE.md Build 2.2). Every code here
+ * follows the same raw-first/decoded-secondary pattern as every other
+ * decoded row in this file; a component that couldn't be decoded (or
+ * couldn't even be parsed into 3 significant digits — see
+ * src/model/decode.ts's decodeTypeOfBill) just shows its raw value with no
+ * `decoded` property, never "Unknown".
+ */
+function buildInstitutionalRows(inst: InstitutionalDetailDto): InspRow[] {
+  const rows: InspRow[] = [];
+
+  const tob = inst.typeOfBill;
+  const tobRow: InspRow = { key: 'Type of bill', value: orDash(tob.raw) };
+  if (tob.combined) tobRow.decoded = tob.combined;
+  rows.push(tobRow);
+  const facilityRow: InspRow = { key: 'Facility type', value: orDash(tob.facilityType.raw) };
+  if (tob.facilityType.decoded) facilityRow.decoded = tob.facilityType.decoded;
+  rows.push(facilityRow);
+  const classRow: InspRow = { key: 'Bill classification', value: orDash(tob.billClassification.raw) };
+  if (tob.billClassification.decoded) classRow.decoded = tob.billClassification.decoded;
+  rows.push(classRow);
+  const freqRow: InspRow = { key: 'Frequency', value: orDash(tob.frequency.raw) };
+  if (tob.frequency.decoded) freqRow.decoded = tob.frequency.decoded;
+  rows.push(freqRow);
+
+  const statusRow: InspRow = { key: 'Discharge status', value: orDash(inst.patientStatus.raw) };
+  if (inst.patientStatus.decoded) statusRow.decoded = inst.patientStatus.decoded;
+  rows.push(statusRow);
+
+  inst.conditionCodes.forEach((c, i) => {
+    const row: InspRow = { key: `Condition code ${i + 1}`, value: orDash(c.raw) };
+    if (c.decoded) row.decoded = c.decoded;
+    rows.push(row);
+  });
+
+  inst.occurrenceCodes.forEach((o, i) => {
+    const row: InspRow = { key: `Occurrence ${i + 1}`, value: o.date ? `${o.raw}  ·  ${o.date}` : orDash(o.raw) };
+    if (o.decoded) row.decoded = o.decoded;
+    rows.push(row);
+  });
+
+  inst.occurrenceSpans.forEach((s, i) => {
+    const row: InspRow = { key: `Occurrence span ${i + 1}`, value: `${s.raw}  ·  ${s.from} – ${s.through}` };
+    if (s.decoded) row.decoded = s.decoded;
+    rows.push(row);
+  });
+
+  inst.valueCodes.forEach((v, i) => {
+    const row: InspRow = { key: `Value code ${i + 1}`, value: `${v.raw}  ·  ${formatMoney(v.amount)}` };
+    if (v.decoded) row.decoded = v.decoded;
+    rows.push(row);
+  });
+
+  return rows;
+}
 
 /** The "Copy service lines as TSV" button placed in the service-lines group's <summary> (§2f item 1) — also used by the Ctrl+Shift+C shortcut (shortcuts.ts/main.ts call formatServiceLinesTsv directly, so this button and the shortcut share the exact same formatter). */
 function buildLinesCopyBtn(detail: ClaimDetailDto): HTMLButtonElement {
@@ -390,22 +509,49 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   );
   inspectorBodyEl.append(buildGroup('providers', 'Providers', tags.providers, false, providerRows, false));
 
+  // Institutional (UB-04) billing details — type of bill, discharge status,
+  // condition/occurrence/value codes (docs/BUILD_QUEUE.md Build 2.2). `null`
+  // for every non-institutional claim, so this group simply doesn't exist
+  // for cms1500/dental/unsupported forms — never rendered empty.
+  if (detail.institutional) {
+    inspectorBodyEl.append(buildGroup('billing', 'Billing details', 'FL 4 / 17 / 18–41', false, buildInstitutionalRows(detail.institutional), false));
+  }
+
   // Diagnoses
   const dxRows: InspRow[] = detail.diagnoses.map((d) => ({ key: d.pointer || `#${d.ordinal}`, value: orDash(d.code) }));
   inspectorBodyEl.append(buildGroup('dx', 'Diagnoses', tags.diagnoses, false, dxRows, false));
 
-  // Service lines
+  // Service lines. docs/BUILD_QUEUE.md Build 2.2: the composite per-line
+  // summary already mixed several raw fields into one row before this
+  // build (dates/proc/modifiers/ptr/rev/tooth/units/charge) — that raw
+  // string is unchanged here (still what click-to-copy/Ctrl+C emit, per
+  // this file's header). Decoded place-of-service/revenue-code/modifier
+  // text is appended as this row's `decoded` (a visually distinct sibling,
+  // never folded into the raw string). `pos <code>` is added to the raw
+  // parts alongside the existing `rev <code>` so a professional line's
+  // place-of-service code is visible at all (it wasn't shown here before).
   const lineRows: InspRow[] = detail.serviceLines.map((l) => {
     const parts: string[] = [];
     parts.push(l.dates || '—');
     const proc = l.modifiers ? `${l.procCode || '—'}-${l.modifiers.replace(/ /g, '-')}` : l.procCode || '—';
     parts.push(proc);
     if (l.diagPointers) parts.push(`ptr ${l.diagPointers}`);
+    if (l.placeOfService) parts.push(`pos ${l.placeOfService}`);
     if (l.revenueCode) parts.push(`rev ${l.revenueCode}`);
     if (l.toothNumbers) parts.push(`tooth ${l.toothNumbers}`);
     parts.push(`×${l.units || '1'}`);
     parts.push(formatMoney(l.charge));
-    return { key: `Line ${l.line}`, value: parts.join('  ·  ') };
+
+    const decodedBits: string[] = [];
+    if (l.placeOfServiceDecoded) decodedBits.push(l.placeOfServiceDecoded);
+    if (l.revenueCodeDecoded) decodedBits.push(l.revenueCodeDecoded);
+    for (const mod of l.modifierDecodings) {
+      if (mod.decoded) decodedBits.push(`${mod.raw}: ${mod.decoded}`);
+    }
+
+    const row: InspRow = { key: `Line ${l.line}`, value: parts.join('  ·  ') };
+    if (decodedBits.length > 0) row.decoded = decodedBits.join('  ·  ');
+    return row;
   });
   inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false, buildLinesCopyBtn(detail)));
 

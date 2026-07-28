@@ -69,13 +69,23 @@ function noCanary(text: string): boolean {
  * APPEND a row here (docs/BUILD_QUEUE.md rule 12). `session.json` is the
  * only file Build 1 adds: `{ tabs, activeIndex, recentFiles }`, every entry
  * a `{ filePath, fileName }` pair — never a field parsed from claim content.
+ *
+ * docs/UI_REQUIREMENTS_v3_queued_features.md §9 (Build 2.0, UI text scale)
+ * adds one field to this SAME file rather than a new userData file —
+ * `uiScale`, one of 100/125/150/175, optional (absent until the user ever
+ * cycles it). The predicate below is strengthened accordingly (rule 12: a
+ * build may only append/strengthen, never weaken, this allowlist) — it now
+ * also rejects a present-but-invalid `uiScale`, while still accepting a
+ * session.json that never set one.
  */
 export const ALLOWED_USERDATA_FILES: Record<string, (content: string) => boolean> = {
   'session.json': (content) => {
     const parsed: unknown = JSON.parse(content);
     if (typeof parsed !== 'object' || parsed === null) return false;
     const obj = parsed as Record<string, unknown>;
-    return Array.isArray(obj['tabs']) && Array.isArray(obj['recentFiles']) && typeof obj['activeIndex'] === 'number';
+    if (!Array.isArray(obj['tabs']) || !Array.isArray(obj['recentFiles']) || typeof obj['activeIndex'] !== 'number') return false;
+    const uiScale = obj['uiScale'];
+    return uiScale === undefined || (typeof uiScale === 'number' && [100, 125, 150, 175].includes(uiScale));
   },
 };
 

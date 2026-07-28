@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addRecentFile, forgetAll, loadSession, saveOpenTabs, SESSION_FILE_NAME } from '../src/app/persistence/sessionStore.js';
+import { addRecentFile, forgetAll, loadSession, saveOpenTabs, saveUiScale, SESSION_FILE_NAME } from '../src/app/persistence/sessionStore.js';
 
 /**
  * Unit tests for the Electron-free session-restore persistence module
@@ -143,5 +143,63 @@ describe('sessionStore: forgetAll', () => {
     const dir = tempDir();
     await expect(forgetAll(dir)).resolves.toBeUndefined();
     expect(await loadSession(dir)).toEqual({ tabs: [], activeIndex: -1, recentFiles: [] });
+  });
+
+  it('does NOT clear a previously saved uiScale — it is a display preference, not a file-path trail', async () => {
+    const dir = tempDir();
+    await saveOpenTabs(dir, [REF_A], 0);
+    await saveUiScale(dir, 175);
+
+    await forgetAll(dir);
+
+    const session = await loadSession(dir);
+    expect(session.tabs).toEqual([]);
+    expect(session.recentFiles).toEqual([]);
+    expect(session.uiScale).toBe(175);
+  });
+});
+
+/**
+ * docs/UI_REQUIREMENTS_v3_queued_features.md §9: the View menu's UI text
+ * scale persists inside this SAME session.json (never a second userData
+ * file) — see also test/persisted-artifacts.test.ts's ALLOWED_USERDATA_FILES
+ * predicate, strengthened alongside this.
+ */
+describe('sessionStore: saveUiScale / uiScale sanitization', () => {
+  it('round-trips a saved scale and leaves tabs/activeIndex/recentFiles untouched', async () => {
+    const dir = tempDir();
+    await saveOpenTabs(dir, [REF_A], 0);
+    await addRecentFile(dir, REF_B);
+
+    await saveUiScale(dir, 150);
+
+    const session = await loadSession(dir);
+    expect(session.uiScale).toBe(150);
+    expect(session.tabs).toEqual([REF_A]);
+    expect(session.recentFiles).toEqual([REF_B]);
+  });
+
+  it('a session.json with no uiScale ever saved omits the field entirely (never defaults to 100 on disk)', async () => {
+    const dir = tempDir();
+    await saveOpenTabs(dir, [REF_A], 0);
+    const session = await loadSession(dir);
+    expect(session.uiScale).toBeUndefined();
+  });
+
+  it('a hand-edited/corrupt uiScale value (wrong type, or a number outside 100/125/150/175) is dropped rather than trusted', async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, SESSION_FILE_NAME), JSON.stringify({ tabs: [], activeIndex: -1, recentFiles: [], uiScale: 140 }), 'utf8');
+    expect((await loadSession(dir)).uiScale).toBeUndefined();
+
+    writeFileSync(join(dir, SESSION_FILE_NAME), JSON.stringify({ tabs: [], activeIndex: -1, recentFiles: [], uiScale: '175' }), 'utf8');
+    expect((await loadSession(dir)).uiScale).toBeUndefined();
+  });
+
+  it('accepts each of the four allowed values', async () => {
+    const dir = tempDir();
+    for (const value of [100, 125, 150, 175] as const) {
+      await saveUiScale(dir, value);
+      expect((await loadSession(dir)).uiScale).toBe(value);
+    }
   });
 });

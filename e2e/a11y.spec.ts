@@ -244,4 +244,36 @@ test.describe('837 Claim Viewer — E2E — accessibility (tab strip)', () => {
       await app.close();
     }
   });
+
+  test('View menu\'s "UI text scale" action is keyboard-reachable, has a non-empty accessible name that includes the current value, and updates it in place on activation (docs/UI_REQUIREMENTS_v3_queued_features.md §9)', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+
+      await page.locator('[data-menu-trigger="view"]').click();
+      const scaleItem = page.locator('[data-action="cycleUiScale"]');
+      await expect(scaleItem).toBeVisible();
+
+      // Accessible name is the button's own text content (label + current
+      // value) — never colour/icon-only — so a screen reader announces
+      // state, not just the action.
+      await expect(scaleItem).toContainText('UI text scale');
+      await expect(scaleItem).toContainText('100%');
+
+      // Keyboard activation (Enter, after focusing — no mouse) works exactly
+      // like a click.
+      await scaleItem.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#uiScaleValueLabel')).toHaveText('125%');
+
+      // Menu closes on activation (same as every other menu action in this
+      // app) — reopening it finds the accessible name already updated.
+      await expect(page.locator('[data-menu-panel="view"]')).toBeHidden();
+      await page.locator('[data-menu-trigger="view"]').click();
+      await expect(scaleItem).toContainText('125%');
+    } finally {
+      await app.close();
+    }
+  });
 });

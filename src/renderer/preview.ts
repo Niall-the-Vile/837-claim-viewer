@@ -2,6 +2,7 @@ import type { RenderTask } from 'pdfjs-dist';
 import { RenderingCancelledException } from 'pdfjs-dist';
 import { pdfScrollEl, pdfCanvasEl, pageLabelEl, prevPageBtn, nextPageBtn, zoomLabelEl, fitPageBtn, fitWidthBtn } from './dom.js';
 import { state, currentScreen, activeTab, type TabState } from './tabs.js';
+import { computeFitPageZoom, computeFitWidthZoom } from './fitMath.js';
 
 /**
  * pdf.js load/render/zoom/page-stepping for the single shared preview
@@ -33,7 +34,25 @@ import { state, currentScreen, activeTab, type TabState } from './tabs.js';
 // PDF preview: loading, rendering, zoom, pagination
 // ---------------------------------------------------------------------------
 
-/** The #pdfScroll element's content-box size (its border-box rect minus its own padding), i.e. the space actually available to draw the page into. */
+/**
+ * The #pdfScroll element's content-box size (its border-box rect minus its
+ * own padding), i.e. the space actually available to draw the page into.
+ *
+ * docs/UI_REQUIREMENTS_v3_queued_features.md §9: this reading is
+ * deliberately NOT corrected for the View menu's UI text scale
+ * (`--ui-scale`) — #pdfScroll is one of the two elements (with #pdfCanvas)
+ * style.css's chrome-scaling rules explicitly never zoom, and it never sits
+ * inside an ancestor that does either (#app/#body/#previewPane carry no
+ * `zoom`; only the standalone chrome regions like #inspector/#toolbar do,
+ * as independent siblings — see style.css's `--ui-scale` comment). So
+ * `getBoundingClientRect()` here already returns real, un-scaled pixels at
+ * every --ui-scale setting, and fitMath.ts's computeFitPageZoom/
+ * computeFitWidthZoom take no scale argument for the same reason: dividing
+ * an already-correct measurement by the scale would be a bug, not a fix
+ * (it would make fitWidth() return a SMALLER PDF zoom% as --ui-scale grows,
+ * which is exactly the invariant e2e/uiScale.spec.ts's "fitWidth is
+ * unaffected by --ui-scale" test guards against).
+ */
 function availableViewport(): { width: number; height: number } {
   const rect = pdfScrollEl.getBoundingClientRect();
   const style = getComputedStyle(pdfScrollEl);
@@ -179,7 +198,7 @@ export async function fitPage(tab: TabState, fade = false): Promise<void> {
   tab.zoomMode = 'fit-page';
   const avail = availableViewport();
   const base = await pageBaseSize(tab);
-  await applyZoom(tab, Math.min(avail.width / base.width, avail.height / base.height), fade);
+  await applyZoom(tab, computeFitPageZoom(avail, base), fade);
 }
 
 export async function fitWidth(tab: TabState, fade = false): Promise<void> {
@@ -188,8 +207,8 @@ export async function fitWidth(tab: TabState, fade = false): Promise<void> {
   const base = await pageBaseSize(tab);
   // Small allowance so the page edge doesn't butt exactly against the
   // scroll container (and never trigger a horizontal scrollbar right at
-  // 100% fit-width).
-  await applyZoom(tab, (avail.width - 4) / base.width, fade);
+  // 100% fit-width) — see fitMath.ts's computeFitWidthZoom.
+  await applyZoom(tab, computeFitWidthZoom(avail, base), fade);
 }
 
 export async function stepPage(tab: TabState, delta: number): Promise<void> {

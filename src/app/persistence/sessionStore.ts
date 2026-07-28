@@ -34,6 +34,14 @@ export interface StoredFileRef {
   fileName: string;
 }
 
+/** The only four values the View menu's UI text scale control ever cycles through (docs/UI_REQUIREMENTS_v3_queued_features.md §9 / docs/BUILD_QUEUE.md 2.0). */
+export const UI_SCALE_VALUES = [100, 125, 150, 175] as const;
+export type UiScaleValue = (typeof UI_SCALE_VALUES)[number];
+
+function isUiScaleValue(value: unknown): value is UiScaleValue {
+  return typeof value === 'number' && (UI_SCALE_VALUES as readonly number[]).includes(value);
+}
+
 export interface SessionData {
   /** Open tabs, in left-to-right order, as they should be restored. */
   tabs: StoredFileRef[];
@@ -41,6 +49,20 @@ export interface SessionData {
   activeIndex: number;
   /** Most-recently-opened first, capped at RECENT_FILES_CAP. */
   recentFiles: StoredFileRef[];
+  /**
+   * The View menu's UI text scale (§9), as a percent — one of UI_SCALE_VALUES.
+   * Optional/omitted rather than defaulted here on purpose: `exactOptionalPropertyTypes`
+   * forbids `uiScale: undefined` as an explicit value, and every caller
+   * (src/renderer/features/uiScale.ts via electron/main.ts's
+   * session:getRestoreState) already treats "absent" as "never set yet,
+   * default to 100%" — see that module's own doc comment. Keeping it optional
+   * here (rather than defaulting to 100 in EMPTY_SESSION) also means the
+   * pre-existing exact-equality assertions in test/sessionStore.test.ts don't
+   * need to change: vitest's `toEqual` ignores undefined/absent properties,
+   * so a session with no uiScale ever saved round-trips identically to before
+   * this field existed.
+   */
+  uiScale?: UiScaleValue;
 }
 
 const EMPTY_SESSION: SessionData = { tabs: [], activeIndex: -1, recentFiles: [] };
@@ -72,7 +94,13 @@ function sanitize(raw: unknown): SessionData {
         ? 0
         : -1;
 
-  return { tabs, activeIndex, recentFiles };
+  // A hand-edited or future-version session.json with a garbage/out-of-range
+  // uiScale value is dropped rather than surfaced as an error, same
+  // "never fail startup on it" posture as every other field here — the
+  // renderer's own default (100%) takes over when this key is absent.
+  const uiScale = isUiScaleValue(r['uiScale']) ? r['uiScale'] : undefined;
+
+  return { tabs, activeIndex, recentFiles, ...(uiScale !== undefined ? { uiScale } : {}) };
 }
 
 function sessionFilePath(baseDir: string): string {
@@ -120,7 +148,17 @@ export async function addRecentFile(baseDir: string, entry: StoredFileRef): Prom
   await writeSessionAtomic(baseDir, { ...current, recentFiles });
 }
 
+/** Persists the View menu's UI text scale (§9). Called every time it's cycled (electron/main.ts's settings:saveUiScale handler, driven by src/renderer/features/uiScale.ts) — leaves `tabs`/`activeIndex`/`recentFiles` untouched, same read-modify-write shape as addRecentFile above. */
+export async function saveUiScale(baseDir: string, uiScale: UiScaleValue): Promise<void> {
+  const current = await loadSession(baseDir);
+  await writeSessionAtomic(baseDir, { ...current, uiScale });
+}
+
 /** The File-menu "Forget open tabs & recent files" action (docs/TABS_BUILD_PLAN.md §2e): wipes both lists back to empty. Does not touch any tab currently open in a live window — only what would be restored/suggested on the NEXT launch. */
 export async function forgetAll(baseDir: string): Promise<void> {
-  await writeSessionAtomic(baseDir, { ...EMPTY_SESSION });
+  // Preserves uiScale (a display preference, not a file-path trail) — "Forget
+  // open tabs & recent files" wipes exactly what its name says and nothing
+  // more; the View menu's scale setting is untouched by it, same as theme.
+  const current = await loadSession(baseDir);
+  await writeSessionAtomic(baseDir, { ...EMPTY_SESSION, ...(current.uiScale !== undefined ? { uiScale: current.uiScale } : {}) });
 }
