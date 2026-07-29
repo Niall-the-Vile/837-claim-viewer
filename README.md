@@ -27,6 +27,45 @@ npm run typecheck
 npm test
 ```
 
+## Install / deploy
+
+`npm run build:dist` produces **`release/837 Claim Viewer Setup <version>.exe`** — an unsigned,
+one-click NSIS installer.
+
+- Installs **per-user** to `%LOCALAPPDATA%\Programs\claim-viewer`. **No admin rights, no UAC
+  prompt**, nothing written to `Program Files` or to machine-wide registry keys.
+- Creates a Start Menu and Desktop shortcut, and launches the app when it finishes.
+- **Updating:** run the newer installer; it replaces the install in place. `session.json` and the
+  recent-files list are deliberately preserved (`deleteAppDataOnUninstall: false`), so open tabs
+  and recents survive an upgrade.
+- **Uninstalling:** Settings → Apps, or the bundled `Uninstall 837 Claim Viewer.exe`.
+- Still **unsigned** — SmartScreen will show "Windows protected your PC" the first time. Choose
+  *More info → Run anyway*. Signing is a separate decision (it needs a purchased certificate).
+- No auto-update, by design: there is no `electron-updater` dependency and no `build.publish`
+  config, and `test/no-updater.test.ts` fails the build if either appears. The app's network
+  kill-switch would block an update check anyway.
+
+### Why an installer rather than a portable .exe
+
+The app previously shipped as a single portable `.exe`. That target is a self-extracting archive:
+it decompressed **366 MB** into `%TEMP%` on *every* launch, and electron-builder's `portable.nsi`
+does `RMDir /r $INSTDIR` both before extracting and after exit, so the work could never be cached.
+
+Measured on a dev machine:
+
+| | Time to window |
+|---|---|
+| Portable `.exe` | **7.5 – 9.9 s**, every launch |
+| Installed | **0.99 s**, and zero `%TEMP%` churn |
+
+The portable target also cannot show progress while it works: with no splash image its NSIS script
+runs `SetSilent silent`, and `portable.nsi` is read unconditionally from electron-builder's own
+templates, so a custom script that could draw a progress bar is not reachable through config.
+(`portable.splashImage` *is* accepted and passed to `makensis` as `-DSPLASH_IMAGE`, but the
+`BgImage` plugin it relies on silently fails to draw — verified by sampling the screen across a
+full cold start.) The installer shows its progress bar **once**, at install time, instead of a
+blank 7-second wait on every launch.
+
 ## PHI / data policy
 Real claim files are **PHI** and must never be committed. Only **synthetic** fixtures live in
 `test/fixtures/`. `.gitignore` also excludes `/private-samples/` and `*.phi.json`.

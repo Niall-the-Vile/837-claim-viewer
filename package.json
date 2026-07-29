@@ -62,9 +62,23 @@
     "asar": true,
     "forceCodeSigning": false,
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "signtoolOptions": {},
       "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "837 Claim Viewer",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "${productName} Setup ${version}.${ext}"
     }
   }
 }

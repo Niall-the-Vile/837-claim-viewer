@@ -264,6 +264,54 @@ instead. Where a source could not settle a flagged code it was **omitted rather 
 relabelled** — one guess is not an improvement on another. One conflict on value code 66
 is recorded as open rather than silently resolved.
 
+### Post-audit: packaging switched from portable .exe to a one-click installer
+Niall reported "a delay between double clicking on the portable and seeing anything" and asked for
+a visible loading state. Measuring it changed the answer:
+
+| | Time to window |
+|---|---|
+| Portable `.exe` | 7.5 – 9.9 s, **every launch** |
+| Electron itself, unpacked | 0.84 s |
+| Installed (per-user NSIS) | **0.99 s**, zero `%TEMP%` churn |
+
+The portable target is a self-extracting archive that decompressed **366 MB** into `%TEMP%` on
+every launch. `portable.nsi` does `RMDir /r $INSTDIR` both before extracting AND after exit, so it
+can never be cached — which is why a cold start (7.66 s) and a "warm" one (7.50 s) measured
+identically. ~6.7 s of every launch was repeated, discardable work.
+
+A splash was tried first and rejected, correctly. Two findings, both verified rather than assumed:
+- `portable.splashImage` **silently does not work**. `-DSPLASH_IMAGE=...` *was* passed to
+  `makensis` (confirmed in the build log), but the `BgImage` plugin never drew — confirmed by
+  sampling the screen every 450 ms across a full cold start; the splash's accent green never
+  appeared until the app's own window did.
+- A real progress bar is **unreachable by configuration**. `NsisTarget.js` reads `portable.nsi`
+  unconditionally from electron-builder's template dir; unlike the installer target, the portable
+  target ignores `script`/`include`. Without a splash the template runs `SetSilent silent`; with
+  one it runs `HideWindow`. Neither path has a progress bar. Only patching `node_modules` would
+  change that.
+
+So the fix was to stop doing the extraction at all. `win.target` is now `nsis`, one-click,
+`perMachine: false` — installs to `%LOCALAPPDATA%\Programs\claim-viewer` with **no admin and no
+UAC prompt**, Start Menu + Desktop shortcuts, and `deleteAppDataOnUninstall: false` so
+`session.json` and recents survive an upgrade. `differentialPackage: false` keeps `.blockmap`
+updater artifacts out; `build.publish` stays absent, so `test/no-updater.test.ts` still passes.
+
+**The visible loading is now the app's own animated loading screen** — at ~1 s it is the only
+wait left, rather than being preceded by 7 blank seconds. Also fixed alongside: the window is
+created with `backgroundColor` from `nativeTheme`, so the ~160 ms before first paint no longer
+flashes white on a dark-theme machine.
+
+Deployment note: updating is now "run the newer installer" rather than "replace one file". Still
+unsigned, so SmartScreen still needs *More info → Run anyway* the first time.
+
+### Also: the "File menu opens in the current window" report
+Not a bug, but not visible either. Reopening a file that is already open focuses the existing tab
+(the §2b dedupe, which exists because two TabStates sharing one main-process session made closing
+either one break the other in Build 1). It did this **silently**, so it read as the menu behaving
+differently from the toolbar. Both paths call the same `openClaimFlow()`; four E2E cases in
+`e2e/menu-open.spec.ts` confirm the menu creates a new tab for a *different* file with 1, 2, or 3
+tabs open. It now shows a toast: *"<file> is already open — switched to that tab."*
+
 ### Verification after the audit fixes
 - typecheck: **pass** (3 configs)
 - vitest: 202 → **258**, pass

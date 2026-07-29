@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, session, shell } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from 'electron';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
@@ -270,6 +270,28 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 1000,
     minHeight: 680,
+    /*
+     * Paint the window in the app's own page colour from the very first
+     * frame instead of Chromium's default white.
+     *
+     * The window exists ~160 ms before the renderer's first paint, and on a
+     * dark-theme machine that gap was a white flash on every launch — most
+     * obvious right after the portable launcher's splash closes.
+     *
+     * The chosen theme lives in the RENDERER's localStorage (THEME_STORAGE_KEY
+     * in src/renderer/main.ts), which main cannot read synchronously here, so
+     * this uses the OS preference — exactly the signal style.css itself falls
+     * back to via `prefers-color-scheme` when no theme has been explicitly
+     * picked. Values mirror --bg-page in both themes. Someone who has chosen
+     * the opposite of their OS theme still sees a brief flash; that is the
+     * pre-existing behaviour and still strictly better than white for all.
+     *
+     * Deliberately NOT `show: false` + `ready-to-show`: if that event never
+     * fires (e.g. a renderer that fails to load) the user gets no window at
+     * all, which is a far worse failure mode for an offline desktop tool
+     * than a brief flash.
+     */
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141514' : '#e6e5e1',
     webPreferences: {
       // .cjs, not .js: with sandbox:true, Electron preload scripts MUST be
       // CommonJS — a sandboxed preload can't use ESM `import`, so an ESM

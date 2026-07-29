@@ -691,6 +691,20 @@ async function performOpen(source: OpenSource): Promise<void> {
     }
 
     const existing = findTabBySessionId(result.sessionId) ?? findTabByFilePath(result.filePath);
+    /*
+     * Whether this open resolved to a tab that was ALREADY showing this file.
+     * The dedupe itself is deliberate (§2b) — it prevents two TabStates
+     * sharing one main-process session, where closing either would break the
+     * other — but Build 2 performed it silently, so picking an already-open
+     * file from the File menu looked like "it opened in this window instead
+     * of a new tab". Reported as a bug by Niall, 2026-07-29; the behaviour is
+     * right, the silence was not.
+     *
+     * Computed BEFORE the branch below reassigns `tab`, and deliberately not
+     * for the `fillPlaceholder` case: a restored-but-unloaded tab being
+     * filled in is a first load, not a redundant reopen.
+     */
+    const wasAlreadyOpen = existing !== null && existing !== placeholder && existing.sessionId === result.sessionId;
     let tab: TabState;
     if (existing && existing !== placeholder) {
       if (placeholder) await closeTab(placeholder.tabId);
@@ -714,6 +728,10 @@ async function performOpen(source: OpenSource): Promise<void> {
     }
 
     await activateTabById(tab.tabId);
+
+    if (wasAlreadyOpen) {
+      showToast(`${tab.fileName} is already open — switched to that tab.`, false);
+    }
   } catch (err) {
     if (placeholder) {
       placeholder.status = 'error';
