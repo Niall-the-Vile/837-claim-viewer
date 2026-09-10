@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
-import type { PDFDocument, PDFFont } from 'pdf-lib';
+import { rgb } from 'pdf-lib';
+import type { PDFDocument, PDFFont, PDFPage } from 'pdf-lib';
+import { provenanceFooterLines } from './provenance.js';
+import type { RenderProvenance } from './provenance.js';
 
 /**
  * Shared text helpers for the PDF renderers: embedding Unicode TTFs so
@@ -229,4 +232,35 @@ export function composeAddressLine(addr: { line1: string; line2: string; city: s
     .filter((p) => p !== '')
     .join(', ');
   return [streetParts.join(' '), cityStateZip].filter((p) => p !== '').join(', ');
+}
+
+const PROVENANCE_GRAY = rgb(0.35, 0.35, 0.35);
+/** Distinct from the ordinary footer gray so the mandatory EDITED stamp (docs/EDITABLE_FIELDS_DESIGN.md invariant 6) reads as something other than routine provenance metadata at a glance. */
+const EDITED_STAMP_COLOR = rgb(0.62, 0.16, 0.09);
+
+/**
+ * Draws the provenance footer's line stack (docs/BUILD_QUEUE.md Build 3.3),
+ * starting 8pt below `baseY` and stepping down 8pt per line, left-aligned at
+ * `x`. Shared verbatim by all three renderers (renderCms1500/renderUb04/
+ * renderDental) so the wording, spacing, and — when the claim being
+ * rendered has any active field override — the mandatory EDITED stamp's
+ * styling never drift between forms.
+ *
+ * `provenanceFooterLines` PREPENDS the EDITED stamp only when
+ * `provenance.editedFieldCount > 0`; that line is drawn larger and in a
+ * distinct color (still drawn with `font`, the same font every other footer
+ * line uses) so it doesn't read as routine metadata. When there is no
+ * override, this draws exactly the same two lines at exactly the same
+ * position as before this feature existed — byte-identical output, which is
+ * what keeps the existing provenance golden/determinism tests unchanged.
+ */
+export function drawProvenanceFooterLines(page: PDFPage, font: PDFFont, provenance: RenderProvenance, x: number, baseY: number): void {
+  const lines = provenanceFooterLines(provenance);
+  const hasStamp = provenance.editedFieldCount > 0;
+  lines.forEach((line, i) => {
+    const isStamp = hasStamp && i === 0;
+    const size = isStamp ? 6.5 : 4.5;
+    const color = isStamp ? EDITED_STAMP_COLOR : PROVENANCE_GRAY;
+    page.drawText(safeText(font, line), { x, y: baseY - 8 - i * 8, size, font, color });
+  });
 }

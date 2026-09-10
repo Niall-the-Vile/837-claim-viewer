@@ -12,6 +12,8 @@ import { composeName, composeAddressLine } from '../src/render/text.js';
 import type { RenderProvenance } from '../src/render/provenance.js';
 import * as sessionStore from '../src/app/persistence/sessionStore.js';
 import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
+import * as correctedClaimStore from '../src/app/persistence/correctedClaimStore.js';
+import { applyFieldOverrides, findEditableField, editableFieldsForClaim, cloneClaim } from '../src/model/editableFields.js';
 import {
   decodePlaceOfService,
   decodeRevenueCode,
@@ -61,14 +63,28 @@ const BUILT_RENDERER_INDEX = join(__dirname, '..', 'renderer', 'index.html');
  */
 const IS_DEV = !existsSync(BUILT_RENDERER_INDEX);
 
+/**
+ * Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md), invariant 3:
+ * `'none'` — no corrected-claim artifact exists for this file; `'applied'`
+ * — one exists and its stored `sourceFileHash` matches this file's
+ * freshly-computed hash, so its overrides are being applied; `'stale'` — one
+ * exists but the hash no longer matches (the file on disk has changed since
+ * the overrides were saved), so its overrides are NOT applied until the
+ * user explicitly discards them (`claim:discardStaleOverrides`) — never
+ * applied silently.
+ */
+type CorrectedClaimStatus = 'none' | 'applied' | 'stale';
+
 interface ClaimSession {
-  /** `resolve()`d absolute path — the dedupe key `openClaimAtPath` uses to detect "this file is already open in another tab" (docs/TABS_BUILD_PLAN.md §2b). */
+  /** `resolve()`d absolute path — the dedupe key `openClaimAtPath` uses to detect "this file is already open in another tab" (docs/TABS_BUILD_PLAN.md §2b). Also the corrected-claim artifact's lookup key (correctedClaimStore.ts) — the SAME file-identity key, never the source file's content. */
   filePath: string;
   fileName: string;
   source: 'json' | 'x12';
   claims: Claim[];
-  /** Hex SHA-256 of the source file's bytes, computed once at open time — feeds the export path's provenance footer (Build 3.3). Never re-hashed at export time; if the file changes on disk between open and export, the footer still reflects what was actually parsed. */
+  /** Hex SHA-256 of the source file's bytes, computed once at open time — feeds the export path's provenance footer (Build 3.3) and the editable-fields staleness check (docs/EDITABLE_FIELDS_DESIGN.md). Never re-hashed at export time; if the file changes on disk between open and export, the footer still reflects what was actually parsed. */
   sourceSha256: string;
+  /** See CorrectedClaimStatus above. Mutated in place by `claim:discardStaleOverrides` and by every override write (which always re-validates the artifact against the CURRENT hash — see correctedClaimStore.ts's `setFieldOverride`). */
+  correctedClaimStatus: CorrectedClaimStatus;
 }
 
 /**
@@ -355,6 +371,8 @@ interface OpenClaimResult {
   fileName: string;
   source: 'json' | 'x12';
   summaries: ClaimSummaryDto[];
+  /** Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md) — see CorrectedClaimStatus's doc comment. The renderer surfaces 'stale' as a dismissible banner offering to discard the saved (out-of-date) edits; it never applies them itself. */
+  correctedClaimStatus: CorrectedClaimStatus;
 }
 
 /**
@@ -464,10 +482,32 @@ interface ClaimDetailDto {
   warnings: Array<{ code: string; severity: WarningSeverity; message: string }>;
   /** Pretty-printed `claim.raw` — the source's original key/values, for the inspector's "Raw JSON fields" / "Raw 837 segments" view. */
   rawText: string;
+
+  // --- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md) --------------------
+  // Every scalar VALUE above (patient.accountNumber, serviceLines[].charge,
+  // etc.) already reflects any active override — this DTO is built from the
+  // EFFECTIVE (overridden) claim, never the original, so the inspector and
+  // the PDF preview show corrected values directly. `warnings` above is the
+  // one deliberate exception: `buildClaimDetail` never mutates a claim's
+  // `warnings` array itself, so it always carries through byte-identical to
+  // what the ORIGINAL parse produced (invariant 4 — warnings are computed
+  // against the original claim, never against edited values) regardless of
+  // which claim object (original or effective) this DTO was built from.
+  /** Every field path this claim COULD have an override for, in registry order — lets the inspector show an Edit affordance even on a field with no override yet. */
+  editableFieldPaths: string[];
+  /** One entry per field path that currently HAS an active override, carrying both the original parsed value and the current (effective) one — invariant 5: the original must never be lost, even though the scalar field above already shows the current value. */
+  edits: Array<{ fieldPath: string; label: string; originalValue: string; currentValue: string }>;
+  /** `edits.length`, duplicated here as a plain number for convenience (export-dialog manifest, the inspector's "N edited" note). */
+  editedFieldCount: number;
+  /** Mirrors the session's CorrectedClaimStatus — 'stale' means saved edits exist for a DIFFERENT version of this file and were NOT applied (see electron/main.ts's openClaimAtPath); the renderer surfaces this once per tab, not per claim. */
+  correctedClaimStatus: 'none' | 'applied' | 'stale';
 }
 
+/** Everything buildClaimDetail computes directly from a single Claim object — i.e. all of ClaimDetailDto except the editable-fields side-channel (editableFieldPaths/edits/editedFieldCount/correctedClaimStatus), which depends on the SESSION and claim INDEX, not just the claim itself. See buildEffectiveClaimDetail below, the actual claim:getDetail handler. */
+type ClaimDetailCore = Omit<ClaimDetailDto, 'editableFieldPaths' | 'edits' | 'editedFieldCount' | 'correctedClaimStatus'>;
+
 /** Projects a full Claim into the flat, pre-composed ClaimDetailDto the inspector renders. Composing names/addresses here (rather than in the renderer) keeps the renderer a pure view layer over already-formatted strings. */
-function buildClaimDetail(claim: Claim): ClaimDetailDto {
+function buildClaimDetail(claim: Claim): ClaimDetailCore {
   // Same integer-cents rounding validateClaim (src/sources/json/jsonClaimSource.ts)
   // uses for its charge-total-mismatch warning, so this delta and that
   // warning always agree.
@@ -572,6 +612,57 @@ function buildInstitutionalDetail(claim: Claim): InstitutionalDetailDto | null {
     occurrenceCodes: inst.occurrenceCodes.map((o) => ({ ...decodeOccurrenceCode(o.code), date: o.date })),
     occurrenceSpans: inst.occurrenceSpans.map((s) => ({ ...decodeOccurrenceSpanCode(s.code), from: s.from, through: s.through })),
     valueCodes: inst.valueCodes.map((v) => ({ ...decodeValueCode(v.code), amount: v.amount })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Editable fields / corrected-claim overrides (docs/EDITABLE_FIELDS_DESIGN.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * The saved field overrides for ONE claim within `session`'s file, already
+ * stripped of the `${claimIndex}::` key prefix. Returns `{}` whenever
+ * `session.correctedClaimStatus !== 'applied'` — most importantly while
+ * `'stale'`, so a stale artifact's overrides are NEVER read into a render or
+ * the inspector until the user has explicitly discarded (or a fresh edit
+ * has re-validated) it. This is the one gate every override-consuming path
+ * in this file goes through, so "stale means not applied" only has to be
+ * enforced in exactly one place.
+ */
+async function getOverridesForSession(session: ClaimSession, index: number): Promise<Record<string, string>> {
+  if (session.correctedClaimStatus !== 'applied') return {};
+  const artifact = await correctedClaimStore.getArtifact(userDataDir(), session.filePath);
+  return correctedClaimStore.overridesForClaimIndex(artifact, index);
+}
+
+interface EffectiveClaimResult {
+  session: ClaimSession;
+  /** The claim exactly as originally parsed — NEVER mutated by any override path in this file. Warnings on this object (and, by construction, on `effective` below — see applyFieldOverrides's own doc comment) are always the original parse's warnings. */
+  original: Claim;
+  /** `original` with every currently-active, currently-valid override applied, on a fresh clone. This is what gets rendered (both preview and export) and what ClaimDetailDto's scalar fields are built from — so the on-screen form and the exported PDF always show the corrected values, never silently the stale original ones. */
+  effective: Claim;
+  applied: import('../src/model/editableFields.js').AppliedFieldEdit[];
+}
+
+/** Resolves a validated session + claim index into both the original and the effective (overrides-applied) claim, in one place — every claim-reading IPC handler below (`claim:getPdf`, `claim:getDetail`, `dialog:exportPdf`) uses this instead of reading `session.claims[index]` directly, so "apply saved overrides, but never touch the original" only has one implementation to trust. */
+async function getEffectiveClaim(sessionId: unknown, index: unknown): Promise<EffectiveClaimResult> {
+  const session = getSession(sessionId);
+  const original = getSessionClaim(sessionId, index);
+  const overrides = await getOverridesForSession(session, index as number);
+  const { claim: effective, applied } = applyFieldOverrides(original, overrides);
+  return { session, original, effective, applied };
+}
+
+/** The full ClaimDetailDto, including the editable-fields side-channel — the actual body behind the `claim:getDetail` IPC handler. */
+async function buildEffectiveClaimDetail(sessionId: unknown, index: unknown): Promise<ClaimDetailDto> {
+  const { session, original, effective, applied } = await getEffectiveClaim(sessionId, index);
+  const core = buildClaimDetail(effective);
+  return {
+    ...core,
+    editableFieldPaths: editableFieldsForClaim(original).map((s) => s.fieldPath),
+    edits: applied,
+    editedFieldCount: applied.length,
+    correctedClaimStatus: session.correctedClaimStatus,
   };
 }
 
@@ -688,6 +779,7 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
         fileName: existing.fileName,
         source: existing.source,
         summaries: existing.claims.map(claimSummary),
+        correctedClaimStatus: existing.correctedClaimStatus,
       };
     }
   }
@@ -720,7 +812,24 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
     // handling) — a provenance stamp of "what this app actually parsed",
     // not a second raw-bytes read of the file.
     const sourceSha256 = createHash('sha256').update(text, 'utf8').digest('hex');
-    sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims, sourceSha256 });
+
+    // Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md), invariant 3:
+    // a saved corrected-claim artifact is only ever adopted when its stored
+    // hash matches what was JUST parsed above — a mismatch means the file on
+    // disk changed since those overrides were saved, and is surfaced as
+    // 'stale' rather than silently applied (or silently dropped).
+    let correctedClaimStatus: CorrectedClaimStatus = 'none';
+    try {
+      const artifact = await correctedClaimStore.getArtifact(userDataDir(), resolvedPath);
+      if (artifact) correctedClaimStatus = artifact.sourceFileHash === sourceSha256 ? 'applied' : 'stale';
+    } catch (err) {
+      // A corrupted/unreadable corrected-claims.json must never block
+      // opening the underlying claim file — same "never fail on this" ethos
+      // as sessionStore.ts's restore path. Treated as "no saved edits".
+      console.warn(`[corrected-claims] failed to read saved edits: ${(err as Error).message}`);
+    }
+
+    sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims, sourceSha256, correctedClaimStatus });
     await recordRecentFile(resolvedPath, fileName);
     return {
       sessionId,
@@ -728,6 +837,7 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
       fileName,
       source: loaded.source,
       summaries: loaded.claims.map(claimSummary),
+      correctedClaimStatus,
     };
   })();
 
@@ -807,22 +917,105 @@ function registerIpcHandlers(): void {
       throw new Error('Simulated PDF render failure (E2E test seam).');
     }
     // --- end TEST-ONLY SEAM --------------------------------------------------
-    const claim = getSessionClaim(sessionId, index);
-    return renderClaim(claim);
+    // Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md): the preview
+    // renders the EFFECTIVE claim (original + any active, applied
+    // overrides) so the on-screen form is WYSIWYG with what an export would
+    // produce right now. No `provenance` is passed here — only the export
+    // path below does — so this preview call's own signature/behavior is
+    // otherwise unchanged from before this feature.
+    const { effective } = await getEffectiveClaim(sessionId, index);
+    return renderClaim(effective);
   });
 
-  // Read-only inspector data for the renderer's inspector drawer (see
-  // ClaimDetailDto above). Same validated-index pattern as claim:getPdf —
-  // getSessionClaim throws a plain, renderer-safe Error for "no such session"
-  // or an out-of-range index.
+  // Field-level data for the renderer's inspector drawer (see ClaimDetailDto
+  // above) — built from the EFFECTIVE claim (overrides applied), with the
+  // editable-fields side-channel (editableFieldPaths/edits/editedFieldCount/
+  // correctedClaimStatus) describing exactly what was overridden and from
+  // what. Same validated-index pattern as claim:getPdf — getSessionClaim
+  // (inside getEffectiveClaim) throws a plain, renderer-safe Error for "no
+  // such session" or an out-of-range index.
   ipcMain.handle('claim:getDetail', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<ClaimDetailDto> => {
-    const claim = getSessionClaim(sessionId, index);
-    return buildClaimDetail(claim);
+    return buildEffectiveClaimDetail(sessionId, index);
+  });
+
+  // --- Editable fields: set / revert / clear-all overrides (docs/EDITABLE_FIELDS_DESIGN.md) ---
+  // Every handler below validates `fieldPath` against the SAME registry
+  // that ultimately applies it (src/model/editableFields.ts) before writing
+  // anything — an unrecognized or invalid value is rejected with a
+  // renderer-safe Error rather than silently accepted, so a corrupted or
+  // out-of-registry fieldPath can never reach corrected-claims.json.
+  ipcMain.handle(
+    'claim:setFieldOverride',
+    async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown, fieldPath: unknown, value: unknown): Promise<ClaimDetailDto> => {
+      const session = getSession(sessionId);
+      const original = getSessionClaim(sessionId, index);
+      if (typeof fieldPath !== 'string' || typeof value !== 'string' || typeof index !== 'number') {
+        throw new Error('Invalid field-edit request.');
+      }
+      const spec = findEditableField(original, fieldPath);
+      if (!spec) throw new Error(`"${fieldPath}" is not an editable field.`);
+      // Validate against a disposable clone BEFORE persisting anything, so
+      // an invalid value never lands in corrected-claims.json at all — the
+      // same validation `applyFieldOverrides` runs when re-hydrating, just
+      // surfaced here as an immediate, actionable error for the person
+      // typing it in rather than a silently-skipped override later.
+      const probe = cloneClaim(original);
+      try {
+        spec.setValue(probe, value);
+      } catch (err) {
+        throw new Error((err as Error).message || 'Invalid value.');
+      }
+      const key = `${index}::${fieldPath}`;
+      await correctedClaimStore.setFieldOverride(userDataDir(), session.filePath, session.sourceSha256, key, value);
+      // A fresh write always re-stamps the artifact's hash to the CURRENT
+      // file (see correctedClaimStore.ts's setFieldOverride) — so this
+      // session's overrides are current again even if they were 'stale'
+      // a moment ago.
+      session.correctedClaimStatus = 'applied';
+      return buildEffectiveClaimDetail(sessionId, index);
+    },
+  );
+
+  ipcMain.handle(
+    'claim:revertFieldOverride',
+    async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown, fieldPath: unknown): Promise<ClaimDetailDto> => {
+      const session = getSession(sessionId);
+      getSessionClaim(sessionId, index); // validates the index; result unused
+      if (typeof fieldPath !== 'string' || typeof index !== 'number') throw new Error('Invalid revert request.');
+      const key = `${index}::${fieldPath}`;
+      const remaining = await correctedClaimStore.removeFieldOverride(userDataDir(), session.filePath, key);
+      session.correctedClaimStatus = remaining ? 'applied' : 'none';
+      return buildEffectiveClaimDetail(sessionId, index);
+    },
+  );
+
+  // Invariant 8 ("clear all overrides for a claim, without needing to know
+  // the file format"): reverts every field on ONE claim back to its
+  // originally-parsed value. Other claims' overrides in the same batch file
+  // (see correctedClaimStore.ts's clearOverridesForClaim) are untouched.
+  ipcMain.handle('claim:clearOverridesForClaim', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<ClaimDetailDto> => {
+    const session = getSession(sessionId);
+    getSessionClaim(sessionId, index);
+    if (typeof index !== 'number') throw new Error('Invalid claim index.');
+    const remaining = await correctedClaimStore.clearOverridesForClaim(userDataDir(), session.filePath, index);
+    session.correctedClaimStatus = remaining ? 'applied' : 'none';
+    return buildEffectiveClaimDetail(sessionId, index);
+  });
+
+  // Staleness flow (docs/EDITABLE_FIELDS_DESIGN.md, invariant 3): the
+  // renderer's "Discard saved edits" action on the stale-overrides banner.
+  // Deletes the WHOLE artifact for this session's file — every claim in it
+  // — since a hash mismatch means the file itself changed, not just one
+  // claim's data.
+  ipcMain.handle('claim:discardStaleOverrides', async (_event: IpcMainInvokeEvent, sessionId: unknown): Promise<void> => {
+    const session = getSession(sessionId);
+    await correctedClaimStore.clearArtifact(userDataDir(), session.filePath);
+    session.correctedClaimStatus = 'none';
   });
 
   ipcMain.handle('dialog:exportPdf', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<string | null> => {
-    const session = getSession(sessionId);
-    const claim = getSessionClaim(sessionId, index);
+    const { session, original, effective, applied } = await getEffectiveClaim(sessionId, index);
+    const claim = original; // filename below uses only non-editable fields (provider name, service date) — original vs. effective makes no difference.
     const win = BrowserWindow.fromWebContents(event.sender);
 
     // --- TEST-ONLY SEAM ----------------------------------------------------
@@ -847,19 +1040,29 @@ function registerIpcHandlers(): void {
     // --- end TEST-ONLY SEAM --------------------------------------------------
 
     // Build 3.3: the export path is the ONLY caller that supplies
-    // provenance — claim:getPdf (preview) above calls renderClaim(claim)
-    // with no second argument, so preview rendering is untouched. Every
+    // provenance — claim:getPdf (preview) above calls renderClaim with no
+    // second argument, so preview rendering is untouched by provenance
+    // itself (it DOES render the effective/overridden claim — see that
+    // handler's own comment — just without a provenance footer). Every
     // varying value is read here (session's stored hash/name, the build-time
     // version stamp, "now") and passed in — renderClaim/the form renderers
     // never compute any of it themselves.
+    //
+    // Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md), invariant 6:
+    // `edited`/`editedFieldCount` are set from `applied` (computed above by
+    // getEffectiveClaim) — whenever ANY override is active, every renderer's
+    // footer draws the mandatory EDITED stamp. This is the ONLY place that
+    // decides the stamp's on/off state; a renderer never decides it itself.
     const buildInfo = readBuildInfo();
     const provenance: RenderProvenance = {
       sourceFileName: session.fileName,
       sourceSha256: session.sourceSha256,
       appVersion: buildInfo?.version ?? app.getVersion(),
       renderedAt: new Date(),
+      edited: applied.length > 0,
+      editedFieldCount: applied.length,
     };
-    const bytes = await renderClaim(claim, provenance);
+    const bytes = await renderClaim(effective, provenance);
     await writeFileAtomic(filePath, Buffer.from(bytes));
     lastExportedPath = filePath;
     return filePath;

@@ -25,13 +25,39 @@ export interface RenderProvenance {
   appVersion: string;
   /** Wall-clock time of this specific export, supplied by the caller so the renderer never calls `new Date()` itself. */
   renderedAt: Date;
+  /**
+   * Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md), invariant 6:
+   * whether the `claim` this provenance is attached to has ANY active field
+   * override applied. Required (not optional) precisely so a caller can
+   * never construct a `RenderProvenance` without deciding this — the
+   * mandatory EDITED stamp below is gated on it. `false`/`0` for every
+   * existing call site that predates this feature (the golden/provenance
+   * tests), which changes nothing about their rendered output — see
+   * `provenanceFooterLines` below.
+   */
+  edited: boolean;
+  /** How many field overrides are active, for the stamp's wording ("EDITED — N field(s) modified by user"). 0 when `edited` is false. */
+  editedFieldCount: number;
 }
 
-/** Two short, footer-sized lines: source file + a short hash prefix, then render timestamp + app version. Shared verbatim by all three renderers so the wording never drifts between forms. */
-export function provenanceFooterLines(p: RenderProvenance): [string, string] {
+/**
+ * The footer lines to draw, in order. Always ends with the same two lines as
+ * before this feature (source file + hash, then timestamp + version) —
+ * unchanged in content and position when `editedFieldCount` is 0, which is
+ * what keeps every pre-existing golden/determinism test byte-identical.
+ * When `editedFieldCount > 0`, a THIRD line is PREPENDED — the mandatory,
+ * unremovable "this export contains user-edited values" stamp (invariant 6):
+ * it is drawn FIRST (most prominent position) by every caller, distinct
+ * from — and never a replacement for — the "visual facsimile, not a
+ * submittable form" disclaimer each renderer's footer already draws
+ * unconditionally.
+ */
+export function provenanceFooterLines(p: RenderProvenance): string[] {
   const shortSha = p.sourceSha256.length > 12 ? `${p.sourceSha256.slice(0, 12)}…` : p.sourceSha256;
-  return [
-    `Source: ${p.sourceFileName}  ·  SHA-256 ${shortSha}`,
-    `Rendered ${p.renderedAt.toISOString()}  ·  claim-viewer ${p.appVersion}`,
-  ];
+  const lines: string[] = [];
+  if (p.editedFieldCount > 0) {
+    lines.push(`EDITED — ${p.editedFieldCount} field${p.editedFieldCount === 1 ? '' : 's'} modified by user, see below`);
+  }
+  lines.push(`Source: ${p.sourceFileName}  ·  SHA-256 ${shortSha}`, `Rendered ${p.renderedAt.toISOString()}  ·  claim-viewer ${p.appVersion}`);
+  return lines;
 }

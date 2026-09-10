@@ -17,8 +17,7 @@ import {
   toPdfRect,
 } from './layout.js';
 import type { FieldBox, Rect, GridColumn } from './layout.js';
-import { safeText, orDash, fitText, formatMoney, rightAlignX, composeName, composeAddressLine, EM_DASH, embedUnicodeFonts } from '../text.js';
-import { provenanceFooterLines } from '../provenance.js';
+import { safeText, orDash, fitText, formatMoney, rightAlignX, composeName, composeAddressLine, EM_DASH, embedUnicodeFonts, drawProvenanceFooterLines } from '../text.js';
 import type { RenderProvenance } from '../provenance.js';
 
 /**
@@ -226,10 +225,7 @@ function drawFooter(
   page.drawText(right, { x: rightX, y, size, font: fonts.label, color: GRAY });
 
   if (provenance) {
-    const provSize = 4.5;
-    const [line1, line2] = provenanceFooterLines(provenance);
-    page.drawText(safeText(fonts.label, line1), { x: 24, y: y - 8, size: provSize, font: fonts.label, color: GRAY });
-    page.drawText(safeText(fonts.label, line2), { x: 24, y: y - 16, size: provSize, font: fonts.label, color: GRAY });
+    drawProvenanceFooterLines(page, fonts.label, provenance, 24, y);
   }
 }
 

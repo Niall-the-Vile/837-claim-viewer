@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadClaims, renderClaim } from '../src/app/claimService.js';
 import { addRecentFile, loadSession, saveOpenTabs } from '../src/app/persistence/sessionStore.js';
+import { setFieldOverride, getArtifact } from '../src/app/persistence/correctedClaimStore.js';
 
 /**
  * Verification for every `userData` writer (docs/BUILD_QUEUE.md rule 12).
@@ -77,6 +78,17 @@ function noCanary(text: string): boolean {
  * build may only append/strengthen, never weaken, this allowlist) — it now
  * also rejects a present-but-invalid `uiScale`, while still accepting a
  * session.json that never set one.
+ *
+ * The editable-fields build (docs/EDITABLE_FIELDS_DESIGN.md) APPENDS one
+ * more row: corrected-claims.json, written by the new Electron-free
+ * src/app/persistence/correctedClaimStore.ts module -- the ONLY new
+ * userData writer this build adds, per docs/BUILD_QUEUE.md rule 12. Its
+ * predicate requires the exact shape that module produces: schemaVersion 1,
+ * an `artifacts` map keyed by source file path, each artifact carrying
+ * schemaVersion/sourceFilePath/sourceFileHash/createdAt/updatedAt plus a
+ * fieldOverrides map whose values are always plain strings -- never a
+ * nested object, since this store only ever persists the flat field values
+ * the user typed.
  */
 export const ALLOWED_USERDATA_FILES: Record<string, (content: string) => boolean> = {
   'session.json': (content) => {
@@ -86,6 +98,28 @@ export const ALLOWED_USERDATA_FILES: Record<string, (content: string) => boolean
     if (!Array.isArray(obj['tabs']) || !Array.isArray(obj['recentFiles']) || typeof obj['activeIndex'] !== 'number') return false;
     const uiScale = obj['uiScale'];
     return uiScale === undefined || (typeof uiScale === 'number' && [100, 125, 150, 175].includes(uiScale));
+  },
+  'corrected-claims.json': (content) => {
+    const parsed: unknown = JSON.parse(content);
+    if (typeof parsed !== 'object' || parsed === null) return false;
+    const obj = parsed as Record<string, unknown>;
+    if (obj['schemaVersion'] !== 1 || typeof obj['artifacts'] !== 'object' || obj['artifacts'] === null) return false;
+    return Object.values(obj['artifacts'] as Record<string, unknown>).every((artifact) => {
+      if (typeof artifact !== 'object' || artifact === null) return false;
+      const a = artifact as Record<string, unknown>;
+      if (
+        a['schemaVersion'] !== 1 ||
+        typeof a['sourceFilePath'] !== 'string' ||
+        typeof a['sourceFileHash'] !== 'string' ||
+        typeof a['createdAt'] !== 'string' ||
+        typeof a['updatedAt'] !== 'string' ||
+        typeof a['fieldOverrides'] !== 'object' ||
+        a['fieldOverrides'] === null
+      ) {
+        return false;
+      }
+      return Object.values(a['fieldOverrides'] as Record<string, unknown>).every((v) => typeof v === 'string');
+    });
   },
 };
 
@@ -111,11 +145,14 @@ describe('Persisted userData artifacts (docs/BUILD_QUEUE.md rule 12)', () => {
       await addRecentFile(userDataDir, fixtureRef);
 
       // --- "Export": rendered PDF bytes. Real exports go to a user-chosen
-      // path OUTSIDE userData entirely (Build 4.3 is the only build that
-      // ever writes claim CONTENT to disk) — this step must leave
-      // userDataDir untouched; it's exercised here only to prove the full
-      // open->export cycle doesn't smuggle anything into userData along the
-      // way.
+      // path OUTSIDE userData entirely (Build 4.3 remains the only build
+      // that writes claim content to a user-chosen, non-userData path; the
+      // editable-fields build below is a narrower, deliberate exception --
+      // see that describe block -- confined to the fields a user explicitly
+      // edited, inside userData, never the source path) -- this step must
+      // leave userDataDir untouched; it's exercised here only to prove the
+      // full open->export cycle doesn't smuggle anything into userData
+      // along the way.
       const pdfBytes = await renderClaim(claim);
       expect(pdfBytes.length).toBeGreaterThan(0);
 
@@ -145,6 +182,55 @@ describe('Persisted userData artifacts (docs/BUILD_QUEUE.md rule 12)', () => {
       const session = await loadSession(userDataDir);
       expect(session.tabs).toEqual([]); // cleared by the "close" step
       expect(session.recentFiles).toEqual([fixtureRef]); // survives it
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Editable fields: corrected-claims.json (docs/EDITABLE_FIELDS_DESIGN.md)', () => {
+  it('open -> edit a field -> export -> close: corrected-claims.json is allowlisted, carries no PHI canary, and records the actual edit (proving the feature works, not just that nothing leaked)', async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-userdata-test-'));
+    try {
+      const fixturePath = join(userDataDir, '..', 'phi-canary-fixture-source', 'phi-canary-fixture.json');
+      const text = syntheticClaimJson();
+      const { claims } = loadClaims(text);
+      const claim = claims[0]!;
+
+      // The user corrects the (canary) tax ID to a non-canary value. The
+      // FIELD KEY the store persists never contains the value itself in any
+      // way that could be mistaken for the field name — this asserts the
+      // stored artifact literally contains the corrected value the user
+      // typed, and nothing else.
+      const correctedTaxId = '123456789';
+      const sourceHash = 'deadbeef'.repeat(8);
+      await setFieldOverride(userDataDir, fixturePath, sourceHash, '0::billingProvider.taxId', correctedTaxId);
+
+      // "Export": unaffected by this build — still only ever writes the
+      // rendered PDF to a user-chosen path OUTSIDE userData (not exercised
+      // here; see the describe block above). What matters for THIS test is
+      // that saving an override never touches anything but
+      // corrected-claims.json.
+      const pdfBytes = await renderClaim(claim);
+      expect(pdfBytes.length).toBeGreaterThan(0);
+
+      // --- Assertions ---------------------------------------------------
+      const entries = readdirSync(userDataDir);
+      expect(entries).toContain('corrected-claims.json');
+      for (const entry of entries) {
+        expect(Object.keys(ALLOWED_USERDATA_FILES)).toContain(entry);
+      }
+
+      const content = readFileSync(join(userDataDir, 'corrected-claims.json'), 'utf8');
+      // No canary anywhere -- and specifically, the ORIGINAL (canary) tax ID
+      // that the user just corrected away from must not itself be present.
+      expect(noCanary(content)).toBe(true);
+      expect(content.includes(SSN_CANARY_DIGITS)).toBe(false);
+      expect(ALLOWED_USERDATA_FILES['corrected-claims.json']!(content)).toBe(true);
+
+      const artifact = await getArtifact(userDataDir, fixturePath);
+      expect(artifact?.fieldOverrides).toEqual({ '0::billingProvider.taxId': correctedTaxId });
+      expect(artifact?.sourceFileHash).toBe(sourceHash);
     } finally {
       rmSync(userDataDir, { recursive: true, force: true });
     }

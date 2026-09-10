@@ -91,6 +91,12 @@ const FROZEN_PROVENANCE: RenderProvenance = {
   sourceSha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff0',
   appVersion: '0.0.1',
   renderedAt: new Date('2026-01-01T00:00:00.000Z'),
+  // No active field override for this golden case — edited:false/0 draws
+  // nothing extra (docs/EDITABLE_FIELDS_DESIGN.md), so this case's bytes are
+  // unaffected by that feature. See test/provenance.test.ts's dedicated
+  // EDITED_PROVENANCE case for the stamp's own coverage.
+  edited: false,
+  editedFieldCount: 0,
 };
 
 function goldenCases(): GoldenCase[] {

@@ -19,6 +19,9 @@ export interface ClaimSummaryDto {
   warningCount: number;
 }
 
+/** Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md) — mirrors electron/main.ts's CorrectedClaimStatus. `'stale'` means a saved corrected-claim artifact exists for a DIFFERENT version of this file (its hash no longer matches) and was NOT applied — the renderer surfaces this as a dismissible banner offering `discardStaleOverrides`, never applies it silently. */
+export type CorrectedClaimStatusDto = 'none' | 'applied' | 'stale';
+
 export interface OpenClaimResultDto {
   sessionId: string;
   /** Resolved absolute path of the opened file — see electron/main.ts's `OpenClaimResult.filePath` doc comment for why the renderer is allowed to see this one path. */
@@ -26,6 +29,7 @@ export interface OpenClaimResultDto {
   fileName: string;
   source: 'json' | 'x12';
   summaries: ClaimSummaryDto[];
+  correctedClaimStatus: CorrectedClaimStatusDto;
 }
 
 /** `{ raw, decoded }` for a single coded field — structurally identical to `src/model/decode.ts`'s `CodedValue` (declared again here for the same "no main-process import in the renderer's type surface" reason as the DTOs around it). `decoded` is `null` for a blank or unrecognized raw code (docs/BUILD_QUEUE.md Build 2.2) — never the string "Unknown". */
@@ -124,6 +128,17 @@ export interface ClaimDetailDto {
   };
   warnings: Array<{ code: string; severity: WarningSeverity; message: string }>;
   rawText: string;
+
+  // --- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md) --------------------
+  // Structurally identical to electron/main.ts's own additions to
+  // ClaimDetailDto — see that file's header comment for the full
+  // explanation (short version: every scalar value above already reflects
+  // any active override; `warnings` above is always computed from the
+  // ORIGINAL parse regardless).
+  editableFieldPaths: string[];
+  edits: Array<{ fieldPath: string; label: string; originalValue: string; currentValue: string }>;
+  editedFieldCount: number;
+  correctedClaimStatus: CorrectedClaimStatusDto;
 }
 
 export type OpenExportMode = 'file' | 'folder';
@@ -194,6 +209,18 @@ const claimApi = Object.freeze({
   forgetSession: (): Promise<void> => ipcRenderer.invoke('session:forget'),
   /** Persists the View menu's UI text scale (docs/UI_REQUIREMENTS_v3_queued_features.md §9) inside the same session.json — called every time src/renderer/features/uiScale.ts cycles it. Main silently ignores anything outside UI_SCALE_VALUES rather than persisting it. */
   saveUiScale: (scale: UiScaleValue): Promise<void> => ipcRenderer.invoke('settings:saveUiScale', scale),
+
+  // --- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md) -------------------
+  /** Sets (creates or updates) one field override on the claim at `index`, validated and persisted in main, and returns the fresh, fully-recomputed ClaimDetailDto so the caller can repaint immediately without a second round-trip. Rejects with a user-facing message if `fieldPath` isn't a recognized editable field or `value` fails that field's own validation. */
+  setFieldOverride: (sessionId: string, index: number, fieldPath: string, value: string): Promise<ClaimDetailDto> =>
+    ipcRenderer.invoke('claim:setFieldOverride', sessionId, index, fieldPath, value),
+  /** Reverts ONE field back to its originally-parsed value. Returns the fresh ClaimDetailDto. */
+  revertFieldOverride: (sessionId: string, index: number, fieldPath: string): Promise<ClaimDetailDto> =>
+    ipcRenderer.invoke('claim:revertFieldOverride', sessionId, index, fieldPath),
+  /** Reverts EVERY field on the claim at `index` back to its originally-parsed value (invariant 8 — "clear all overrides for a claim"). Other claims in the same batch file are untouched. Returns the fresh ClaimDetailDto. */
+  clearOverridesForClaim: (sessionId: string, index: number): Promise<ClaimDetailDto> => ipcRenderer.invoke('claim:clearOverridesForClaim', sessionId, index),
+  /** The stale-overrides banner's "Discard saved edits" action: deletes every saved override for this tab's file (its `correctedClaimStatus` was `'stale'`). Never applies them — only ever discards. */
+  discardStaleOverrides: (sessionId: string): Promise<void> => ipcRenderer.invoke('claim:discardStaleOverrides', sessionId),
 });
 
 export type ClaimApi = typeof claimApi;

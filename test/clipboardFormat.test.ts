@@ -100,6 +100,10 @@ function baseDetail(): ClaimDetailDto {
     totals: { totalCharge: 140, amountPaid: 0, sumOfLineCharges: 140, delta: 0 },
     warnings: [],
     rawText: '{}',
+    editableFieldPaths: [],
+    edits: [],
+    editedFieldCount: 0,
+    correctedClaimStatus: 'none',
   };
 }
 

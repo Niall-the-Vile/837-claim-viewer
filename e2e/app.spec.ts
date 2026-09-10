@@ -178,10 +178,15 @@ test.describe('837 Claim Viewer — E2E', () => {
       // added in the tabs build, docs/TABS_BUILD_PLAN.md §2 / rule 7b.
       // getAppInfo/getSessionRestoreState/saveSession/forgetSession added by
       // §2c's version/build stamp and §2e's session restore + recent files.
-      // saveUiScale added by Build 2.0's UI text scale, docs/UI_REQUIREMENTS_v3_queued_features.md §9.)
+      // saveUiScale added by Build 2.0's UI text scale, docs/UI_REQUIREMENTS_v3_queued_features.md §9.
+      // setFieldOverride/revertFieldOverride/clearOverridesForClaim/
+      // discardStaleOverrides added by the editable-fields feature,
+      // docs/EDITABLE_FIELDS_DESIGN.md.)
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
       expect(apiKeys).toEqual([
+        'clearOverridesForClaim',
         'closeSession',
+        'discardStaleOverrides',
         'exportPdf',
         'forgetSession',
         'getAppInfo',
@@ -191,8 +196,10 @@ test.describe('837 Claim Viewer — E2E', () => {
         'getSessionRestoreState',
         'openClaim',
         'openExport',
+        'revertFieldOverride',
         'saveSession',
         'saveUiScale',
+        'setFieldOverride',
       ]);
 
       // Offline kill-switch (electron/main.ts's installOfflineKillSwitch):
