@@ -351,7 +351,8 @@ practice, bad cleanup). Detected immediately: `tsc` stopped resolving. Fixed wit
 ---
 
 ## Build 3 — Data integrity
-STATUS: IN PROGRESS (3.1 GREEN; 3.2/3.3 in progress; 3.4-3.6 stretch, status TBD)
+STATUS: GREEN (3.1, 3.2, 3.3 shipped and verified; 3.4-3.6 explicitly DROPPED — see
+"Not done and why" at the end of this section, not left implicitly unowned)
 
 Start: 2026-09-10 20:26 UTC (session start `npm run verify`: 258 vitest + 53 E2E, green
 at commit `5211701`, 2 commits past `build-2-green`)
@@ -612,3 +613,63 @@ count is unaffected, and geometry stays clean (`assertCleanLayout`).
 - Commit will be titled `goldens: regenerate for 3.3 provenance footer` — the
   diff is additive only (one new file, `test/golden/cms1500-synthetic-json-with-provenance.json`);
   the four pre-existing golden files have zero byte changes, confirmed above.
+
+### Not done and why (3.4-3.6 — explicitly DROPPED this session, per BUILD_QUEUE.md's
+own framing of them as the stretch tail: "do 3.1-3.3 first and treat 3.4-3.6 as a
+stretch goal")
+
+- **3.4 (per-box geometry) — DROPPED.** Not started. `boxGeometry(claim)` per
+  form renderer plus a new `claim:getGeometry` IPC handler is meaningful,
+  bounded work on its own, but it exists ONLY to make 3.5/3.6 possible — and both
+  of those were also dropped (see below) after weighing the remaining session
+  budget against the risk profile BUILD_QUEUE.md itself assigns this build
+  ("Build 3... the riskiest build in the queue"). Shipping a new IPC surface
+  (preload key + main handler + `global.d.ts` type + `e2e/app.spec.ts`'s key
+  array, per rule 7b) with no consumer in this session, on a build already
+  carrying twelve new warning codes, a new page kind, and a new renderer
+  parameter, was judged to add surface area without matching this session's
+  value delivered. Deferred as a coherent unit to the next session that also
+  picks up 3.5/3.6.
+- **3.5 (clickable warnings) — DROPPED.** Depends on 3.4's geometry AND on
+  giving warning objects a stable field/line anchor (a `ClaimWarning` model
+  change touching `src/model/claim.ts` and every warning-emitting call site in
+  `src/model/validate.ts`/`src/sources/x12/x12ClaimSource.ts`) — real design
+  work, not a mechanical follow-on. Not started.
+- **3.6 (wire Ctrl+F search to geometry) — DROPPED.** Depends on 3.4. The
+  existing Ctrl+F inspector-only scroll+flash (Build 2.1) is completely
+  unaffected and still works exactly as before (`e2e/search.spec.ts`, still
+  green). Per BUILD_QUEUE.md's own instruction for this exact situation: stated
+  plainly here, not left implicitly unowned — search-highlight-on-canvas is
+  deferred to a future build (BUILD_QUEUE.md's Build 7, once the DESIGN-GATED
+  side-by-side-compare and batch-triage-pane screens land, is the queue's own
+  next open slot; this doesn't have to land there specifically, just isn't
+  claimed as done here).
+
+None of 3.4-3.6 touched any file — the tree is exactly as 3.3 left it, still
+green, so there was nothing to revert.
+
+### Final verification for the whole Build 3 session
+- typecheck: **pass** (3 configs: `tsconfig.json`, `tsconfig.renderer.json`, `tsconfig.e2e.json`)
+- vitest: **258 → 337** (+79 across 3.1/3.2/3.3), all pass, 0 failures
+- Playwright E2E: **53 → 53** (unchanged all session — no renderer/UI surface touched
+  by 3.1-3.3), all pass, 0 flakes/retries needed
+- `npm run verify` (typecheck + vitest + build:app + full E2E suite): **GREEN**,
+  run in full at the end of 3.1, again at the end of 3.2+3.3
+- Portable exe: **not rebuilt this session** — `npm run verify` (not
+  `verify:release`) was used at every checkpoint per the rule that only Build 1
+  and the final build of a night need a freshly packed exe; this session judged
+  3.1-3.3 (source/data/test changes with no UI surface) not to warrant an
+  unpack-and-verify-asar pass without a UI change to justify it. If a packaged
+  build is wanted before distribution, run `npm run verify:release` fresh — it
+  will re-run everything above plus `electron-builder`.
+
+### Session process note
+This session ran as a single agent end-to-end rather than the multi-Sonnet-
+subagent orchestration BUILD_QUEUE.md rule 5 describes (spawn one coding
+subagent per disjoint file area, keep review on the main model). The
+checkpoint-and-verify DISCIPLINE from BUILD_QUEUE.md/TABS_BUILD_PLAN.md was
+followed throughout (start green, verify after every logical change, checkpoint
+with git before moving on, adversarial self-check against real fixtures before
+calling anything done, log honestly) — only the delegation mechanism differed,
+since there was one agent to delegate to. Tag `build-3-green` applied to the
+final commit below.
