@@ -1,11 +1,11 @@
 import type { ClaimDetailDto, InstitutionalDetailDto } from '../../electron/preload.js';
 import type { FormType } from '../model/claim.js';
-import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl } from './dom.js';
-import { state, currentScreen, type TabState } from './tabs.js';
+import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl, clearOverridesBtn } from './dom.js';
+import { state, currentScreen, activeTab, type TabState } from './tabs.js';
 import { copyToClipboard } from './clipboard.js';
 import { formatServiceLinesTsv, reconciliationVerdict } from './clipboardFormat.js';
 import { explainWarning } from './warningExplanations.js';
-import { ICON_COPY, ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
+import { ICON_COPY, ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE, ICON_EDIT, ICON_REVERT } from './icons.js';
 
 /**
  * Inspector drawer rendering. Pure-moved out of main.ts — see
@@ -106,6 +106,23 @@ interface InspRow {
    * that split matters for copy/Ctrl+C.
    */
   decoded?: string | null;
+  /**
+   * Editable fields (docs/EDITABLE_FIELDS_DESIGN.md §2): set only when this
+   * row corresponds 1:1 to a field in `src/model/editableFields.ts`'s
+   * registry — the exact string electron/main.ts's ClaimDetailDto carries in
+   * `editableFieldPaths`/`edits[].fieldPath`. Decoration (pencil/edited
+   * badge/revert — see decorateEditableRows below) happens in a post-pass
+   * over the rendered DOM rather than inline here, so buildGroup itself
+   * stays unaware of the editing feature.
+   */
+  fieldKey?: string;
+  /**
+   * The RAW value to seed an inline edit's `<input>` with, when it differs
+   * from `value` (e.g. "Billing tax ID" DISPLAYS "990000000 (E)" but the
+   * only thing that's actually editable is the plain tax id). Falls back to
+   * `value` when omitted.
+   */
+  editValue?: string;
 }
 
 /**
@@ -148,6 +165,48 @@ interface InspRow {
 const postRenderHooks: Array<() => void> = [];
 export function onInspectorRendered(hook: () => void): void {
   postRenderHooks.push(hook);
+}
+
+/**
+ * Editable fields (docs/EDITABLE_FIELDS_DESIGN.md): fired after `tab.detail`
+ * has just been replaced by a fresh ClaimDetailDto from a
+ * setFieldOverride/revertFieldOverride/clearOverridesForClaim IPC round
+ * trip. main.ts registers a hook here (initInspectorEditing) to refresh
+ * whatever else depends on claim-detail data outside the inspector itself
+ * (the PDF preview, so an edit is immediately WYSIWYG — see the design
+ * doc's §4) — this file doesn't import main.ts's loading machinery directly,
+ * to avoid a module cycle (overlays.ts already imports formatMoney/
+ * formTypeText FROM this file, so this file importing overlays.ts back would
+ * create one; dependency injection, same pattern as tabs.ts's
+ * TabStripDeps/shortcuts.ts's ShortcutDeps, sidesteps that entirely).
+ */
+const claimDetailChangedHooks: Array<(tab: TabState) => void> = [];
+function notifyClaimDetailChanged(tab: TabState): void {
+  renderInspector(tab, tab.detail!);
+  for (const hook of claimDetailChangedHooks) hook(tab);
+}
+
+/**
+ * Toast surfacing for a failed edit (invalid value, IPC rejection). Wired by
+ * main.ts (`initInspectorEditing`) to the shared `showToast` — see the
+ * module-cycle note above for why this file doesn't import overlays.ts
+ * directly. A no-op default keeps this file safely importable/testable
+ * (e.g. from a future unit test) before main.ts wires it up.
+ */
+let showEditToast: (message: string, isError: boolean) => void = () => {};
+
+export interface InspectorEditingDeps {
+  onClaimDetailChanged: (tab: TabState) => void;
+  showToast: (message: string, isError: boolean) => void;
+}
+
+export function initInspectorEditing(deps: InspectorEditingDeps): void {
+  claimDetailChangedHooks.push(deps.onClaimDetailChanged);
+  showEditToast = deps.showToast;
+}
+
+function editErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function syncCaret(details: HTMLDetailsElement): void {
@@ -217,6 +276,14 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
       // this file lays out a row's markup.
       rowEl.dataset['searchKey'] = row.key;
       rowEl.dataset['searchValue'] = row.value;
+      // Editable fields (docs/EDITABLE_FIELDS_DESIGN.md): a data attribute,
+      // same pattern as search's above, decoupling decorateEditableRows
+      // (called once at the end of renderInspector) from buildGroup's exact
+      // markup layout.
+      if (row.fieldKey) {
+        rowEl.dataset['fieldKey'] = row.fieldKey;
+        rowEl.dataset['editValue'] = row.editValue ?? row.value;
+      }
 
       if (row.glyph) {
         const glyphEl = document.createElement('span');
@@ -491,7 +558,23 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
         return rows;
       })
     : [{ key: 'Status', value: 'No warnings — this claim reconciles cleanly.', variant: 'ok' }];
-  inspectorBodyEl.append(buildGroup('warn', 'Data warnings', String(detail.warnings.length), hasWarnings, warnRows, hasWarnings));
+  // Editable fields, invariant 4: an edit must never make a warning
+  // silently disappear — this note is the UI-visible reminder that the
+  // warnings ABOVE are, and always will be, computed from the ORIGINAL
+  // parsed claim (electron/main.ts never recomputes them from the effective/
+  // overridden claim). Prepended so it's the first thing read, whether or
+  // not there happen to be any warnings this claim actually trips.
+  if (detail.editedFieldCount > 0) {
+    warnRows.unshift({
+      key: '',
+      value: `${detail.editedFieldCount} field${detail.editedFieldCount === 1 ? '' : 's'} edited on this claim — warnings above reflect the original parsed data, not your edits below.`,
+      variant: 'dim',
+      isExplanation: true,
+    });
+  }
+  inspectorBodyEl.append(
+    buildGroup('warn', 'Data warnings', String(detail.warnings.length), hasWarnings, warnRows, hasWarnings || detail.editedFieldCount > 0),
+  );
 
   // Patient
   const p = detail.patient;
@@ -503,12 +586,12 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
       false,
       [
         { key: 'Name', value: orDash(p.name) },
-        { key: 'Date of birth', value: orDash(p.dob) },
+        { key: 'Date of birth', value: orDash(p.dob), fieldKey: 'patient.dob' },
         { key: 'Sex', value: orDash(p.sex) },
         { key: 'Address', value: orDash(p.address) },
-        { key: 'Phone', value: orDash(p.phone) },
+        { key: 'Phone', value: orDash(p.phone), fieldKey: 'patient.phone' },
         { key: 'Rel. to insured', value: orDash(p.relationshipToInsured) },
-        { key: 'Account no.', value: orDash(p.accountNumber) },
+        { key: 'Account no.', value: orDash(p.accountNumber), fieldKey: 'patient.accountNumber' },
       ],
       true,
     ),
@@ -524,8 +607,8 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
       false,
       [
         { key: 'Name', value: orDash(ins.name) },
-        { key: 'Member ID', value: orDash(ins.memberId) },
-        { key: 'Group', value: orDash(ins.group) },
+        { key: 'Member ID', value: orDash(ins.memberId), fieldKey: 'insured.memberId' },
+        { key: 'Group', value: orDash(ins.group), fieldKey: 'insured.group' },
         { key: 'Plan', value: orDash(ins.plan) },
         { key: 'Date of birth', value: orDash(ins.dob) },
         { key: 'Sex', value: orDash(ins.sex) },
@@ -539,18 +622,24 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   // Providers (billing / rendering / referring / facility) + payer
   const providerRows: InspRow[] = [
     { key: 'Billing', value: orDash(detail.providers.billing.name) },
-    { key: 'Billing NPI', value: orDash(detail.providers.billing.npi) },
+    { key: 'Billing NPI', value: orDash(detail.providers.billing.npi), fieldKey: 'billingProvider.npi' },
     {
       key: 'Billing tax ID',
       value: detail.providers.billing.taxId
         ? `${detail.providers.billing.taxId}${detail.providers.billing.taxIdType ? ` (${detail.providers.billing.taxIdType})` : ''}`
         : '—',
+      fieldKey: 'billingProvider.taxId',
+      // The DISPLAYED value above includes the "(E)"/"(S)" tax-id-type
+      // suffix — the only thing actually editable is the plain tax id, so
+      // the inline edit form must seed from THAT, not the composed display
+      // string (see this row's fieldKey / InspRow.editValue doc comment).
+      editValue: detail.providers.billing.taxId,
     },
     { key: 'Billing address', value: orDash(detail.providers.billing.address) },
     { key: 'Billing phone', value: orDash(detail.providers.billing.phone) },
     { key: 'Taxonomy', value: orDash(detail.providers.billing.taxonomy) },
     { key: 'Rendering', value: orDash(detail.providers.rendering.name) },
-    { key: 'Rendering NPI', value: orDash(detail.providers.rendering.npi) },
+    { key: 'Rendering NPI', value: orDash(detail.providers.rendering.npi), fieldKey: 'renderingProvider.npi' },
   ];
   if (detail.providers.referring) {
     const r = detail.providers.referring;
@@ -578,7 +667,11 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   }
 
   // Diagnoses
-  const dxRows: InspRow[] = detail.diagnoses.map((d) => ({ key: d.pointer || `#${d.ordinal}`, value: orDash(d.code) }));
+  const dxRows: InspRow[] = detail.diagnoses.map((d, i) => ({
+    key: d.pointer || `#${d.ordinal}`,
+    value: orDash(d.code),
+    fieldKey: `diagnoses[${i}].code`,
+  }));
   inspectorBodyEl.append(buildGroup('dx', 'Diagnoses', tags.diagnoses, false, dxRows, false));
 
   // Service lines. docs/BUILD_QUEUE.md Build 2.2: the composite per-line
@@ -590,7 +683,7 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   // never folded into the raw string). `pos <code>` is added to the raw
   // parts alongside the existing `rev <code>` so a professional line's
   // place-of-service code is visible at all (it wasn't shown here before).
-  const lineRows: InspRow[] = detail.serviceLines.map((l) => {
+  const lineRows: InspRow[] = detail.serviceLines.flatMap((l, i) => {
     const parts: string[] = [];
     parts.push(l.dates || '—');
     const proc = l.modifiers ? `${l.procCode || '—'}-${l.modifiers.replace(/ /g, '-')}` : l.procCode || '—';
@@ -609,9 +702,35 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
       if (mod.decoded) decodedBits.push(`${mod.raw}: ${mod.decoded}`);
     }
 
-    const row: InspRow = { key: `Line ${l.line}`, value: parts.join('  ·  ') };
-    if (decodedBits.length > 0) row.decoded = decodedBits.join('  ·  ');
-    return row;
+    const summaryRow: InspRow = { key: `Line ${l.line}`, value: parts.join('  ·  ') };
+    if (decodedBits.length > 0) summaryRow.decoded = decodedBits.join('  ·  ');
+
+    // Editable fields (docs/EDITABLE_FIELDS_DESIGN.md §2): the composite
+    // summary row above mixes several raw fields into one string, so it
+    // can't itself carry a single fieldKey (see this file's header on why
+    // composed values stay copy-only). Instead, one small editable sub-row
+    // per registered per-line field is appended right under the summary —
+    // shown whenever that field currently HAS an override (so the edit
+    // stays visible per invariant 5, regardless of Edit mode) OR Edit mode
+    // is on (so there's something to click to start editing it). Hidden
+    // entirely otherwise, so a claim nobody has ever edited looks exactly
+    // like it did before this feature.
+    const editableLineFields: Array<{ suffix: string; fieldKey: string; value: string; editValue?: string }> = [
+      { suffix: 'Procedure/HCPCS code', fieldKey: `serviceLines[${i}].procCode`, value: orDash(l.procCode) },
+      { suffix: 'Modifiers', fieldKey: `serviceLines[${i}].modifiers`, value: orDash(l.modifiers) },
+      { suffix: 'Units', fieldKey: `serviceLines[${i}].units`, value: orDash(l.units) },
+      { suffix: 'Charge', fieldKey: `serviceLines[${i}].charge`, value: formatMoney(l.charge), editValue: l.charge.toFixed(2) },
+    ];
+    const subRows: InspRow[] = [];
+    for (const f of editableLineFields) {
+      const isEdited = detail.edits.some((e) => e.fieldPath === f.fieldKey);
+      if (!isEdited && !state.editModeOn) continue;
+      const row: InspRow = { key: `Line ${l.line} — ${f.suffix}`, value: f.value, variant: 'dim', fieldKey: f.fieldKey };
+      if (f.editValue !== undefined) row.editValue = f.editValue;
+      subRows.push(row);
+    }
+
+    return [summaryRow, ...subRows];
   });
   inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false, buildLinesCopyBtn(detail)));
 
@@ -671,9 +790,187 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
   });
   inspectorBodyEl.append(rawDetails);
 
+  // Editable fields: "Revert all edits" only makes sense (and is only
+  // shown) once there's at least one active override on THIS claim.
+  clearOverridesBtn.hidden = detail.editedFieldCount === 0;
+
   updateExpandAllLabel();
+  decorateEditableRows(tab, detail);
   for (const hook of postRenderHooks) hook();
 }
+
+// ---------------------------------------------------------------------------
+// Editable fields — row decoration + inline edit UI
+// (docs/EDITABLE_FIELDS_DESIGN.md §3/§4/§5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Single post-pass over every row carrying a `data-field-key` (set by
+ * buildGroup above from `InspRow.fieldKey`) — adds the always-visible
+ * "Edited" badge (invariant 5) and, only while Edit mode is on, the pencil
+ * (start/change an edit) and revert (undo this one field) buttons. Kept as
+ * one pass over the finished DOM, rather than threading edit state through
+ * every buildGroup call site, so buildGroup itself stays a plain,
+ * editing-unaware row renderer.
+ */
+function decorateEditableRows(tab: TabState, detail: ClaimDetailDto): void {
+  const rows = Array.from(inspectorBodyEl.querySelectorAll<HTMLElement>('.inspRow[data-field-key]'));
+  for (const rowEl of rows) {
+    const fieldPath = rowEl.dataset['fieldKey'];
+    if (!fieldPath || !detail.editableFieldPaths.includes(fieldPath)) continue;
+    const valEl = rowEl.querySelector<HTMLElement>('.inspRowVal');
+    if (!valEl) continue;
+    const edit = detail.edits.find((e) => e.fieldPath === fieldPath);
+    const keyText = rowEl.querySelector('.inspRowKey')?.textContent ?? 'field';
+
+    if (edit) {
+      const badge = document.createElement('span');
+      badge.className = 'editedBadge';
+      badge.textContent = 'Edited';
+      badge.title = `Original value: ${edit.originalValue === '' ? '(blank)' : edit.originalValue}`;
+      valEl.after(badge);
+    }
+
+    if (!state.editModeOn) continue;
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'rowEditBtn';
+    editBtn.tabIndex = -1;
+    editBtn.setAttribute('aria-label', `Edit ${keyText}`);
+    editBtn.innerHTML = ICON_EDIT;
+    editBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      startInlineEdit(tab, rowEl, fieldPath, rowEl.dataset['editValue'] ?? '');
+    });
+    rowEl.append(editBtn);
+
+    if (edit) {
+      const revertBtn = document.createElement('button');
+      revertBtn.type = 'button';
+      revertBtn.className = 'rowRevertBtn';
+      revertBtn.tabIndex = -1;
+      revertBtn.setAttribute('aria-label', `Revert ${keyText} to the original value`);
+      revertBtn.innerHTML = ICON_REVERT;
+      revertBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void revertField(tab, fieldPath);
+      });
+      rowEl.append(revertBtn);
+    }
+  }
+}
+
+/** Replaces a row's value (+ badge/edit/revert buttons) with an inline `<input>` + Save/Cancel, seeded from `currentValue` (InspRow.editValue when the displayed value differs from the raw editable one — see that field's doc comment). Cancel restores the row exactly as it was; Save calls setFieldOverride and, on success, a full inspector re-render (via notifyClaimDetailChanged) replaces this row entirely, so there's nothing to manually restore in that path. */
+function startInlineEdit(tab: TabState, rowEl: HTMLElement, fieldPath: string, currentValue: string): void {
+  if (rowEl.querySelector('.inspRowEditForm')) return; // already editing this row
+
+  const form = document.createElement('div');
+  form.className = 'inspRowEditForm';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inspRowEditInput';
+  input.value = currentValue;
+  input.setAttribute('aria-label', `New value for ${rowEl.querySelector('.inspRowKey')?.textContent ?? 'field'}`);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'linkBtn';
+  saveBtn.textContent = 'Save';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'linkBtn';
+  cancelBtn.textContent = 'Cancel';
+
+  const hiddenEls = Array.from(rowEl.children).filter(
+    (el) => !el.classList.contains('inspRowKey') && !el.classList.contains('sevGlyph'),
+  ) as HTMLElement[];
+  const restore = (): void => {
+    form.remove();
+    hiddenEls.forEach((el) => {
+      el.hidden = false;
+    });
+  };
+
+  cancelBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    restore();
+  });
+  const submit = (): void => {
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    void saveField(tab, fieldPath, input.value)
+      .catch(() => {
+        // Failure toast already shown by saveField; keep the form open
+        // (with whatever the user typed) so they can correct and retry,
+        // rather than silently discarding their input.
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      });
+  };
+  saveBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    submit();
+  });
+  input.addEventListener('keydown', (event) => {
+    // Never let this bubble to the delegated roving-tabindex/Ctrl+C listener
+    // below while the user is typing a value.
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      restore();
+    }
+  });
+
+  form.append(input, saveBtn, cancelBtn);
+  hiddenEls.forEach((el) => {
+    el.hidden = true;
+  });
+  rowEl.append(form);
+  input.focus();
+  input.select();
+}
+
+async function saveField(tab: TabState, fieldPath: string, rawValue: string): Promise<void> {
+  if (!tab.sessionId) return;
+  try {
+    const updated = await window.claimApi.setFieldOverride(tab.sessionId, tab.currentIndex, fieldPath, rawValue);
+    tab.detail = updated;
+    notifyClaimDetailChanged(tab);
+  } catch (err) {
+    showEditToast(editErrorMessage(err), true);
+    throw err;
+  }
+}
+
+async function revertField(tab: TabState, fieldPath: string): Promise<void> {
+  if (!tab.sessionId) return;
+  try {
+    const updated = await window.claimApi.revertFieldOverride(tab.sessionId, tab.currentIndex, fieldPath);
+    tab.detail = updated;
+    notifyClaimDetailChanged(tab);
+  } catch (err) {
+    showEditToast(editErrorMessage(err), true);
+  }
+}
+
+clearOverridesBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (!tab || !tab.sessionId) return;
+  const sessionId = tab.sessionId;
+  void (async () => {
+    try {
+      const updated = await window.claimApi.clearOverridesForClaim(sessionId, tab.currentIndex);
+      tab.detail = updated;
+      notifyClaimDetailChanged(tab);
+    } catch (err) {
+      showEditToast(editErrorMessage(err), true);
+    }
+  })();
+});
 
 expandAllBtn.addEventListener('click', () => {
   const groups = Array.from(inspectorBodyEl.querySelectorAll<HTMLDetailsElement>('details.inspGroup'));

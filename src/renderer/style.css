@@ -669,6 +669,91 @@ a:focus-visible {
   border-color: var(--accent);
 }
 
+/* --- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md) ------------------- */
+
+#editModeToggleBtn.isActive {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Pencil (start editing) / revert (undo one field) icon buttons — sized and
+   positioned identically to the pre-existing .rowCopyBtn so the three sit in
+   a consistent row-action cluster; visible on hover/focus like the copy
+   icon, EXCEPT the "Edited" badge below, which is always visible (invariant
+   5: an edit must remain visibly distinguishable at all times, not only on
+   hover). */
+.rowEditBtn,
+.rowRevertBtn {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+}
+.inspRow:hover .rowEditBtn,
+.inspRow:focus .rowEditBtn,
+.inspRow:focus-within .rowEditBtn,
+.inspRow:hover .rowRevertBtn,
+.inspRow:focus .rowRevertBtn,
+.inspRow:focus-within .rowRevertBtn {
+  opacity: 1;
+}
+.rowEditBtn:hover,
+.rowRevertBtn:hover {
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+/* "Edited" badge — always visible (not hover-gated) next to a field whose
+   value has an active override, per invariant 5: an edited value must stay
+   visually/structurally distinguishable at all times, never silently
+   replace the original with no trace. `title` on the element (set in
+   inspector.ts) carries the original value for a hover/focus tooltip. */
+.editedBadge {
+  flex: none;
+  align-self: center;
+  font: 600 9.5px var(--font-sans);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  cursor: default;
+}
+
+/* Inline edit form (pencil clicked): replaces a row's value span with a
+   text input + Save/Cancel, per docs/EDITABLE_FIELDS_DESIGN.md §3. */
+.inspRowEditForm {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.inspRowEditInput {
+  flex: 1;
+  min-width: 0;
+  font: 400 11.5px var(--font-mono);
+  color: var(--ink);
+  background: var(--bg-page);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+.inspRowEditForm .linkBtn {
+  flex: none;
+}
+
 /* --- Tab strip (docs/TABS_BUILD_PLAN.md §2/§2b) ------------------------ */
 
 #tabStrip {

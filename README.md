@@ -90,3 +90,34 @@ trade-off Niall signed off on. Claim content itself is never part of this file �
 **File → Forget open tabs & recent files…** at any time to clear both lists; the app's own About
 screen (Help → About Claim Viewer) states this same policy and shows the running build's
 version/date.
+
+### Editable fields (deliberate exception — claim content is now written to disk)
+
+As of the editable-fields feature (`docs/EDITABLE_FIELDS_DESIGN.md` — an explicit, Niall-approved
+crossing of this app's own "view-only" boundary, done as safely as the team could make it), the
+app can, at the user's explicit request, correct a bounded set of fields (patient DOB/phone/
+account number, insured member ID/group, billing/rendering NPI and tax ID, and per-line
+procedure code/modifiers/units/charge/diagnosis code) and remember those corrections. Two things
+change as a direct result:
+
+- **The original source file you opened is never touched.** It is opened read-only, always; no
+  code path in this app ever writes to it.
+- **Corrected values ARE written to disk** — the one exception, alongside the exported PDF, to
+  "claim content is never written to disk." They live in a separate file, `corrected-claims.json`,
+  in the same `userData` folder as `session.json`, keyed by the source file's path and guarded by
+  a hash of that file's bytes: if the source file changes after an edit was saved, the app detects
+  the mismatch and asks before doing anything with the old edits — it never silently reapplies (or
+  silently drops) them. See `src/app/persistence/correctedClaimStore.ts` and
+  `test/persisted-artifacts.test.ts`, which — same as `session.json` — asserts no PHI canary ever
+  lands in it beyond the specific value you chose to type in.
+- Every edited value stays visibly marked as edited (an "Edited" badge, with the original value
+  still reachable on hover) everywhere it's shown, and any exported PDF built from a claim with
+  active edits carries a mandatory, unremovable "EDITED" stamp alongside the existing
+  "not an official form" disclaimer — an edited export can never be mistaken for an unedited one.
+- Data-integrity warnings and the reconciliation panel are **always** computed from the originally
+  parsed claim, never from your edits — correcting a field can never make a warning quietly
+  disappear.
+
+This is a narrower, more deliberate version of the "structured export"/"per-line notes" write
+capabilities already anticipated (and deferred) elsewhere in this app's roadmap — see
+`docs/EDITABLE_FIELDS_DESIGN.md` for the full design and what's still out of scope.

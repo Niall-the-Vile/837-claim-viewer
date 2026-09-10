@@ -1,4 +1,4 @@
-import type { ClaimSummaryDto } from '../../electron/preload.js';
+import type { ClaimSummaryDto, CorrectedClaimStatusDto } from '../../electron/preload.js';
 import { tabStripEl } from './dom.js';
 // Per-tab state's type shape (TabState/ZoomMode/Screen) and pdf.js document
 // create/destroy (loadPdfDocument/setActivePdfDoc) now live in tabState.ts —
@@ -33,6 +33,8 @@ export interface AppState {
   activeTabId: string | null;
   inspectorOpen: boolean;
   theme: 'light' | 'dark';
+  /** Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md §3) — app-level, not per-tab: the toolbar's "Edit fields" toggle. While `false` (the default), every inspector row behaves exactly as before this feature (copy-only). While `true`, rows with an editable field additionally show a pencil affordance. Plain click never starts an edit in either mode — see the design doc. */
+  editModeOn: boolean;
 }
 
 export const state: AppState = {
@@ -40,6 +42,7 @@ export const state: AppState = {
   activeTabId: null,
   inspectorOpen: true,
   theme: 'light',
+  editModeOn: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +116,7 @@ export interface NewTabInput {
   source?: 'json' | 'x12' | null;
   summaries?: ClaimSummaryDto[];
   status?: TabState['status'];
+  correctedClaimStatus?: CorrectedClaimStatusDto;
 }
 
 /**
@@ -160,6 +164,7 @@ export function createTab(input: NewTabInput = {}, opts: { activate?: boolean } 
     zoom: 1,
     zoomMode: 'fit-page',
     errorMessage: '',
+    correctedClaimStatus: input.correctedClaimStatus ?? 'none',
   };
   state.tabs.push(tab);
   if (opts.activate) state.activeTabId = tab.tabId;

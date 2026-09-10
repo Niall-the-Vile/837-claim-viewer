@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy, PDFDocumentLoadingTask } from 'pdfjs-dist';
-import type { ClaimSummaryDto, ClaimDetailDto } from '../../electron/preload.js';
+import type { ClaimSummaryDto, ClaimDetailDto, CorrectedClaimStatusDto } from '../../electron/preload.js';
 
 /**
  * The `Screen`/`ZoomMode`/`TabState` type definitions live here (moved out
@@ -35,6 +35,16 @@ export interface TabState {
   zoomMode: ZoomMode;
 
   errorMessage: string;
+
+  /**
+   * Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md) — mirrors the
+   * main-process session's CorrectedClaimStatus, set from `openClaim`'s
+   * result at load/restore time. `'stale'` drives the dismissible banner in
+   * main.ts; `discardStaleOverrides` sets this back to `'none'` once acted
+   * on. This is a per-FILE fact (not per-claim), so it lives on the tab, not
+   * on `detail`.
+   */
+  correctedClaimStatus: CorrectedClaimStatusDto;
 }
 
 /**

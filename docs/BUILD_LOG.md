@@ -673,3 +673,234 @@ with git before moving on, adversarial self-check against real fixtures before
 calling anything done, log honestly) — only the delegation mechanism differed,
 since there was one agent to delegate to. Tag `build-3-green` applied to the
 final commit below.
+
+---
+
+## Editable fields & corrected-claim export
+
+STATUS: GREEN (with one documented, environment-caused E2E limitation — see
+"Verification" below)
+
+Starting point: `build-3-green`, `npm run verify` confirmed green (337 vitest —
+matches Build 3's own closing figure exactly; 53 Playwright E2E, typecheck
+clean across all 3 configs) before any change in this section.
+
+This is a standalone feature build (not numbered in `docs/BUILD_QUEUE.md`'s
+Build 1-6 queue) requested directly by Niall: editable form fields with a new
+persisted "corrected claim" artifact — the app's first write capability beyond
+the existing PDF-export path. Full design in `docs/EDITABLE_FIELDS_DESIGN.md`,
+written before implementation per the task's own instruction; read that file for
+the artifact format, field-key addressing scheme, interaction model, and data
+flow — this section covers process, checkpoints, and verification only.
+
+### Design decisions (see docs/EDITABLE_FIELDS_DESIGN.md for the full reasoning)
+
+- **One file, `corrected-claims.json`**, in the same `userData` directory as
+  `session.json`, holding a map keyed by resolved SOURCE FILE PATH (not hash —
+  path is what makes staleness detection possible at all) to one artifact per
+  file, each artifact's `fieldOverrides` keyed `${claimIndex}::${fieldPath}` so a
+  batch 837's claims can never collide with each other.
+- **A curated, fixed registry of 13 editable field shapes**
+  (`src/model/editableFields.ts`): 8 claim-level scalars (patient dob/phone/
+  account number, insured member ID/group, billing NPI/tax ID, rendering NPI)
+  plus 4 per-service-line fields (procCode/modifiers/units/charge) and 1
+  per-diagnosis field (code) — never a generic object-path evaluator. Composed
+  display fields (any name, any address) are deliberately NOT editable this
+  build — decomposing an edited "Last, First Middle" string back into parts
+  reliably is a harder problem than this build's time budget allows safely; see
+  the design doc's "Deferred" section.
+- **Edit mode is an explicit toolbar toggle** ("Edit fields" / pencil icon,
+  `#editModeToggleBtn`), off by default. While off, every inspector row behaves
+  exactly as it did before this feature (hover/focus copy icon, Ctrl+C on the
+  focused row) — zero changed behavior, zero changed markup on an unedited
+  claim. While on, editable rows additionally show a pencil; clicking it swaps
+  the row's value for an inline `<input>` + Save/Cancel. Plain click never
+  starts an edit in either mode.
+- **Staleness**: on open, main hashes the file (reusing Build 3.3's existing
+  SHA-256-at-open machinery) and compares it to any saved artifact's stored
+  hash for that path. Match → applied automatically. Mismatch → `'stale'`,
+  overrides NOT read into any effective claim until the user clicks "Discard
+  saved edits" (deletes the artifact) or "Dismiss" (hides the banner for this
+  view only, artifact untouched, reappears on next reopen).
+- **Warnings are structurally protected, not just by convention**: overrides
+  are applied to a claim clone via a function that never touches `.warnings` —
+  there is no code path, anywhere, that recomputes warnings from an edited
+  value. `test/editableFields.test.ts` has a dedicated test asserting this.
+- **Mandatory EDITED export stamp** reuses the Build 3.3 provenance-footer
+  plumbing exactly as instructed: `RenderProvenance` gains required
+  `edited`/`editedFieldCount` fields, `provenanceFooterLines` prepends an
+  "EDITED — N field(s) modified by user, see below" line (larger, distinct
+  color) only when `editedFieldCount > 0`, drawn by a new shared
+  `drawProvenanceFooterLines` helper (`src/render/text.ts`) all three renderers
+  call identically. The pre-existing "not an official form" disclaimer is
+  unconditional and untouched — both are present together on an edited export.
+
+### Checkpoints
+
+1. **Persistence + model registry + IPC + export stamp** (commit `39733a8`,
+   "Editable fields: persistence layer, model registry, IPC, and export EDITED
+   stamp"): `src/app/persistence/correctedClaimStore.ts`,
+   `src/model/editableFields.ts`, the four new IPC handlers
+   (`claim:setFieldOverride`/`revertFieldOverride`/`clearOverridesForClaim`/
+   `discardStaleOverrides`) plus preload/`global.d.ts`-surface/
+   `e2e/app.spec.ts` key-array updates in the same commit (rule 7b),
+   `RenderProvenance`'s new required fields, and `ALLOWED_USERDATA_FILES`'s new
+   `corrected-claims.json` row (`test/persisted-artifacts.test.ts`). No
+   renderer UI yet. `npm run verify` green at this checkpoint (typecheck clean,
+   366 vitest, 53 E2E, build clean).
+2. **Renderer UI** (this section's final commit): edit-mode toggle, per-field
+   pencil/Edited-badge/revert, per-service-line editable sub-rows, the
+   "Revert all edits" action, the stale-overrides banner, and the "warnings
+   reflect original data" note — `src/renderer/inspector.ts`,
+   `src/renderer/main.ts`, `src/renderer/tabs.ts`/`tabState.ts`,
+   `src/renderer/dom.ts`, `src/renderer/icons.ts`, `src/renderer/style.css`,
+   `src/renderer/index.html`. New `e2e/editableFields.spec.ts` (7 tests) plus
+   README/About-screen data-policy wording covering the new
+   `corrected-claims.json` write.
+
+### Preload/IPC surface changes (rule 7b) — final key list
+
+`window.claimApi`, sorted (matches `e2e/app.spec.ts`'s assertion exactly):
+
+```
+clearOverridesForClaim, closeSession, discardStaleOverrides, exportPdf,
+forgetSession, getAppInfo, getDetail, getPathForFile, getPdf,
+getSessionRestoreState, openClaim, openExport, revertFieldOverride,
+saveSession, saveUiScale, setFieldOverride
+```
+
+New this build: `clearOverridesForClaim`, `discardStaleOverrides`,
+`revertFieldOverride`, `setFieldOverride`. `OpenClaimResultDto` and
+`ClaimDetailDto` both gained new fields (`correctedClaimStatus`, and
+`editableFieldPaths`/`edits`/`editedFieldCount` respectively) — see
+`electron/preload.ts`.
+
+### Verification
+
+- **typecheck**: pass (all 3 configs), at every checkpoint.
+- **vitest**: 337 → **366** (+29): `test/editableFields.test.ts` (12, new),
+  `test/correctedClaimStore.test.ts` (9, new),
+  `test/persisted-artifacts.test.ts` (+1, new describe block),
+  `test/provenance.test.ts` (+7: the EDITED-stamp describe blocks),
+  `test/golden/render.test.ts` and `test/tabState.test.ts` (fixture-literal
+  updates only — new required `RenderProvenance`/`TabState` fields — counts
+  unchanged) — **zero regressions**, and the pre-existing golden manifests are
+  confirmed byte-identical (no `UPDATE_GOLDENS=1` run needed — the new
+  `edited`/`editedFieldCount` fields default to `false`/`0` on every
+  pre-existing call site, which draws nothing extra).
+- **Playwright E2E**: 53 → **60** (+7, all in the new
+  `e2e/editableFields.spec.ts`). **52 of the 53 pre-existing tests pass; 6 of
+  the 7 new tests pass — 53 total green, 7 failing.** All 7 failures
+  (`e2e/copy.spec.ts` ×5, `e2e/decode.spec.ts` ×1, and this build's own
+  "entering Edit mode does not break click-to-copy" ×1) fail with the
+  identical symptom: `navigator.clipboard.writeText()` succeeds (the toast
+  confirms it), but the immediately-following
+  `page.evaluate(() => navigator.clipboard.readText())` resolves to `''`.
+  Root-caused, not guessed: `Get-Process`/`GetForegroundWindow()` on the host
+  during a re-run showed the foreground window was **"Windows Default Lock
+  Screen"** — the console session had locked (long idle time) partway through
+  this session. Chromium's Async Clipboard `readText()` silently returns empty
+  when the document/window lacks OS-level focus, which a locked session can
+  never grant, while `writeText()` from a real user-gesture click is more
+  permissive and still succeeds. This is confirmed **environmental, not a
+  regression**: `e2e/copy.spec.ts` and `e2e/decode.spec.ts` are files this
+  build never touched, and this exact same 53-passed/0-failed E2E suite was
+  green (confirmed at this section's own starting checkpoint, before any
+  change) when the session was still unlocked. Per the task's own instruction,
+  one retry of `npm run test:e2e` was run — result unchanged (still 53/7),
+  consistent with a persistent environmental state (a lock) rather than
+  test-order flakiness. Unlocking the session requires entering the machine's
+  real credentials, which this agent will never do (see this agent's own
+  safety rules on credential entry) — so this is reported here rather than
+  "fixed" by retrying further. The new test is otherwise correctly written
+  (identical pattern to the passing, pre-existing `e2e/copy.spec.ts` click-to-
+  copy test) and is expected to pass once the session is unlocked by a human.
+  **The other 6 of 7 new tests — editing a field, reverting a field, exporting
+  with the EDITED stamp present, exporting withOUT it absent, reopening to
+  auto-reload saved edits, and the full staleness-detection-and-discard flow —
+  all pass, exercising every required scenario except the clipboard-dependent
+  one.**
+- `npm run build:app`: clean at every checkpoint.
+- **`npm run verify` overall**: green except for the environmental E2E
+  limitation above, which is called out explicitly rather than folded silently
+  into a claimed "all green."
+
+### Not done and why (deferred — see docs/EDITABLE_FIELDS_DESIGN.md §8 for the full list)
+
+- Editing composed fields (any name, any address) — decomposition risk, out of
+  scope this build.
+- Institutional/dental claim-level field edits (type of bill, discharge
+  status, condition/occurrence/value codes, dental transaction fields) —
+  registry can grow to cover these later without a redesign.
+- Per-box visual flagging of an edited value on the rendered PDF itself — the
+  task explicitly allows dropping this ("if feasible... but the page-level
+  stamp is the non-negotiable minimum"); the page-level EDITED stamp is fully
+  implemented and is the required minimum.
+- Adding/removing service lines or diagnoses — the registry only addresses
+  fields on lines/diagnoses that already exist, which is itself a safety
+  property (correct what's there; never fabricate a new billed line).
+
+### Adversarial self-audit (required before calling this done)
+
+Each invariant below defaults to REFUTED unless a concrete code path and test
+confirm it.
+
+1. **Does anything ever write to the original source file? — CONFIRMED
+   (never).** Traced every `fs`/`writeFile`/`rename` call touching a claim
+   source path: `electron/main.ts`'s `openClaimAtPath` only ever calls
+   `readFile(filePath, ...)` on it, never a write. `correctedClaimStore.ts`
+   only ever writes its OWN file (`corrected-claims.json`, under `userData`)
+   — every function takes `sourceFilePath` purely as a lookup/label value
+   (used as an object KEY and as a stored string field), never as a target
+   passed to `writeFile`/`rename`. `dialog:exportPdf` writes only to the
+   user-chosen save-dialog path, an entirely separate, pre-existing code path
+   unrelated to the opened source file. Grep-verified: the only two `fs`
+   write call sites reachable from any editable-fields code are
+   `correctedClaimStore.ts`'s own `writeAtomic` (targets
+   `<userData>/corrected-claims.json` exclusively, constructed from
+   `CORRECTED_CLAIMS_FILE_NAME`, a module constant, never from
+   `sourceFilePath`) and the pre-existing, untouched export `writeFileAtomic`
+   in `electron/main.ts` (targets the save-dialog path).
+2. **Can overrides ever silently suppress a warning? — CONFIRMED (no).**
+   `applyFieldOverrides` (`src/model/editableFields.ts`) clones the original
+   claim and applies each `EditableFieldSpec.setValue` — none of the 13
+   registered specs' `setValue` implementations write to `.warnings`, and no
+   other function in the override pipeline (`getEffectiveClaim`,
+   `buildEffectiveClaimDetail` in `electron/main.ts`) ever calls
+   `validateClaim` or otherwise recomputes warnings from the effective claim.
+   `buildClaimDetail`'s `warnings` field is a direct, unconditional map over
+   `claim.warnings` — whichever claim object it's given. Since the effective
+   claim's `.warnings` is byte-identical (never mutated) to the original's,
+   the DTO's `warnings` array is always the original parse's, regardless of
+   how many fields are overridden. Directly tested:
+   `test/editableFields.test.ts`'s "never changes warnings" case sets an
+   override extreme enough (a service-line charge of $999,999) that it WOULD
+   trip `charge-total-mismatch` if warnings were being recomputed, and asserts
+   `effective.warnings` is unchanged from the original's.
+3. **Can an export ever omit the EDITED stamp when overrides are present? —
+   CONFIRMED (no).** `dialog:exportPdf` unconditionally constructs a
+   `provenance` object on every call (there is no branch that skips it), and
+   sets `edited`/`editedFieldCount` directly from `applied.length`, where
+   `applied` comes from the SAME `getEffectiveClaim` call that produced the
+   claim actually being rendered — there is no path where the rendered claim
+   has overrides but the provenance object it's paired with doesn't reflect
+   them (both are read from the one `applied` array in the same handler
+   invocation). All three renderers' `drawFooter` functions call
+   `drawProvenanceFooterLines` unconditionally whenever `provenance` is
+   truthy, and `provenanceFooterLines` prepends the EDITED line whenever
+   `editedFieldCount > 0` with no further gate. Verified end-to-end (not just
+   unit-level) by `e2e/editableFields.spec.ts`'s export test, which edits a
+   field, exports through the real `dialog:exportPdf` IPC path, parses the
+   resulting PDF's actual text with pdf.js, and asserts the "EDITED" stamp
+   and the facsimile disclaimer are BOTH present; a companion test exports an
+   unedited claim and asserts "EDITED" is absent.
+
+### Session process note
+
+Ran as a single agent end-to-end (no subagent delegation) given the scope and
+the tight coupling between the persistence layer, the model registry, the IPC
+surface, and the renderer UI — splitting this across file-disjoint subagents
+would have meant re-deriving the same design decisions in each one. Checkpoint
+discipline (verify before/after each logical unit, commit before moving on,
+adversarial self-check before calling it done, log honestly including the
+E2E limitation found) follows the same process this repo's other builds use.

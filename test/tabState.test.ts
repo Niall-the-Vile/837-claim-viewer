@@ -71,6 +71,7 @@ function makeFakeTab(overrides: Partial<TabState> = {}): TabState {
     zoom: 1,
     zoomMode: 'fit-page',
     errorMessage: '',
+    correctedClaimStatus: 'none',
     ...overrides,
   };
 }

@@ -148,6 +148,16 @@
 
         <div class="toolSpacer"></div>
 
+        <!-- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md §3): explicit
+             mode toggle, off by default. While off, every inspector field
+             behaves exactly as before this feature (copy-only) — this
+             button is the ONLY thing that changes row-click behavior, and
+             only while it's pressed. -->
+        <button id="editModeToggleBtn" class="btn btnGhost" type="button" hidden aria-pressed="false">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.6 12.2 2.5 13l0.8-3.1Z" /></svg>
+          <span id="editModeToggleLabel">Edit fields</span>
+        </button>
+
         <button id="inspectorToggleBtn" class="btn btnGhost" type="button" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 4h18v16H3z" /><path d="M15 4v16" /></svg>
           <span id="inspectorToggleLabel">Hide inspector</span>
@@ -170,6 +180,20 @@
         <div class="toolSpacer"></div>
         <button id="warnCopyBtn" class="linkBtn" type="button">Copy warnings</button>
         <button id="warnReviewBtn" class="linkBtn" type="button">Review in inspector</button>
+      </div>
+
+      <!-- Editable fields: staleness banner (docs/EDITABLE_FIELDS_DESIGN.md
+           §5) — a saved corrected-claim artifact exists for a DIFFERENT
+           version of this file. Never applied silently; the user chooses
+           Discard or Dismiss. -->
+      <div id="staleOverridesBanner" class="warnBanner" hidden role="status" aria-live="polite">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="warnIcon">
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4.5M12 17h.01" />
+        </svg>
+        <span id="staleOverridesMessage">Saved edits exist for a different version of this file.</span>
+        <div class="toolSpacer"></div>
+        <button id="staleOverridesDiscardBtn" class="linkBtn" type="button">Discard saved edits</button>
+        <button id="staleOverridesDismissBtn" class="linkBtn" type="button">Dismiss</button>
       </div>
 
       <!-- Body: preview + inspector -->
@@ -261,6 +285,7 @@
             <span class="inspectorTitle">Inspector</span>
             <span class="inspectorSub">every field, as parsed</span>
             <div class="toolSpacer"></div>
+            <button id="clearOverridesBtn" class="linkBtn" type="button" hidden>Revert all edits</button>
             <button id="expandAllBtn" class="linkBtn" type="button">Expand all</button>
           </div>
           <!-- Find/search (docs/UI_REQUIREMENTS_v3_queued_features.md §1 /
@@ -377,11 +402,15 @@
             <div class="phiNotice">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
               <span>
-                Claim <b>content</b> is never written to disk &mdash; every form preview and PDF render
-                happens fully in memory, and closing a tab drops its parsed claim from memory
-                immediately. The <b>file paths</b> of your open tabs and a capped recent-files list
-                <b>are</b> saved on this machine, so the app can restore your tabs next time it
-                starts. A file or folder name can be PHI-adjacent &mdash; use
+                The claim file you opened is never written to &mdash; every form preview and PDF
+                render happens fully in memory, and closing a tab drops its parsed claim from
+                memory immediately. The <b>file paths</b> of your open tabs and a capped
+                recent-files list <b>are</b> saved on this machine, so the app can restore your
+                tabs next time it starts. If you use Edit fields to correct a value, that
+                correction <b>is</b> saved on this machine too (separately from the original
+                file, which stays untouched) so it's there next time you open the same claim &mdash;
+                every edited value stays visibly marked, and any export built from an edited claim
+                is stamped EDITED. A file or folder name can be PHI-adjacent &mdash; use
                 <span class="mono">File &rarr; Forget open tabs &amp; recent files</span> to clear
                 that trail at any time. Runs fully offline; nothing ever leaves this machine.
               </span>

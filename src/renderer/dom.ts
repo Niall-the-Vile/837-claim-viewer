@@ -41,6 +41,15 @@ export const inspectorToggleLabelEl = requireEl<HTMLSpanElement>('inspectorToggl
 export const themeToggleBtn = requireEl<HTMLButtonElement>('themeToggleBtn');
 export const themeToggleLabelEl = requireEl<HTMLSpanElement>('themeToggleLabel');
 
+// Editable fields (docs/EDITABLE_FIELDS_DESIGN.md).
+export const editModeToggleBtn = requireEl<HTMLButtonElement>('editModeToggleBtn');
+export const editModeToggleLabelEl = requireEl<HTMLSpanElement>('editModeToggleLabel');
+export const staleOverridesBannerEl = requireEl<HTMLDivElement>('staleOverridesBanner');
+export const staleOverridesMessageEl = requireEl<HTMLSpanElement>('staleOverridesMessage');
+export const staleOverridesDiscardBtn = requireEl<HTMLButtonElement>('staleOverridesDiscardBtn');
+export const staleOverridesDismissBtn = requireEl<HTMLButtonElement>('staleOverridesDismissBtn');
+export const clearOverridesBtn = requireEl<HTMLButtonElement>('clearOverridesBtn');
+
 export const warnBannerEl = requireEl<HTMLDivElement>('warnBanner');
 export const warnCountEl = requireEl<HTMLSpanElement>('warnCount');
 export const warnMessagesEl = requireEl<HTMLSpanElement>('warnMessages');

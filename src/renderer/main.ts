@@ -52,6 +52,11 @@ import {
   forgetConfirmBtn,
   recentFilesListEl,
   recentFilesEmptyEl,
+  editModeToggleBtn,
+  editModeToggleLabelEl,
+  staleOverridesBannerEl,
+  staleOverridesDiscardBtn,
+  staleOverridesDismissBtn,
 } from './dom.js';
 import {
   state,
@@ -71,7 +76,7 @@ import {
   type NewTabInput,
 } from './tabs.js';
 import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, cancelInFlightRender } from './preview.js';
-import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText } from './inspector.js';
+import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText, initInspectorEditing } from './inspector.js';
 import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog, openOverlay, closeOverlay } from './overlays.js';
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
 import { copyToClipboard } from './clipboard.js';
@@ -198,6 +203,7 @@ function syncScreenUI(): void {
   statusFileGroupEl.hidden = screen !== 'workspace';
   statusNoFileEl.hidden = screen === 'workspace';
   if (screen !== 'workspace') warnBannerEl.hidden = true;
+  updateStaleOverridesBanner();
 
   const tab = activeTab();
   titlebarFileNameEl.textContent = tab && tab.fileName ? tab.fileName : 'no file open';
@@ -220,10 +226,54 @@ function updateToolbarVisibility(): void {
   pageGroupEl.hidden = !hasFile || !tab || tab.pageCount <= 1;
   claimGroupEl.hidden = !hasFile || !tab || tab.summaries.length <= 1;
   inspectorToggleBtn.hidden = !hasFile;
+  editModeToggleBtn.hidden = !hasFile;
   exportBtn.disabled = !hasFile;
   document.querySelectorAll<HTMLButtonElement>('[data-menu-disable="export"]').forEach((btn) => {
     btn.disabled = !hasFile;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Editable fields (docs/EDITABLE_FIELDS_DESIGN.md)
+// ---------------------------------------------------------------------------
+
+/** Toolbar "Edit fields" toggle (§3). While off (the default), every inspector row behaves exactly as before this feature. Flipping it re-renders the inspector so pencils appear/disappear immediately. */
+function toggleEditMode(): void {
+  state.editModeOn = !state.editModeOn;
+  editModeToggleLabelEl.textContent = state.editModeOn ? 'Editing fields' : 'Edit fields';
+  editModeToggleBtn.classList.toggle('isActive', state.editModeOn);
+  editModeToggleBtn.setAttribute('aria-pressed', state.editModeOn ? 'true' : 'false');
+  const tab = activeTab();
+  if (tab?.detail) renderInspector(tab, tab.detail);
+}
+
+/** Shows/hides the "saved edits exist for a different version of this file" banner (§5) for the active tab. Never applies the stale overrides itself — only offers Discard (delete them) or Dismiss (hide the banner for now, artifact untouched). */
+function updateStaleOverridesBanner(): void {
+  const tab = activeTab();
+  const isStale = currentScreen() === 'workspace' && tab !== null && tab.correctedClaimStatus === 'stale';
+  staleOverridesBannerEl.hidden = !isStale;
+}
+
+async function discardStaleOverrides(): Promise<void> {
+  const tab = activeTab();
+  if (!tab?.sessionId) return;
+  try {
+    await window.claimApi.discardStaleOverrides(tab.sessionId);
+    tab.correctedClaimStatus = 'none';
+    updateStaleOverridesBanner();
+    showToast('Saved edits for the old version of this file were discarded.', false);
+  } catch (err) {
+    showToast(errorMessage(err), true);
+  }
+}
+
+function dismissStaleOverridesBanner(): void {
+  // Only hides the banner for this tab's current view — does NOT touch the
+  // saved artifact (still on disk, still investigable) and does NOT change
+  // correctedClaimStatus, so it reappears if the file is reopened, per
+  // docs/EDITABLE_FIELDS_DESIGN.md §5's "never applied silently" posture:
+  // silence is not the same as discarding.
+  staleOverridesBannerEl.hidden = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +454,7 @@ async function ensureSessionForTab(tab: TabState): Promise<void> {
   tab.fileName = result.fileName;
   tab.source = result.source;
   tab.summaries = result.summaries;
+  tab.correctedClaimStatus = result.correctedClaimStatus;
   renderTabStrip();
 }
 
@@ -619,7 +670,14 @@ function jumpToTab(oneBasedIndex: number): void {
 // ---------------------------------------------------------------------------
 
 function tabInputFromResult(result: OpenClaimResultDto): NewTabInput {
-  return { sessionId: result.sessionId, fileName: result.fileName, filePath: result.filePath, source: result.source, summaries: result.summaries };
+  return {
+    sessionId: result.sessionId,
+    fileName: result.fileName,
+    filePath: result.filePath,
+    source: result.source,
+    summaries: result.summaries,
+    correctedClaimStatus: result.correctedClaimStatus,
+  };
 }
 
 function fillPlaceholder(tab: TabState, result: OpenClaimResultDto): TabState {
@@ -629,6 +687,7 @@ function fillPlaceholder(tab: TabState, result: OpenClaimResultDto): TabState {
   tab.source = result.source;
   tab.summaries = result.summaries;
   tab.currentIndex = 0;
+  tab.correctedClaimStatus = result.correctedClaimStatus;
   renderTabStrip();
   return tab;
 }
@@ -1110,6 +1169,28 @@ nextClaimBtn.addEventListener('click', () => void stepClaim(1));
 
 inspectorToggleBtn.addEventListener('click', toggleInspector);
 themeToggleBtn.addEventListener('click', toggleTheme);
+editModeToggleBtn.addEventListener('click', toggleEditMode);
+staleOverridesDiscardBtn.addEventListener('click', () => void discardStaleOverrides());
+staleOverridesDismissBtn.addEventListener('click', dismissStaleOverridesBanner);
+
+/**
+ * Editable fields (docs/EDITABLE_FIELDS_DESIGN.md §4): inspector.ts can't
+ * import this file's tab-loading machinery directly without creating a
+ * module cycle (this file already imports FROM inspector.ts), so it exposes
+ * a small dependency-injection hook instead — the same pattern tabs.ts
+ * (TabStripDeps) and shortcuts.ts (ShortcutDeps) already use. After a
+ * successful field edit/revert/clear-all, the PDF preview is reloaded so
+ * it's immediately WYSIWYG with the corrected value (the preview always
+ * renders the effective/overridden claim — see electron/main.ts's
+ * claim:getPdf handler), and toast surfacing reuses the app's one shared
+ * `showToast`.
+ */
+initInspectorEditing({
+  onClaimDetailChanged: (tab) => {
+    void ensureClaimRendered(tab, { forceReload: true });
+  },
+  showToast: (message, isError) => showToast(message, isError),
+});
 
 initTabStrip({
   onActivate: (tabId) => void activateTabById(tabId),
