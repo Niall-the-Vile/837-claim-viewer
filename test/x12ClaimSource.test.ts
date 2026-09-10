@@ -17,6 +17,7 @@ const minimal = readFileSync(join(here, 'fixtures', 'x12', '837P-minimal.dat'), 
 const inst837IAllFields = readFileSync(join(here, 'fixtures', 'x12', '837I-all-fields.dat'), 'utf8');
 const inst837IMinimal = readFileSync(join(here, 'fixtures', 'x12', '837I-minimal.dat'), 'utf8');
 const dental837DAllFields = readFileSync(join(here, 'fixtures', 'x12', '837D-all-fields.dat'), 'utf8');
+const multiClaim = readFileSync(join(here, 'fixtures', 'x12', '837I-multi-claim.dat'), 'utf8');
 
 const src = new X12ClaimSource();
 
@@ -355,5 +356,118 @@ describe('segmentToString', () => {
     const { delimiters, segments } = tokenize(minimal.trim());
     const clm = segments.find((s) => s.id === 'CLM')!;
     expect(segmentToString(clm, delimiters)).toBe('CLM*26463774*100***11:B:1*Y*A*Y*I');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Build 3.1(d) / 3.1(g) — X12-only rules: the UB-04 0001 total-line strip
+// (and totalCharge fallback), and the EDI structural-defect checks (SE01
+// count, duplicate CLM01, bad DTP date-format qualifiers). All built by
+// patching a copy of the real 837I-minimal.dat / 837I-multi-claim.dat text
+// (never by hand-writing a fresh envelope) so delimiters/ISA stay valid.
+// ---------------------------------------------------------------------------
+
+/** Replaces the lone `SE*<n>*<control>~` trailer, optionally inserting extra segment text immediately before it and/or overriding the declared SE01 count. */
+function patchSeTrailer(raw: string, opts: { insertBefore?: string; se01?: number } = {}): string {
+  const m = /SE\*(\d+)\*(\S+)~/.exec(raw);
+  if (!m) throw new Error('fixture has no SE trailer to patch');
+  const declared = opts.se01 ?? Number(m[1]);
+  const replacement = `${opts.insertBefore ?? ''}SE*${declared}*${m[2]}~`;
+  return raw.slice(0, m.index) + replacement + raw.slice(m.index + m[0].length);
+}
+
+function patchClm02(raw: string, oldClm02: string, newClm02: string): string {
+  const pattern = new RegExp(`CLM\\*756048Q\\*${oldClm02}\\*`);
+  const patched = raw.replace(pattern, `CLM*756048Q*${newClm02}*`);
+  expect(patched).not.toBe(raw); // fail loudly if the pattern didn't match, rather than silently testing the unpatched fixture
+  return patched;
+}
+
+describe('3.1(d) — UB-04 0001 (total) line is stripped from serviceLines', () => {
+  it('excludes a 0001-revenue line from serviceLines, and falls back to its charge as the total when CLM02 is 0', () => {
+    const withZeroClm = patchClm02(inst837IMinimal, '89.93', '0');
+    const patched = patchSeTrailer(withZeroClm, { insertBefore: 'LX*3~SV2*0001**220.00*UN*1~DTP*472*D8*20160911~', se01: 45 });
+    const [claim] = src.parse(patched);
+    expect(claim!.serviceLines.some((l) => l.revenueCode === '0001')).toBe(false);
+    expect(claim!.serviceLines).toHaveLength(2); // the original two lines only — the 0001 line is stripped, not just relabeled
+    expect(claim!.totals.totalCharge).toBe(220.0);
+  });
+
+  it('still strips the 0001 line but keeps the CLM02 total when CLM02 is already non-zero', () => {
+    const patched = patchSeTrailer(inst837IMinimal, { insertBefore: 'LX*3~SV2*0001**220.00*UN*1~DTP*472*D8*20160911~', se01: 45 });
+    const [claim] = src.parse(patched);
+    expect(claim!.serviceLines.some((l) => l.revenueCode === '0001')).toBe(false);
+    expect(claim!.totals.totalCharge).toBe(89.93); // CLM02, unchanged by the stripped 0001 line's charge
+  });
+
+  it('does not affect a claim with no 0001 line at all (the real fixtures)', () => {
+    const [claim] = src.parse(inst837IMinimal);
+    expect(claim!.serviceLines.map((l) => l.revenueCode)).toEqual(['0305', '0730']);
+    expect(claim!.totals.totalCharge).toBe(89.93);
+  });
+});
+
+describe('3.1(g) — EDI structural defects', () => {
+  it('flags edi-se-count-mismatch when SE01 disagrees with the actual segment count', () => {
+    const patched = patchSeTrailer(inst837IMinimal, { se01: 999 });
+    const [claim] = src.parse(patched);
+    expect(claim!.warnings.some((w) => w.code === 'edi-se-count-mismatch')).toBe(true);
+  });
+
+  it('does NOT flag edi-se-count-mismatch on any real, correctly-authored fixture (no false positives)', () => {
+    for (const [label, text] of [
+      ['837I-minimal.dat', inst837IMinimal],
+      ['837I-all-fields.dat', inst837IAllFields],
+      ['837P-all-fields.dat', allFields],
+      ['837D-all-fields.dat', dental837DAllFields],
+    ] as const) {
+      const claims = src.parse(text);
+      for (const c of claims) {
+        expect(c.warnings.some((w) => w.code === 'edi-se-count-mismatch'), `${label} should not flag a real SE01 as mismatched`).toBe(false);
+      }
+    }
+  });
+
+  it('flags edi-duplicate-claim-id when two claims in the same transaction share a CLM01, on BOTH claims', () => {
+    const dup = multiClaim.replace('CLM*756049Q*', 'CLM*756048Q*');
+    const claims = src.parse(dup);
+    expect(claims).toHaveLength(2);
+    expect(claims[0]!.warnings.some((w) => w.code === 'edi-duplicate-claim-id')).toBe(true);
+    expect(claims[1]!.warnings.some((w) => w.code === 'edi-duplicate-claim-id')).toBe(true);
+  });
+
+  it('does NOT flag edi-duplicate-claim-id on the real multi-claim fixture (distinct ids)', () => {
+    const claims = src.parse(multiClaim);
+    expect(claims).toHaveLength(2);
+    for (const c of claims) expect(c.warnings.some((w) => w.code === 'edi-duplicate-claim-id')).toBe(false);
+  });
+
+  it('flags edi-bad-date-qualifier when a DTP*472 uses a qualifier other than D8/RD8', () => {
+    const patched = inst837IMinimal.replace('DTP*472*D8*20160911~', 'DTP*472*D6*20160911~');
+    const [claim] = src.parse(patched);
+    expect(claim!.warnings.some((w) => w.code === 'edi-bad-date-qualifier')).toBe(true);
+  });
+
+  it('accepts DT as a valid admission-date (DTP*435) qualifier — NOT a false positive', () => {
+    // 837I-all-fields.dat genuinely carries DTP*435*DT*... (admission date/time) —
+    // confirms the accepted-qualifier set for 435 includes DT, matching what
+    // parseAdmissionDate (x12DateFlexible) already handles.
+    const [claim] = src.parse(inst837IAllFields);
+    expect(claim!.institutional!.admissionDate).toBe('2019-03-10');
+    expect(claim!.warnings.some((w) => w.code === 'edi-bad-date-qualifier')).toBe(false);
+  });
+
+  it('does NOT flag edi-bad-date-qualifier on any real fixture (no false positives)', () => {
+    for (const [label, text] of [
+      ['837I-minimal.dat', inst837IMinimal],
+      ['837I-all-fields.dat', inst837IAllFields],
+      ['837P-all-fields.dat', allFields],
+      ['837D-all-fields.dat', dental837DAllFields],
+    ] as const) {
+      const claims = src.parse(text);
+      for (const c of claims) {
+        expect(c.warnings.some((w) => w.code === 'edi-bad-date-qualifier'), `${label} should not flag a real date qualifier as bad`).toBe(false);
+      }
+    }
   });
 });

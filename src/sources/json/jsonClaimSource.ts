@@ -1,5 +1,15 @@
-import type { Claim, Diagnosis, FormType, Name, Address, ServiceLine, ClaimWarning } from '../../model/claim.js';
+import type { Claim, Diagnosis, FormType, Name, Address, ServiceLine } from '../../model/claim.js';
 import { type ClaimSource, ClaimParseError } from '../claimSource.js';
+import { validateClaim, isValidNpi, fmtCents, isSentinelNpi } from '../../model/validate.js';
+
+// Re-exported for backward compatibility: docs/BUILD_QUEUE.md Build 3.1 moved
+// validateClaim/isValidNpi/fmtCents into src/model/validate.ts (the first
+// task of that build, done BEFORE any new rule was added, and verified
+// byte-identical via a full `npm run verify` pass) so x12ClaimSource.ts could
+// import the same rules instead of reaching into this JSON-specific module.
+// Existing callers (test/jsonClaimSource.test.ts included) keep importing
+// these three names from here.
+export { validateClaim, isValidNpi, fmtCents };
 
 /**
  * Maps the flat clearinghouse claim JSON (one object = one claim) into the
@@ -128,12 +138,6 @@ function bool(v: unknown): boolean {
 
 function hasAny(f: Flat, keys: string[]): boolean {
   return keys.some((k) => s(f[k]) !== '');
-}
-
-/** True for the feed's "no provider" NPI sentinel: blank, or all zeros (e.g. "0", "0000000000"). */
-function isSentinelNpi(v: unknown): boolean {
-  const t = s(v);
-  return t === '' || /^0+$/.test(t);
 }
 
 /**
@@ -272,74 +276,4 @@ export class JsonClaimSource implements ClaimSource {
     claim.warnings = validateClaim(claim);
     return claim;
   }
-}
-
-/** NPI = 10 digits with a valid Luhn check over the 80840-prefixed value. */
-export function isValidNpi(npi: string): boolean {
-  if (!/^\d{10}$/.test(npi)) return false;
-  const digits = ('80840' + npi).split('').map(Number);
-  let sum = 0;
-  // Validate over the full value: the rightmost (check) digit is NOT doubled.
-  for (let i = digits.length - 1, alt = false; i >= 0; i--, alt = !alt) {
-    let d = digits[i]!;
-    if (alt) {
-      d *= 2;
-      if (d > 9) d -= 9;
-    }
-    sum += d;
-  }
-  return sum % 10 === 0;
-}
-
-/** Non-blocking, inspector-surfaced data checks. */
-export function validateClaim(claim: Claim): ClaimWarning[] {
-  const w: ClaimWarning[] = [];
-
-  // Reconcile Σ line charges vs the stated total (compare in integer cents).
-  const sumCents = claim.serviceLines.reduce((a, l) => a + Math.round(l.charge * 100), 0);
-  const totalCents = Math.round(claim.totals.totalCharge * 100);
-  if (claim.serviceLines.length > 0 && sumCents !== totalCents) {
-    w.push({
-      code: 'charge-total-mismatch',
-      severity: 'warning',
-      message: `Line charges (${fmtCents(sumCents)}) don't match the claim total (${fmtCents(totalCents)}).`,
-    });
-  }
-
-  // Diagnosis pointers that reference a position with no diagnosis.
-  const present = new Set(claim.diagnoses.map((d) => d.pointer).filter((p) => p !== ''));
-  for (const line of claim.serviceLines) {
-    for (const p of line.diagPointers) {
-      if (!present.has(p)) {
-        w.push({
-          code: 'dangling-diag-pointer',
-          severity: 'warning',
-          message: `Diagnosis pointer ${p} on a service line has no matching diagnosis.`,
-        });
-      }
-    }
-  }
-
-  // NPI sanity (billing + rendering).
-  if (claim.billingProvider.npi !== '' && !isValidNpi(claim.billingProvider.npi)) {
-    w.push({ code: 'billing-npi-invalid', severity: 'warning', message: `Billing NPI ${claim.billingProvider.npi} fails the NPI check.` });
-  }
-  if (claim.renderingProvider.npi !== '' && !isSentinelNpi(claim.renderingProvider.npi) && !isValidNpi(claim.renderingProvider.npi)) {
-    w.push({ code: 'rendering-npi-invalid', severity: 'warning', message: `Rendering NPI ${claim.renderingProvider.npi} fails the NPI check.` });
-  }
-
-  // More than 12 diagnoses can't all be pointed to on a paper CMS-1500.
-  if (claim.diagnoses.some((d) => d.ordinal > 12)) {
-    w.push({ code: 'diag-overflow', severity: 'info', message: 'Claim has more than 12 diagnoses; CMS-1500 shows A–L only.' });
-  }
-
-  if (claim.formType === 'unsupported') {
-    w.push({ code: 'unsupported-form', severity: 'warning', message: `claim_form "${claim.claimFormRaw}" has no form renderer yet.` });
-  }
-
-  return w;
-}
-
-function fmtCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
 }

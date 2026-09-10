@@ -347,3 +347,125 @@ practice, bad cleanup). Detected immediately: `tsc` stopped resolving. Fixed wit
 - UI scale at 175% is verified **programmatically** (real `scrollWidth`/overlap/
   viewport-containment checks in the Electron renderer) but never seen by a human on
   a real 175%-DPI Windows display.
+
+---
+
+## Build 3 — Data integrity
+STATUS: IN PROGRESS (3.1 GREEN; 3.2/3.3 in progress; 3.4-3.6 stretch, status TBD)
+
+Start: 2026-09-10 20:26 UTC (session start `npm run verify`: 258 vitest + 53 E2E, green
+at commit `5211701`, 2 commits past `build-2-green`)
+
+This session ran as a single agent (not the multi-Sonnet-subagent orchestration the
+original TABS/BUILD_QUEUE process describes) — the checkpoint/verify/audit
+DISCIPLINE from those docs is followed, but "delegate to Sonnet subagents" (rule 5)
+did not apply since there was one agent throughout.
+
+### 3.1 — Extended structural warnings (non-clinical tier)
+STATUS: GREEN
+
+**Refactor first (verified byte-identical before any new rule):** moved
+`validateClaim` / `isValidNpi` / `fmtCents` out of
+`src/sources/json/jsonClaimSource.ts` into new `src/model/validate.ts`;
+`jsonClaimSource.ts` re-exports the three names for backward compatibility (all
+existing imports of them keep working unchanged); `x12ClaimSource.ts` now imports
+`validateClaim` from the new module instead of reaching into the JSON source. Ran
+`npm run verify` immediately after this move, before writing a single new rule —
+258/258 vitest green, confirming byte-identical output on the original seven codes.
+
+**New rules shipped** (all in `src/model/validate.ts` unless noted):
+- **(a)** Replaced the never-implemented "revenue code without required HCPCS"
+  rule (correctly not attempted — no offline-correct implementation exists) with:
+  info-level `institutional-line-missing-revenue-or-proc` (neither a revenue code
+  nor a procedure code) and `institutional-line-revenue-code-not-4-digits`.
+  Gated on a new `normalizeTob(raw)` helper (strips one leading `'0'`, requires
+  exactly 3 remaining digits, else `null`) applied to `institutional.typeOfBill`.
+- **(b)** `line-dos-outside-statement-period` (warning, institutional only, both
+  `statementFrom`/`statementThrough` non-blank, blank line-dates skipped, plain
+  `'YYYY-MM-DD'` string compare — never `Date`) and `line-dos-in-future` (warning,
+  every form type, string-compared against an injected `today` parameter that
+  defaults to the real date, suppressed on a dental claim carrying a
+  `predeterminationNumber` or an `orthodontics` block).
+- **(c)** `duplicate-service-line` (info): exact-match key over
+  fromDate/thruDate/procCode/sorted-modifiers/units/charge(cents)/revenueCode/
+  toothNumbers/toothSurfaces; suppressed when the (shared) modifier set on the
+  duplicate group contains any of 76/77/91/59/XE/XS/XP/XU/LT/RT/E1-E4/FA/F1-F9/
+  TA/T1-T9/LC/LD/LM/RC/RI (`DUPLICATE_SUPPRESSING_MODIFIERS`, exact 39-entry set,
+  asserted verbatim in `test/validate.test.ts`); message names all 1-based line
+  numbers in the group.
+- **(d)** Replaced the never-implemented "UB-04 0001 total vs detail sum" rule
+  (redundant with `charge-total-mismatch`) with a mapping-time change in
+  `x12ClaimSource.ts`: the UB-04 0001 (total) line is stripped out of
+  `claim.serviceLines` entirely, and if `totals.totalCharge` is 0 (no CLM02), the
+  stripped line's own charge becomes the total.
+- **(e)** Dental tooth/surface validity: `isValidToothToken` (1-32, 51-82, A-T,
+  AS-TS) and `isValidToothSurfaceToken` (every char in {M,O,D,F,L,B,I}), applied
+  per comma-separated token on dental service lines only; never flags an absent
+  tooth number. `dental-invalid-tooth-number` / `dental-invalid-tooth-surface`,
+  both warning.
+- **(f)** `billing-taxid-missing` (warning) / `billing-taxonomy-missing` (info,
+  worded "situational — many payers do not require it").
+- **(g)** EDI structural defects, X12-only (`x12ClaimSource.ts`, since neither
+  concept exists in the JSON feed): `edi-se-count-mismatch` (SE01 vs actual
+  segment count, transaction-wide via a new `applyEdiStructuralChecks`, attached
+  to every claim in that transaction), `edi-duplicate-claim-id` (two claims in one
+  ST/SE transaction sharing a non-blank CLM01), `edi-bad-date-qualifier` (DTP*472/
+  434 must be D8 or RD8; DTP*435 must be D8 or DT — the DT case matters: an
+  earlier draft of this rule used a single D8/RD8 set for all three and would have
+  produced a **false positive** on `837I-all-fields.dat`'s genuine `DTP*435*DT*...`
+  admission-date/time segment; caught before commit by running the new rule
+  against every real fixture and confirming zero unexpected warnings, per the
+  adversarial-audit discipline in BUILD_QUEUE.md rule 7).
+
+All twelve new codes use only the two existing severities (`info`/`warning`) — no
+third tier introduced. **No clinical-judgment / NCCI / MUE / upcoding rule was
+added** (docs/FEATURE_BACKLOG.md "Out of scope" #2, restated in BUILD_QUEUE.md's
+Build 3 preamble) — every rule above is a structural/date/format check.
+
+**Explanations:** all twelve new codes added to the single copy file
+`src/renderer/warningExplanations.ts` (same file as the original seven — no second
+copy created), flagged "needs wording review" in that file's own header (unreviewed
+first-draft copy, same status as the original seven from Build 2). New test
+`test/warningExplanations.test.ts` asserts every one of the 19 known codes has a
+non-blank entry AND that the table has no stale/orphaned entries (exact-count
+check both directions).
+
+**Data-table assertions:** `DUPLICATE_SUPPRESSING_MODIFIERS`'s full 39-entry set is
+asserted verbatim (sorted-array equality against the spec list) in
+`test/validate.test.ts`. `isValidToothToken`/`isValidToothSurfaceToken` are
+asserted over **every** value in and around each valid range (0-32, 50-83, the
+full A-T/AS-TS alphabets, and invalid surface letters), not spot-checked — per
+BUILD_QUEUE.md's rule that any new lookup/validity table needs assertions
+covering every value, the lesson from `docs/AUDIT_BUILD2.md`'s spot-checked code
+tables shipping wrong decodes. These are validity SETS, not code->label decode
+tables, so the "no two codes share a decoded string" mechanical check doesn't
+apply the same way; the every-value-in-range sweep is the equivalent rigor for a
+membership test.
+
+**Adversarial self-audit performed before calling 3.1 done** (rule 7, "confirmed
+CONFIRMED/REFUTED/ALREADY-ACCEPTED, default REFUTED"):
+- Programmatically checked SE01 vs actual segment count on every committed X12
+  fixture. **CONFIRMED finding, not caused by this build**:
+  `test/fixtures/x12/837I-multi-claim.dat` has a genuinely mismatched SE01 (declared
+  44, actual 58) — pre-existing in the fixture, not something 3.1 introduced. The
+  new `edi-se-count-mismatch` rule now correctly flags it; no e2e/spec-oracle test
+  asserts an exact warning count for that fixture, so nothing broke, but it's worth
+  a fixture fix on a future pass (not attempted here — out of this session's scope,
+  logged rather than silently patched).
+- Checked every DTP date-format qualifier across every fixture against the accepted
+  sets before finalizing rule (g) — see the DT/435 finding above (fixed pre-commit).
+- Checked CLM01 uniqueness, revenue-code shapes, and billing tax ID/taxonomy
+  presence across every fixture manually; no other unexpected warnings found on
+  real fixture data.
+
+### Verification (3.1 checkpoint)
+- typecheck: **pass** (3 configs)
+- vitest: 258 → **320** (62 new: `test/validate.test.ts` 48, `test/x12ClaimSource.test.ts`
+  +14, `test/warningExplanations.test.ts` 4 — net +62 after removing 0 old tests), pass
+- Playwright E2E: 53 → **53** (unchanged — 3.1 touches no renderer/UI surface), pass
+- Playwright flake retried? no
+- `npm run verify` (typecheck + vitest + build:app + e2e): **green**, full run
+
+### Preload/IPC surface changes (rule 7b)
+- None — 3.1 touches only `src/model/`, `src/sources/`, `src/renderer/warningExplanations.ts`
+  (data/copy, not UI), and tests.

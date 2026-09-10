@@ -12,9 +12,11 @@ import type {
   OccurrenceCode,
   OccurrenceSpan,
   Dental,
+  ClaimWarning,
 } from '../../model/claim.js';
 import { type ClaimSource, ClaimParseError } from '../claimSource.js';
-import { validateClaim, pointerLetter } from '../json/jsonClaimSource.js';
+import { pointerLetter } from '../json/jsonClaimSource.js';
+import { validateClaim } from '../../model/validate.js';
 import { composeName } from '../../render/text.js';
 import { tokenize, components, segmentToString } from './tokenize.js';
 import type { Delimiters, Segment } from './tokenize.js';
@@ -674,7 +676,18 @@ function buildClaim(ctx: ClaimCtx, claimSegs: Segment[], delimiters: Delimiters)
   if (ctx.kind === 'I') {
     hi = extractHi(claimLevel, comp);
     claim.diagnoses = hi.diagnoses;
-    claim.serviceLines = lines.map((l) => extractInstitutionalServiceLine(l, comp));
+    const allLines = lines.map((l) => extractInstitutionalServiceLine(l, comp));
+    // 3.1(d): the UB-04 0001 line (FL47's revenue-code-0001 summary/total
+    // row) isn't a real service line — charge-total-mismatch already
+    // reconciles the detail lines against claim.totals.totalCharge, so
+    // keeping 0001 in serviceLines would double the total. Strip it at the
+    // source, and when the claim carried no CLM02 total (totalCharge left
+    // at 0 above), fall back to the 0001 line's own charge as the total.
+    const totalLine = allLines.find((l) => l.revenueCode === '0001');
+    claim.serviceLines = allLines.filter((l) => l.revenueCode !== '0001');
+    if (totalLine && claim.totals.totalCharge === 0) {
+      claim.totals.totalCharge = totalLine.charge;
+    }
   } else if (ctx.kind === 'D') {
     claim.diagnoses = extractDiagnoses(claimLevel, comp); // 837D reuses the same HI ABK/ABF shape as 837P.
     claim.serviceLines = lines.map((l) => extractDentalServiceLine(l, comp));
@@ -774,8 +787,89 @@ function buildClaim(ctx: ClaimCtx, claimSegs: Segment[], delimiters: Delimiters)
     }
   }
 
-  claim.warnings = [...claim.warnings, ...validateClaim(claim)];
+  claim.warnings = [...claim.warnings, ...checkDateQualifiers(claimLevel, lines), ...validateClaim(claim)];
   return claim;
+}
+
+// ---------------------------------------------------------------------------
+// 3.1(g) — EDI structural defects. "Bad qualifiers" is scoped here to the
+// DTP date-format qualifier (element 1) on the three DTP segments this
+// parser actually reads (472 service date, 434 statement period, 435
+// admission date) — parseServiceDate/parseStatementPeriod/parseAdmissionDate
+// above already assume a specific set of qualifiers and silently produce a
+// blank date for anything else, so a qualifier outside that set is a
+// genuine, mechanically verifiable defect rather than a guess at IG intent.
+// The accepted set differs per segment and mirrors exactly what those three
+// parse functions already handle: 472/434 take a single D8 date OR an RD8
+// range; 435 (admission date) is handled by x12DateFlexible, which also
+// accepts the DT (CCYYMMDDHHMM) format real 837I-all-fields.dat fixture
+// data uses — RD8 makes no sense for a point-in-time admission date, so it's
+// deliberately not in 435's accepted set. SE01/duplicate-CLM01 are
+// transaction-wide, not per-claim, so they're checked separately by
+// applyEdiStructuralChecks below (X12ClaimSource.parse's caller).
+// ---------------------------------------------------------------------------
+
+function checkDateQualifiers(claimLevel: Segment[], lines: Segment[][]): ClaimWarning[] {
+  const w: ClaimWarning[] = [];
+  const checkOne = (seg: Segment | undefined, label: string, accepted: readonly string[]): void => {
+    if (!seg) return;
+    const fmt = seg.elements[1] ?? '';
+    if (!accepted.includes(fmt)) {
+      w.push({
+        code: 'edi-bad-date-qualifier',
+        severity: 'warning',
+        message: `${label} (DTP*${seg.elements[0] ?? ''}) uses an unrecognized date-format qualifier "${fmt}" — expected ${accepted.join(' or ')}.`,
+      });
+    }
+  };
+  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '434'), 'Statement covers period', ['D8', 'RD8']);
+  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '435'), 'Admission date', ['D8', 'DT']);
+  for (const lineSegs of lines) {
+    checkOne(lineSegs.find((s) => s.id === 'DTP' && s.elements[0] === '472'), 'Service date', ['D8', 'RD8']);
+  }
+  return w;
+}
+
+/**
+ * SE01 segment-count and duplicate-CLM01 checks — both need every claim in
+ * the SAME ST/SE transaction at once, so they run once per transaction
+ * (X12ClaimSource.parse below) rather than inside buildClaim, and push
+ * directly onto each affected claim's already-built `warnings` array.
+ */
+function applyEdiStructuralChecks(tx: Transaction, claims: Claim[]): void {
+  if (claims.length === 0) return;
+
+  // SE01 must equal the number of segments in the transaction set, ST and
+  // SE themselves included. tx.segments excludes both (see splitTransactions).
+  const actualCount = tx.segments.length + 2;
+  const declared = Number(tx.se01);
+  if (tx.se01 !== '' && Number.isFinite(declared) && declared !== actualCount) {
+    const warning: ClaimWarning = {
+      code: 'edi-se-count-mismatch',
+      severity: 'warning',
+      message: `This 837 transaction's SE01 segment count (${tx.se01}) doesn't match the actual number of segments between ST and SE (${actualCount}).`,
+    };
+    for (const c of claims) c.warnings.push(warning);
+  }
+
+  // Duplicate CLM01 (claim control number) within the same transaction —
+  // blank ids are skipped (missing data, not a duplication signal).
+  const byId = new Map<string, Claim[]>();
+  for (const c of claims) {
+    if (c.claimId === '') continue;
+    const existing = byId.get(c.claimId);
+    if (existing) existing.push(c);
+    else byId.set(c.claimId, [c]);
+  }
+  for (const [id, dupes] of byId) {
+    if (dupes.length < 2) continue;
+    const warning: ClaimWarning = {
+      code: 'edi-duplicate-claim-id',
+      severity: 'warning',
+      message: `Claim ID "${id}" appears on ${dupes.length} claims within this 837 transaction.`,
+    };
+    for (const c of dupes) c.warnings.push(warning);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +967,9 @@ export class X12ClaimSource implements ClaimSource {
 
     const claims: Claim[] = [];
     for (const tx of transactions) {
-      claims.push(...parseTransaction(tx, delimiters));
+      const txClaims = parseTransaction(tx, delimiters);
+      applyEdiStructuralChecks(tx, txClaims);
+      claims.push(...txClaims);
     }
     if (claims.length === 0) {
       throw new ClaimParseError('The 837 transaction(s) in this file contain no claims (no CLM segment found).');

@@ -14,6 +14,8 @@ export interface Transaction {
   st01: string;
   /** ST03 — version, used as a GS08 fallback. */
   st03: string;
+  /** SE01 — declared segment count for this transaction set, raw string ('' if there was no closing SE, e.g. a truncated file). Docs/BUILD_QUEUE.md Build 3.1(g)'s SE01-count structural check. */
+  se01: string;
   /** Segments strictly between ST and SE (exclusive of both). */
   segments: Segment[];
 }
@@ -38,14 +40,14 @@ export function splitTransactions(segments: Segment[]): Transaction[] {
       continue;
     }
     if (seg.id === 'SE') {
-      if (current) transactions.push({ gs08, st01, st03, segments: current });
+      if (current) transactions.push({ gs08, st01, st03, se01: seg.elements[0] ?? '', segments: current });
       current = null;
       continue;
     }
     if (current) current.push(seg);
   }
-  // Truncated file (no closing SE) — flush what we have rather than drop it silently.
-  if (current && current.length > 0) transactions.push({ gs08, st01, st03, segments: current });
+  // Truncated file (no closing SE) — flush what we have rather than drop it silently. se01: '' since there was no SE to read a count from.
+  if (current && current.length > 0) transactions.push({ gs08, st01, st03, se01: '', segments: current });
 
   return transactions;
 }
