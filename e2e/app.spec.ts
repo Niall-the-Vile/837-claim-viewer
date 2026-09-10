@@ -239,7 +239,7 @@ test.describe('837 Claim Viewer — E2E', () => {
       // an UNrendered canvas satisfies — it reports the 300x150 HTML default,
       // not 0x0 (docs/AUDIT_BUILD2.md).
       const canvasSize = await renderedCanvasSize(page);
-      expect(canvasSize.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
+      expect(canvasSize.width).not.toBe(UNRENDERED_CANVAS_WIDTH);
       expect(canvasSize.height).toBeGreaterThan(0);
 
       // Export: opens the dialog, confirms, and the E2E-seam "save" path

@@ -436,7 +436,7 @@ test.describe('837 Claim Viewer — E2E — multi-file tabs', () => {
       // `> 0` would be vacuous: an unrendered #pdfCanvas reports the 300x150
       // HTML default, not 0x0 (docs/AUDIT_BUILD2.md, e2e/support/canvas.ts).
       const canvas = await renderedCanvasSize(page);
-      expect(canvas.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
+      expect(canvas.width).not.toBe(UNRENDERED_CANVAS_WIDTH);
       expect(canvas.height).toBeGreaterThan(0);
 
       expect(pageErrors).toEqual([]);

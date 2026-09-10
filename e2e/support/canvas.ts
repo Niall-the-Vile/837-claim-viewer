@@ -20,14 +20,21 @@ import { expect, type Page } from '@playwright/test';
  *
  * Always call this before capturing a canvas baseline or asserting on canvas
  * dimensions.
+ *
+ * The check is "width has moved away from the default", not "width is
+ * greater than the default": on a small-viewport runner (e.g. the
+ * windows-latest GitHub Actions runner's virtual display, which has no
+ * physical monitor) fit-to-page math can legitimately render the page at a
+ * pixel width *below* 300, not just above it. Asserting `> 300` treated that
+ * as an eternally-unrendered canvas and timed out for real, watched renders.
  */
 
 /** The width an unrendered <canvas> reports when it carries no width attribute. */
 export const UNRENDERED_CANVAS_WIDTH = 300;
 
 /**
- * Waits until pdf.js has actually sized `#pdfCanvas` past the HTML default,
- * i.e. a first real render has landed.
+ * Waits until pdf.js has actually sized `#pdfCanvas` away from the HTML
+ * default, i.e. a first real render has landed.
  */
 export async function waitForFirstRender(page: Page): Promise<void> {
   await expect
@@ -35,7 +42,7 @@ export async function waitForFirstRender(page: Page): Promise<void> {
       async () => page.locator('#pdfCanvas').evaluate((el) => (el as HTMLCanvasElement).width),
       { message: 'pdf.js never rendered into #pdfCanvas (still at the unrendered 300px default)' },
     )
-    .toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
+    .not.toBe(UNRENDERED_CANVAS_WIDTH);
 }
 
 /** Reads the canvas's current pixel dimensions, after waiting for a first real render. */

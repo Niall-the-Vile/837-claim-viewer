@@ -112,7 +112,7 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
         await expect(page2.locator('#claimGroup')).toBeVisible();
         await expect(page2.locator('#claimStepLabel')).toHaveText('Claim 1 of 2');
         const canvas2 = await renderedCanvasSize(page2);
-        expect(canvas2.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
+        expect(canvas2.width).not.toBe(UNRENDERED_CANVAS_WIDTH);
         expect(canvas2.height).toBeGreaterThan(0);
 
         // Activating the lazy tab loads it on demand.
@@ -187,7 +187,7 @@ test.describe('837 Claim Viewer — E2E — session restore', () => {
         // `> 0` would be vacuous: an unrendered #pdfCanvas reports the
         // 300x150 HTML default, not 0x0 (docs/AUDIT_BUILD2.md).
         const canvas = await renderedCanvasSize(page2);
-        expect(canvas.width).toBeGreaterThan(UNRENDERED_CANVAS_WIDTH);
+        expect(canvas.width).not.toBe(UNRENDERED_CANVAS_WIDTH);
         expect(canvas.height).toBeGreaterThan(0);
       } finally {
         await app2.close();
