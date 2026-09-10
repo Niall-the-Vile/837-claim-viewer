@@ -18,6 +18,8 @@ import {
 } from './layout.js';
 import type { FieldBox, Rect, GridColumn } from './layout.js';
 import { safeText, orDash, fitText, formatMoney, rightAlignX, composeName, composeAddressLine, EM_DASH, embedUnicodeFonts } from '../text.js';
+import { provenanceFooterLines } from '../provenance.js';
+import type { RenderProvenance } from '../provenance.js';
 
 /**
  * Renders a normalized Claim as an ADA 2024 Dental Claim Form facsimile PDF.
@@ -90,7 +92,7 @@ interface Fonts {
   value: PDFFont; // DejaVu Sans Mono (falls back to Courier)
 }
 
-export async function renderDental(claim: Claim): Promise<Uint8Array> {
+export async function renderDental(claim: Claim, provenance?: RenderProvenance): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setProducer(PRODUCER);
   doc.setCreator(CREATOR);
@@ -114,7 +116,7 @@ export async function renderDental(claim: Claim): Promise<Uint8Array> {
   const totalPages = pages.length;
   pages.forEach((lines, pageIndex) => {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    drawPage(page, fonts, claim, lines, pageIndex, totalPages);
+    drawPage(page, fonts, claim, lines, pageIndex, totalPages, provenance);
   });
 
   return doc.save();
@@ -141,7 +143,7 @@ function paginateServiceLines(lines: ServiceLine[]): ServiceLine[][] {
 // Page drawing
 // ---------------------------------------------------------------------------
 
-function drawPage(page: PDFPage, fonts: Fonts, claim: Claim, lines: ServiceLine[], pageIndex: number, totalPages: number): void {
+function drawPage(page: PDFPage, fonts: Fonts, claim: Claim, lines: ServiceLine[], pageIndex: number, totalPages: number, provenance: RenderProvenance | undefined): void {
   const isLastPage = pageIndex === totalPages - 1;
 
   drawTitle(page, fonts);
@@ -164,7 +166,7 @@ function drawPage(page: PDFPage, fonts: Fonts, claim: Claim, lines: ServiceLine[
     drawFieldBox(page, fonts, box, getDentalBoxLines(claim, box));
   }
 
-  drawFooter(page, fonts, claim, lines.length, claim.serviceLines.length, pageIndex, totalPages);
+  drawFooter(page, fonts, claim, lines.length, claim.serviceLines.length, pageIndex, totalPages, provenance);
 }
 
 /** Centered "ADA DENTAL CLAIM FORM" title + a small gray facsimile subtitle (design: the isDental block's centered header). */
@@ -192,7 +194,12 @@ function drawTitle(page: PDFPage, fonts: Fonts): void {
   });
 }
 
-/** Footer: brand mark (left), claim id + line count + page stamp (center), disclaimer (right) — mirrors the CMS-1500 restyle's three-column footer. */
+/**
+ * Footer: brand mark (left), claim id + line count + page stamp (center),
+ * disclaimer (right) — mirrors the CMS-1500 restyle's three-column footer.
+ * `provenance` (Build 3.3) is optional and additive only — see
+ * renderCms1500.ts's drawFooter for the full rationale.
+ */
 function drawFooter(
   page: PDFPage,
   fonts: Fonts,
@@ -201,6 +208,7 @@ function drawFooter(
   totalLines: number,
   pageIndex: number,
   totalPages: number,
+  provenance?: RenderProvenance,
 ): void {
   const y = PAGE_HEIGHT - FOOTER_Y;
   const size = 5.5;
@@ -216,6 +224,13 @@ function drawFooter(
   const right = 'UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM';
   const rightX = rightAlignX(fonts.label, right, size, PAGE_WIDTH - 24, 0);
   page.drawText(right, { x: rightX, y, size, font: fonts.label, color: GRAY });
+
+  if (provenance) {
+    const provSize = 4.5;
+    const [line1, line2] = provenanceFooterLines(provenance);
+    page.drawText(safeText(fonts.label, line1), { x: 24, y: y - 8, size: provSize, font: fonts.label, color: GRAY });
+    page.drawText(safeText(fonts.label, line2), { x: 24, y: y - 16, size: provSize, font: fonts.label, color: GRAY });
+  }
 }
 
 /** Draws a bordered box: number + label at top, then one or more value lines. Never draws past the box's own bottom border. */

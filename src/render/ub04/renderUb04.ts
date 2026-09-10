@@ -14,6 +14,8 @@ import {
 } from './layout.js';
 import type { FieldBox, Rect, GridColumn } from './layout.js';
 import { safeText, orDash, fitText, formatMoney, rightAlignX, composeName, composeAddressLine, EM_DASH, embedUnicodeFonts } from '../text.js';
+import { provenanceFooterLines } from '../provenance.js';
+import type { RenderProvenance } from '../provenance.js';
 
 /**
  * Renders a normalized Claim as a UB-04 (CMS-1450) facsimile PDF, following
@@ -75,7 +77,7 @@ interface Fonts {
   value: PDFFont; // DejaVu Sans Mono (falls back to Courier)
 }
 
-export async function renderUb04(claim: Claim): Promise<Uint8Array> {
+export async function renderUb04(claim: Claim, provenance?: RenderProvenance): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setProducer(PRODUCER);
   doc.setCreator(CREATOR);
@@ -99,7 +101,7 @@ export async function renderUb04(claim: Claim): Promise<Uint8Array> {
   let lineNumberOffset = 1; // 1-based line number, running across pages so LN stays continuous.
   pages.forEach((lines, pageIndex) => {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    drawPage(page, fonts, claim, lines, pageIndex, totalPages, lineNumberOffset);
+    drawPage(page, fonts, claim, lines, pageIndex, totalPages, lineNumberOffset, provenance);
     lineNumberOffset += lines.length;
   });
 
@@ -144,6 +146,7 @@ function drawPage(
   pageIndex: number,
   totalPages: number,
   lineNumberOffset: number,
+  provenance: RenderProvenance | undefined,
 ): void {
   const isLastPage = pageIndex === totalPages - 1;
 
@@ -155,7 +158,7 @@ function drawPage(
   }
 
   drawGridTable(page, fonts, claim, lines, isLastPage, pageIndex, totalPages, lineNumberOffset);
-  drawFooter(page, fonts, claim, pageIndex, totalPages, lineNumberOffset + lines.length - 1);
+  drawFooter(page, fonts, claim, pageIndex, totalPages, lineNumberOffset + lines.length - 1, provenance);
 }
 
 function drawTitle(page: PDFPage, fonts: Fonts, claim: Claim): void {
@@ -371,7 +374,8 @@ function totalRowValues(claim: Claim): Record<GridColumn['key'], string> {
 // Footer
 // ---------------------------------------------------------------------------
 
-function drawFooter(page: PDFPage, fonts: Fonts, claim: Claim, pageIndex: number, totalPages: number, lastLineOnPage: number): void {
+/** `provenance` (Build 3.3) is optional and additive only — see renderCms1500.ts's drawFooter for the full rationale, identical here: two extra lines drawn below the existing footer line, inside the same already-declared footer band, only when supplied. */
+function drawFooter(page: PDFPage, fonts: Fonts, claim: Claim, pageIndex: number, totalPages: number, lastLineOnPage: number, provenance?: RenderProvenance): void {
   const y = PAGE_HEIGHT - FOOTER_Y;
   const size = 5.5;
   page.drawText('UB-04  CMS-1450  ·  APPROVED OMB NO. 0938-0997', { x: 14, y, size, font: fonts.label, color: GRAY });
@@ -386,6 +390,13 @@ function drawFooter(page: PDFPage, fonts: Fonts, claim: Claim, pageIndex: number
   const right = 'UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM';
   const rightX = rightAlignX(fonts.label, right, size, PAGE_WIDTH - 14, 0);
   page.drawText(right, { x: rightX, y, size, font: fonts.label, color: GRAY });
+
+  if (provenance) {
+    const provSize = 4.5;
+    const [line1, line2] = provenanceFooterLines(provenance);
+    page.drawText(safeText(fonts.label, line1), { x: 14, y: y - 8, size: provSize, font: fonts.label, color: GRAY });
+    page.drawText(safeText(fonts.label, line2), { x: 14, y: y - 16, size: provSize, font: fonts.label, color: GRAY });
+  }
 }
 
 // ---------------------------------------------------------------------------

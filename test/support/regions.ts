@@ -47,6 +47,8 @@ import {
   BOX33_BILLING,
   BAND3_LABEL_RECT,
   FOOTER_Y as CMS_FOOTER_Y,
+  DIAG_CONT_TITLE_RECT,
+  DIAG_CONT_LIST_RECT,
   toPdfRect as cmsToPdfRect,
 } from '../../src/render/cms1500/layout.js';
 import type { Rect as CmsRect } from '../../src/render/cms1500/layout.js';
@@ -115,6 +117,34 @@ export function cms1500Regions(): Rect[] {
     { x: 0, y: CMS_FOOTER_Y - 8, width: CMS_PAGE_WIDTH, height: CMS_PAGE_HEIGHT - (CMS_FOOTER_Y - 8) },
   ];
   return topOrigin.map((r) => cmsToPdfRect(r, CMS_PAGE_HEIGHT));
+}
+
+/**
+ * CMS-1500 diagnosis continuation page (Build 3.2(a)) — a different page
+ * kind from every other CMS-1500 page, so it gets its own region set
+ * derived from its own layout constants (title band, list band, and the
+ * same footer band every other page uses), never hand-copied coordinates.
+ */
+export function cms1500ContinuationRegions(): Rect[] {
+  const topOrigin: CmsRect[] = [
+    DIAG_CONT_TITLE_RECT,
+    DIAG_CONT_LIST_RECT,
+    { x: 0, y: CMS_FOOTER_Y - 8, width: CMS_PAGE_WIDTH, height: CMS_PAGE_HEIGHT - (CMS_FOOTER_Y - 8) },
+  ];
+  return topOrigin.map((r) => cmsToPdfRect(r, CMS_PAGE_HEIGHT));
+}
+
+/**
+ * Per-page region selector for a CMS-1500 render that MAY have appended a
+ * diagnosis continuation page: every page up through `serviceLinePageCount`
+ * uses the normal form regions, and the final page (only present when
+ * `hasContinuation` is true) uses the continuation page's own regions.
+ * Matches test/support/geometry.ts's LayoutSpec.regions function shape.
+ */
+export function cms1500RegionsPerPage(serviceLinePageCount: number, hasContinuation: boolean): (pageIndex: number, pageCount: number) => Rect[] {
+  const normal = cms1500Regions();
+  const continuation = cms1500ContinuationRegions();
+  return (pageIndex: number) => (hasContinuation && pageIndex >= serviceLinePageCount ? continuation : normal);
 }
 
 export function ub04Regions(): Rect[] {

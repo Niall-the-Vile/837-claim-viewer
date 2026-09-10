@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import type { PDFFont, PDFPage } from 'pdf-lib';
-import type { Claim, Address, Name, ServiceLine } from '../../model/claim.js';
+import type { Claim, Address, Name, ServiceLine, Diagnosis } from '../../model/claim.js';
 import {
   PAGE_WIDTH,
   PAGE_HEIGHT,
@@ -46,10 +46,15 @@ import {
   BOX33_BILLING,
   BAND3_LABEL_RECT,
   FOOTER_Y,
+  DIAG_CONT_TITLE_RECT,
+  DIAG_CONT_LIST_RECT,
+  DIAG_CONT_LINE_H,
   toPdfRect,
 } from './layout.js';
 import type { FieldBox, Rect, Box24Column } from './layout.js';
 import { safeText, orDash, fitText, formatMoney, rightAlignX, composeName, EM_DASH, embedUnicodeFonts } from '../text.js';
+import { provenanceFooterLines } from '../provenance.js';
+import type { RenderProvenance } from '../provenance.js';
 
 /**
  * Renders a normalized Claim as a CMS-1500 facsimile PDF, following the
@@ -108,7 +113,7 @@ interface Fonts {
   value: PDFFont; // DejaVu Sans Mono (falls back to Courier)
 }
 
-export async function renderCms1500(claim: Claim): Promise<Uint8Array> {
+export async function renderCms1500(claim: Claim, provenance?: RenderProvenance): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setProducer(PRODUCER);
   doc.setCreator(CREATOR);
@@ -123,12 +128,12 @@ export async function renderCms1500(claim: Claim): Promise<Uint8Array> {
   const fonts: Fonts = { label, value };
 
   const maxRows = BOX24_TABLE.maxRowsPerPage;
-  const totalPages = Math.max(1, Math.ceil(claim.serviceLines.length / maxRows));
+  const serviceLinePageCount = Math.max(1, Math.ceil(claim.serviceLines.length / maxRows));
 
   // Slice service lines per page up front so pagination can be asserted
   // independently of the drawing code below.
   const pages: ServiceLine[][] = [];
-  for (let i = 0; i < totalPages; i++) {
+  for (let i = 0; i < serviceLinePageCount; i++) {
     pages.push(claim.serviceLines.slice(i * maxRows, i * maxRows + maxRows));
   }
   const drawnLineCount = pages.reduce((sum, p) => sum + p.length, 0);
@@ -138,10 +143,25 @@ export async function renderCms1500(claim: Claim): Promise<Uint8Array> {
     );
   }
 
+  // Build 3.2(a): box 21's DIAG_CELLS grid has exactly 12 cells (pointers
+  // A-L) — a diagnosis beyond ordinal 12 is otherwise silently absent from
+  // every page with no on-form indicator. When any exist, one continuation
+  // page listing them is appended after the service-line pages, and every
+  // page's footer counts it into "PAGE X OF Y" so its existence is visible
+  // even before a reader reaches it.
+  const overflowDiagnoses = claim.diagnoses.filter((d) => d.ordinal > 12);
+  const totalPages = serviceLinePageCount + (overflowDiagnoses.length > 0 ? 1 : 0);
+
   pages.forEach((lines, pageIndex) => {
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    drawPage(page, fonts, claim, lines, pageIndex, totalPages);
+    const isLastServiceLinePage = pageIndex === serviceLinePageCount - 1;
+    drawPage(page, fonts, claim, lines, isLastServiceLinePage, pageIndex + 1, totalPages, provenance);
   });
+
+  if (overflowDiagnoses.length > 0) {
+    const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    drawDiagContinuationPage(page, fonts, claim, overflowDiagnoses, totalPages, totalPages, provenance);
+  }
 
   return doc.save();
 }
@@ -155,10 +175,12 @@ function drawPage(
   fonts: Fonts,
   claim: Claim,
   lines: ServiceLine[],
-  pageIndex: number,
+  isLastServiceLinePage: boolean,
+  pageNumber: number,
   totalPages: number,
+  provenance: RenderProvenance | undefined,
 ): void {
-  const isLastPage = pageIndex === totalPages - 1;
+  const isLastPage = isLastServiceLinePage;
 
   drawHeader(page, fonts, claim);
   drawPica(page, fonts);
@@ -212,7 +234,7 @@ function drawPage(
   drawFieldBox(page, fonts, BOX32_FACILITY, getBoxLines(claim, BOX32_FACILITY.key));
   drawFieldBox(page, fonts, BOX33_BILLING, getBoxLines(claim, BOX33_BILLING.key));
 
-  drawFooter(page, fonts, claim, pageIndex, totalPages);
+  drawFooter(page, fonts, claim, pageNumber, totalPages, provenance);
 }
 
 // ---------------------------------------------------------------------------
@@ -506,7 +528,18 @@ function drawCenteredText(page: PDFPage, font: PDFFont, text: string, rect: Rect
 
 function drawDiagnoses(page: PDFPage, fonts: Fonts, claim: Claim): void {
   drawFrame(page, DIAG_BOX);
-  const label = safeText(fonts.label, '21. DIAGNOSIS OR NATURE OF ILLNESS OR INJURY  ·  ICD Ind. 0');
+  // Build 3.2(a): an on-form indicator for the silent-truncation gap — boxes
+  // A-L (DIAG_CELLS, below) can never show a 13th+ diagnosis, so when one
+  // exists the label itself says where the rest went, alongside the
+  // dedicated continuation page (drawDiagContinuationPage) that actually
+  // lists them. Still drawn through fitText like every other label, so it
+  // shrinks rather than overflowing DIAG_BOX on a narrow render.
+  const overflowCount = claim.diagnoses.filter((d) => d.ordinal > 12).length;
+  const labelRaw =
+    overflowCount > 0
+      ? `21. DIAGNOSIS OR NATURE OF ILLNESS OR INJURY  ·  ICD Ind. 0  ·  +${overflowCount} MORE — SEE LAST PAGE`
+      : '21. DIAGNOSIS OR NATURE OF ILLNESS OR INJURY  ·  ICD Ind. 0';
+  const label = safeText(fonts.label, labelRaw);
   const fit = fitText(fonts.label, label, DIAG_BOX.width - 2 * LABEL_PAD_X, { maxSize: LABEL_SIZE, minSize: 4 });
   page.drawText(fit.text, {
     x: DIAG_BOX.x + LABEL_PAD_X,
@@ -532,6 +565,63 @@ function drawDiagnoses(page: PDFPage, fonts: Fonts, claim: Claim): void {
       color: BLACK,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Diagnosis continuation page (Build 3.2(a)) — appended only when
+// overflowDiagnoses is non-empty; see renderCms1500's header comment on
+// overflowDiagnoses for why this exists. A plain list, not a grid: there is
+// no fixed box-21-style cell count to preserve here, so simplicity wins.
+// ---------------------------------------------------------------------------
+
+function drawDiagContinuationPage(
+  page: PDFPage,
+  fonts: Fonts,
+  claim: Claim,
+  overflowDiagnoses: Diagnosis[],
+  pageNumber: number,
+  totalPages: number,
+  provenance: RenderProvenance | undefined,
+): void {
+  const claimId = safeText(fonts.label, orDash(claim.claimId));
+  const title = safeText(fonts.label, `DIAGNOSIS CONTINUATION — CLAIM ${claimId}`);
+  page.drawText(title, {
+    x: DIAG_CONT_TITLE_RECT.x,
+    y: PAGE_HEIGHT - DIAG_CONT_TITLE_RECT.y - 10,
+    size: 11,
+    font: fonts.label,
+    color: BLACK,
+  });
+  const subtitle = safeText(
+    fonts.label,
+    `Box 21 (Diagnosis or Nature of Illness or Injury) shows pointers A–L (12) only. Every diagnosis beyond that is listed below and remains part of the parsed claim.`,
+  );
+  const subtitleFit = fitText(fonts.label, subtitle, DIAG_CONT_TITLE_RECT.width, { maxSize: 7, minSize: 5.5 });
+  page.drawText(subtitleFit.text, {
+    x: DIAG_CONT_TITLE_RECT.x,
+    y: PAGE_HEIGHT - DIAG_CONT_TITLE_RECT.y - DIAG_CONT_TITLE_RECT.height + 2,
+    size: subtitleFit.size,
+    font: fonts.label,
+    color: GRAY,
+  });
+
+  const maxWidth = DIAG_CONT_LIST_RECT.width - 2 * LABEL_PAD_X;
+  overflowDiagnoses.forEach((d, i) => {
+    const rowTopY = DIAG_CONT_LIST_RECT.y + i * DIAG_CONT_LINE_H;
+    if (rowTopY + DIAG_CONT_LINE_H > DIAG_CONT_LIST_RECT.y + DIAG_CONT_LIST_RECT.height) return; // overflow guard: never draw past the list's own bottom edge
+    const poa = d.poa !== '' ? `  (POA: ${d.poa})` : '';
+    const text = safeText(fonts.value, `${d.ordinal}. ${d.code}${poa}`);
+    const fit = fitText(fonts.value, text, maxWidth, { maxSize: VALUE_MAX_SIZE, minSize: VALUE_MIN_SIZE });
+    page.drawText(fit.text, {
+      x: DIAG_CONT_LIST_RECT.x + LABEL_PAD_X,
+      y: PAGE_HEIGHT - (rowTopY + DIAG_CONT_LINE_H - 3),
+      size: fit.size,
+      font: fonts.value,
+      color: BLACK,
+    });
+  });
+
+  drawFooter(page, fonts, claim, pageNumber, totalPages, provenance);
 }
 
 // ---------------------------------------------------------------------------
@@ -672,19 +762,40 @@ function box24CellValues(line: ServiceLine, renderingNpi: string): Record<Box24C
 // Footer
 // ---------------------------------------------------------------------------
 
-function drawFooter(page: PDFPage, fonts: Fonts, claim: Claim, pageIndex: number, totalPages: number): void {
+/**
+ * `pageNumber` is already 1-based — callers (drawPage and
+ * drawDiagContinuationPage) both pass a real page ordinal, not a 0-based
+ * index, since the continuation page has to count into `totalPages`
+ * alongside the service-line pages.
+ *
+ * `provenance` (Build 3.3) is optional and additive only: when supplied, two
+ * extra small lines are drawn BELOW the existing footer line, inside the
+ * same already-declared footer region (test/support/regions.ts's cms1500
+ * footer band already spans the full bottom margin, not just this one
+ * line's height) — so no region-builder change was needed for this item.
+ * Omitting it draws nothing extra, keeping every default-path render
+ * byte-identical to before this build.
+ */
+function drawFooter(page: PDFPage, fonts: Fonts, claim: Claim, pageNumber: number, totalPages: number, provenance?: RenderProvenance): void {
   const y = PAGE_HEIGHT - FOOTER_Y;
   const size = 5.5;
   page.drawText('NUCC Instruction Manual available at: www.nucc.org', { x: 14, y, size, font: fonts.label, color: GRAY });
 
   const claimId = safeText(fonts.label, orDash(claim.claimId));
-  const center = `CLAIM ${claimId}  ·  PAGE ${pageIndex + 1} OF ${totalPages}`;
+  const center = `CLAIM ${claimId}  ·  PAGE ${pageNumber} OF ${totalPages}`;
   const centerWidth = fonts.label.widthOfTextAtSize(center, size);
   page.drawText(center, { x: PAGE_WIDTH / 2 - centerWidth / 2, y, size, font: fonts.label, color: GRAY });
 
   const right = 'UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM';
   const rightX = rightAlignX(fonts.label, right, size, PAGE_WIDTH - 14, 0);
   page.drawText(right, { x: rightX, y, size, font: fonts.label, color: GRAY });
+
+  if (provenance) {
+    const provSize = 4.5;
+    const [line1, line2] = provenanceFooterLines(provenance);
+    page.drawText(safeText(fonts.label, line1), { x: 14, y: y - 8, size: provSize, font: fonts.label, color: GRAY });
+    page.drawText(safeText(fonts.label, line2), { x: 14, y: y - 16, size: provSize, font: fonts.label, color: GRAY });
+  }
 }
 
 // ---------------------------------------------------------------------------

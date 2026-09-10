@@ -9,6 +9,7 @@ import { renderCms1500 } from '../../src/render/cms1500/renderCms1500.js';
 import { renderUb04 } from '../../src/render/ub04/renderUb04.js';
 import { renderDental } from '../../src/render/dental/renderDental.js';
 import type { Claim } from '../../src/model/claim.js';
+import type { RenderProvenance } from '../../src/render/provenance.js';
 
 /**
  * Golden render manifests: renders each form from a fixed fixture, extracts
@@ -84,6 +85,14 @@ interface GoldenCase {
   render: (c: Claim) => Promise<Uint8Array>;
 }
 
+/** Fixed, never-`new Date()` provenance object for the one provenance golden case (Build 3.3) — every value is a literal, exactly as a real caller (electron/main.ts) must supply them, so this case is reproducible across runs. */
+const FROZEN_PROVENANCE: RenderProvenance = {
+  sourceFileName: 'synthetic-1500.json',
+  sourceSha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff0',
+  appVersion: '0.0.1',
+  renderedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
 function goldenCases(): GoldenCase[] {
   return [
     {
@@ -109,6 +118,17 @@ function goldenCases(): GoldenCase[] {
       label: 'dental (837D-all-fields.dat)',
       claim: x12Src.parse(fixture('x12', '837D-all-fields.dat'))[0]!,
       render: renderDental,
+    },
+    {
+      // Build 3.3: proves the provenance footer renders (and stays stable)
+      // WITHOUT touching a single existing golden — if this case's own
+      // manifest ever drifts unexpectedly, or if adding it changed any of
+      // the four cases above, that's provenance leaking into the default
+      // path and must be fixed, never "explained away" by regenerating.
+      id: 'cms1500-synthetic-json-with-provenance',
+      label: 'cms1500 (synthetic-1500.json, WITH provenance footer)',
+      claim: jsonSrc.parse(fixture('synthetic-1500.json'))[0]!,
+      render: (c: Claim) => renderCms1500(c, FROZEN_PROVENANCE),
     },
   ];
 }

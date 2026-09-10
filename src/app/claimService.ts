@@ -7,6 +7,7 @@ import { renderCms1500 } from '../render/cms1500/renderCms1500.js';
 import { renderUb04 } from '../render/ub04/renderUb04.js';
 import { renderDental } from '../render/dental/renderDental.js';
 import { composeName } from '../render/text.js';
+import type { RenderProvenance } from '../render/provenance.js';
 
 /**
  * Pure, Electron-free application core: turns raw file text into normalized
@@ -47,15 +48,22 @@ export function loadClaims(text: string): LoadedClaims {
  * calm placeholder page — rather than throwing, so the export/preview flow
  * never dead-ends even when the data itself has no known form (its fields
  * remain visible in the inspector, per UI_REQUIREMENTS_v2_single_claim §4).
+ *
+ * `provenance` (Build 3.3) is optional and forwarded verbatim to whichever
+ * form renderer handles this claim — this function's own signature/behavior
+ * is otherwise unchanged, so `claim:getPdf`'s existing (no-provenance) call
+ * keeps rendering byte-identical output. Only the export path
+ * (`dialog:exportPdf` in electron/main.ts) supplies it. The unsupported-form
+ * placeholder has no footer band to extend, so provenance is a no-op there.
  */
-export async function renderClaim(claim: Claim): Promise<Uint8Array> {
+export async function renderClaim(claim: Claim, provenance?: RenderProvenance): Promise<Uint8Array> {
   switch (claim.formType) {
     case 'cms1500':
-      return renderCms1500(claim);
+      return renderCms1500(claim, provenance);
     case 'ub04':
-      return renderUb04(claim);
+      return renderUb04(claim, provenance);
     case 'dental':
-      return renderDental(claim);
+      return renderDental(claim, provenance);
     case 'unsupported':
       return renderUnsupportedPlaceholder(claim);
   }

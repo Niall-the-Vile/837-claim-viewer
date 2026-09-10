@@ -469,3 +469,146 @@ CONFIRMED/REFUTED/ALREADY-ACCEPTED, default REFUTED"):
 ### Preload/IPC surface changes (rule 7b)
 - None — 3.1 touches only `src/model/`, `src/sources/`, `src/renderer/warningExplanations.ts`
   (data/copy, not UI), and tests.
+
+### 3.2 — CMS-1500 diagnosis overflow
+STATUS: GREEN
+
+**(a) The confirmed silent-truncation gap, fixed.** `drawDiagnoses`'s `DIAG_CELLS`
+grid still has exactly 12 cells (pointers A-L) — that didn't change — but a claim
+with more than 12 diagnoses now gets:
+- An **on-form indicator** inside box 21 itself: the label line grows
+  `· +N MORE — SEE LAST PAGE` (still routed through the same `fitText`, so it
+  shrinks rather than overflowing the box).
+- A **diagnosis continuation page**, appended once after the last service-line
+  page, listing every diagnosis beyond ordinal 12 (`ordinal. code (POA: x)`) as
+  plain text, with its own title/subtitle band and the same footer every other
+  page draws (so "PAGE X OF Y" numbering counts it, and the disclaimer still
+  appears on it too).
+- New layout constants in `src/render/cms1500/layout.ts`
+  (`DIAG_CONT_TITLE_RECT`, `DIAG_CONT_LIST_RECT`, `DIAG_CONT_LINE_H`), derived
+  from the page's own margins/footer band — never hand-copied coordinates.
+- `renderCms1500`'s internal page-drawing split `isLastServiceLinePage` (money
+  totals on boxes 28-30) from `pageNumber`/`totalPages` (footer numbering,
+  which now includes the continuation page) — previously the same
+  `pageIndex === totalPages - 1` expression did both jobs, which broke the
+  moment a continuation page could exist. Verified directly: a 13-service-line
+  + 14-diagnosis combined case renders exactly 4 pages, with the total-charge
+  string appearing exactly once (on page 3, the actual last service-line page)
+  and never on the continuation page.
+
+**Verified against `test/fixtures/1500-14-diagnoses.json`** (already existed from
+Build 0's pre-flight fixture generation) — a claim with 14 diagnoses, 2 service
+lines: renders exactly 2 pages, and both overflow diagnosis codes (ordinal
+13 = `M25561`, ordinal 14 = `H269`) are present in the rendered text.
+**Caveat found and documented, not silently worked around:** ordinal 14's code
+(`H269`) happens to also be ordinal 1's code in this fixture, so its mere
+presence in rendered text doesn't independently prove the continuation page
+rendered it — `M25561` (ordinal 13, unique to the fixture) is the actual
+load-bearing proof; the test comments this explicitly rather than presenting a
+weaker check as if it were conclusive.
+
+**(b) fitText(...minSize) truncation-gap audit** (every remaining call site,
+`src/render/{cms1500,ub04,dental}/render*.ts`):
+- Every UB-04/dental multi-value list (condition codes, occurrence codes/spans,
+  value codes, diagnoses, missing teeth) already goes through `wrapWithOverflow`
+  BEFORE reaching `fitText` — that helper already appends its own `+N more`
+  marker when a list doesn't fit its allotted lines. `fitText` on those lines is
+  a last-resort safety net for an already-bounded, already-token-limited string,
+  not the primary overflow mechanism.
+- Every other call site (all three renderers) operates on a single logical field
+  value — a name, an address line, a code, a dollar amount, a label — where
+  `fitText`'s shrink-then-ellipsis behavior is a visible degradation (a reader
+  sees "…" and knows text was cut) rather than a silent drop of an entire list
+  entry. Ellipsis on a single value was judged acceptable and out of this
+  item's scope, which is specifically about **list truncation with no
+  count-of-what's-hidden**.
+- **Conclusion: no second truncation gap found beyond the CMS-1500 diagnosis
+  one fixed in (a).** Full call-site list (25 sites) reviewed; none flagged.
+
+### Region-builder work (required by this item, inherited by Build 4.2)
+- `test/support/geometry.ts`'s `LayoutSpec.regions` now accepts `Rect[] |
+  ((pageIndex, pageCount) => Rect[])` — a plain array still applies uniformly
+  (every existing caller unchanged), and a function selects per-page regions for
+  a form that can append a different page kind.
+- `test/support/regions.ts` gained `cms1500ContinuationRegions()` (derived from
+  the new layout constants + the existing footer band) and
+  `cms1500RegionsPerPage(serviceLinePageCount, hasContinuation)`, the selector
+  used by the new geometry case. Page-bounds and text-vs-text checks stayed
+  active on every page; `GEOMETRY_TOLERANCE` and the 0.3pt overlap tolerance
+  were not touched.
+
+### Verification (3.2 checkpoint)
+- typecheck: **pass** (3 configs)
+- vitest: 320 → **325** (+5: 4 new tests in `test/invariants.test.ts`'s diagnosis-
+  overflow describe block — including a combined multi-service-line-page +
+  overflow case proving `isLastServiceLinePage`/`pageNumber` stay correctly
+  decoupled — plus 1 new geometry case in the existing layout-invariants loop), pass
+- Playwright E2E: 53 → **53** (unchanged), pass
+- Golden manifests: **unchanged, no regeneration needed** — none of the 4 existing
+  golden fixtures carries more than 12 diagnoses (checked: 837P-all-fields.dat has
+  2, synthetic-1500.json has 2), confirmed by running the golden suite unchanged.
+
+### 3.3 — Provenance footer on exports
+STATUS: GREEN
+
+New `src/render/provenance.ts` exports `RenderProvenance` (`sourceFileName`,
+`sourceSha256`, `appVersion`, `renderedAt: Date`) and `provenanceFooterLines()`
+(the two shared footer lines, worded identically across all three forms).
+`renderCms1500` / `renderUb04` / `renderDental` each gained an **optional final
+parameter** and draw the two extra lines only when it's supplied, inside the
+already-declared footer region every renderer's `test/support/regions.ts` band
+already spans (that band was already the full bottom margin, not just one
+line's height, in all three forms — confirmed by inspection before writing any
+code, so no region-builder change was needed for this item). The existing
+"UNVERIFIED FACSIMILE — NOT AN OFFICIAL FORM" / "UNVERIFIED — NOT AN OFFICIAL ADA
+FORM" disclaimer is **untouched** — provenance supplements it on the lines below,
+never replaces it (docs/FEATURE_BACKLOG.md "Out of scope" #7).
+
+`claimService.renderClaim(claim, provenance?)` forwards the optional param
+verbatim to whichever form renderer handles the claim; its own signature is
+otherwise unchanged, so `claim:getPdf` (preview) keeps calling it with no second
+argument and renders exactly as before. `electron/main.ts`'s `dialog:exportPdf`
+handler is the **only** caller that builds and passes a `RenderProvenance` —
+`ClaimSession` gained a `sourceSha256` field (hashed once at file-open time over
+the same UTF-8 text the app already parses, not re-read from disk at export
+time), and the handler reads `session.fileName` + that hash + the build-info
+version stamp + `new Date()` — all computed in `electron/main.ts`, never inside a
+renderer. `getSessionClaim` was split into a `getSession` + index-check pair (pure
+refactor, same validation) so the export handler can read the session's
+fileName/hash alongside the claim.
+
+**No preload/IPC surface change** — `dialog:exportPdf`'s signature (sessionId,
+index) is unchanged; only its internal implementation changed. Rule 7b does not
+apply.
+
+**Verification that omitting provenance is byte-identical:** the six existing
+determinism tests (2 per renderer) and all four pre-existing golden manifests
+pass **unchanged** — confirmed by running `UPDATE_GOLDENS=1` and diffing: zero
+byte changes in the four existing `test/golden/*.json` files, only the one new
+frozen-provenance case's manifest was newly created (`docs/BUILD_QUEUE.md`'s "if
+a golden diff appears on a default-path render, provenance is leaking" check —
+it didn't).
+
+**New tests:** `test/golden/render.test.ts` gained exactly one new case
+(`cms1500-synthetic-json-with-provenance`, a frozen `RenderProvenance` object —
+fixed date literal, fixed fake hash, fixed version string, never `new Date()`).
+New `test/provenance.test.ts` (11 tests) covers all three renderers: omitting
+provenance is byte-identical to a bare call, the two extra lines actually appear
+with the right content, the disclaimer text is still present alongside them, page
+count is unaffected, and geometry stays clean (`assertCleanLayout`).
+
+### Verification (3.3 checkpoint)
+- typecheck: **pass** (3 configs)
+- vitest: 325 → **337** (+12: `test/provenance.test.ts` 11, `test/golden/render.test.ts`
+  +1), pass
+- Playwright E2E: 53 → **53** (unchanged; `e2e/app.spec.ts`'s open→preview→export test
+  exercises the real `dialog:exportPdf` path end-to-end and still passes), pass
+- `npm run verify` (typecheck + vitest + build:app + full Playwright suite): **green**
+
+### Preload/IPC surface changes (rule 7b)
+- None for 3.2 or 3.3.
+
+### Golden/goldens regenerated (guardrail 8 in play — Build 3 lifts it)
+- Commit will be titled `goldens: regenerate for 3.3 provenance footer` — the
+  diff is additive only (one new file, `test/golden/cms1500-synthetic-json-with-provenance.json`);
+  the four pre-existing golden files have zero byte changes, confirmed above.

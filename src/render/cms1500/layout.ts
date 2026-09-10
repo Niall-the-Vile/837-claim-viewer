@@ -345,3 +345,25 @@ export const CONTENT_BOTTOM = band3Bottom;
 
 // --- Footer ------------------------------------------------------------------
 export const FOOTER_Y = PAGE_HEIGHT - 20;
+
+// ---------------------------------------------------------------------------
+// Diagnosis continuation page (docs/BUILD_QUEUE.md Build 3.2(a)) — appended
+// ONLY when a claim carries a diagnosis beyond box-21 pointer L (ordinal >
+// 12), which `drawDiagnoses`'s fixed 12-cell grid (DIAG_CELLS) can never
+// show. A dedicated page (title + a plain list, reusing the same footer
+// every other page draws) rather than trying to shrink text into the
+// existing box: DIAG_BOX is already fully packed (4 cols x 3 rows in 54pt)
+// with no room left for a 13th+ entry at any legible size.
+// ---------------------------------------------------------------------------
+
+export const DIAG_CONT_TITLE_RECT: Rect = { x: LEFT_X, y: TOP_MARGIN, width: FULL_W, height: 24 };
+const DIAG_CONT_LIST_TOP = DIAG_CONT_TITLE_RECT.y + DIAG_CONT_TITLE_RECT.height + 6;
+/** Leaves the same footer band (see FOOTER_Y / the footer region in test/support/regions.ts) clear at the bottom of the page. */
+export const DIAG_CONT_LIST_RECT: Rect = {
+  x: LEFT_X,
+  y: DIAG_CONT_LIST_TOP,
+  width: FULL_W,
+  height: FOOTER_Y - 12 - DIAG_CONT_LIST_TOP,
+};
+/** Line height for the continuation page's plain diagnosis list. */
+export const DIAG_CONT_LINE_H = 12;

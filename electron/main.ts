@@ -4,11 +4,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { dirname, join, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { Claim, FormType, WarningSeverity } from '../src/model/claim.js';
 import { loadClaims, renderClaim, claimSummary } from '../src/app/claimService.js';
 import { ClaimParseError } from '../src/sources/claimSource.js';
 import { composeName, composeAddressLine } from '../src/render/text.js';
+import type { RenderProvenance } from '../src/render/provenance.js';
 import * as sessionStore from '../src/app/persistence/sessionStore.js';
 import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
 import {
@@ -66,6 +67,8 @@ interface ClaimSession {
   fileName: string;
   source: 'json' | 'x12';
   claims: Claim[];
+  /** Hex SHA-256 of the source file's bytes, computed once at open time — feeds the export path's provenance footer (Build 3.3). Never re-hashed at export time; if the file changes on disk between open and export, the footer still reflects what was actually parsed. */
+  sourceSha256: string;
 }
 
 /**
@@ -712,7 +715,12 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
 
     const sessionId = randomUUID();
     const fileName = basename(filePath);
-    sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims });
+    // Hashed over the UTF-8 text exactly as read/parsed above (this app
+    // treats every claim file as UTF-8 throughout, including X12's own BOM
+    // handling) — a provenance stamp of "what this app actually parsed",
+    // not a second raw-bytes read of the file.
+    const sourceSha256 = createHash('sha256').update(text, 'utf8').digest('hex');
+    sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims, sourceSha256 });
     await recordRecentFile(resolvedPath, fileName);
     return {
       sessionId,
@@ -813,6 +821,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('dialog:exportPdf', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<string | null> => {
+    const session = getSession(sessionId);
     const claim = getSessionClaim(sessionId, index);
     const win = BrowserWindow.fromWebContents(event.sender);
 
@@ -837,7 +846,20 @@ function registerIpcHandlers(): void {
     }
     // --- end TEST-ONLY SEAM --------------------------------------------------
 
-    const bytes = await renderClaim(claim);
+    // Build 3.3: the export path is the ONLY caller that supplies
+    // provenance — claim:getPdf (preview) above calls renderClaim(claim)
+    // with no second argument, so preview rendering is untouched. Every
+    // varying value is read here (session's stored hash/name, the build-time
+    // version stamp, "now") and passed in — renderClaim/the form renderers
+    // never compute any of it themselves.
+    const buildInfo = readBuildInfo();
+    const provenance: RenderProvenance = {
+      sourceFileName: session.fileName,
+      sourceSha256: session.sourceSha256,
+      appVersion: buildInfo?.version ?? app.getVersion(),
+      renderedAt: new Date(),
+    };
+    const bytes = await renderClaim(claim, provenance);
     await writeFileAtomic(filePath, Buffer.from(bytes));
     lastExportedPath = filePath;
     return filePath;
@@ -974,10 +996,16 @@ function registerIpcHandlers(): void {
   });
 }
 
-function getSessionClaim(sessionId: unknown, index: unknown): Claim {
+/** Shared by getSessionClaim and the export handler (Build 3.3, which needs the session's fileName/sourceSha256 alongside the claim) — pure refactor, same validation getSessionClaim already did. */
+function getSession(sessionId: unknown): ClaimSession {
   if (typeof sessionId !== 'string' || sessionId === '') throw new Error('No claim file is open.');
   const session = sessions.get(sessionId);
   if (!session) throw new Error('No claim file is open.');
+  return session;
+}
+
+function getSessionClaim(sessionId: unknown, index: unknown): Claim {
+  const session = getSession(sessionId);
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= session.claims.length) {
     throw new Error(`Invalid claim index: ${String(index)}.`);
   }

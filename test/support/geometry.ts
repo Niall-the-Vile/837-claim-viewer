@@ -110,8 +110,18 @@ export function rectsOverlap(a: TextBox, b: TextBox, tol: number): boolean {
 export interface LayoutSpec {
   pageWidth: number;
   pageHeight: number;
-  /** Every region text is allowed to be drawn in, already in PDF (bottom-left-origin) page coordinates — see test/support/regions.ts's `toPdfRect` conversions. */
-  regions: Rect[];
+  /**
+   * Every region text is allowed to be drawn in, already in PDF
+   * (bottom-left-origin) page coordinates — see test/support/regions.ts's
+   * `toPdfRect` conversions. A plain array applies uniformly to every page
+   * (the original, still-valid shape for every single-page-kind form). A
+   * function selects a DIFFERENT region set per page — needed once a form
+   * can append a page of a different kind (e.g. the CMS-1500 diagnosis
+   * continuation page, Build 3.2) whose content lives in different rects
+   * than a service-line page's; `pageCount` is passed too so a selector can
+   * tell "last page" from "any other page" without hard-coding a page index.
+   */
+  regions: Rect[] | ((pageIndex: number, pageCount: number) => Rect[]);
 }
 
 /** Runs all three geometry checks against every page of `bytes`, failing (via `expect`) with a descriptive message the moment any one fails. */
@@ -119,6 +129,7 @@ export async function assertCleanLayout(bytes: Uint8Array, spec: LayoutSpec, lab
   const pages = await renderedTextBoxesByPage(bytes, standardFontDataUrl);
 
   pages.forEach((boxes, pageIndex) => {
+    const regionsForPage = typeof spec.regions === 'function' ? spec.regions(pageIndex, pages.length) : spec.regions;
     for (const box of boxes) {
       // 1. Page-bounds.
       expect(
@@ -130,7 +141,7 @@ export async function assertCleanLayout(bytes: Uint8Array, spec: LayoutSpec, lab
       ).toBe(true);
 
       // 2. Text-vs-box: must land inside at least one known region.
-      const inABox = spec.regions.some((r) => containedIn(box, r, GEOMETRY_TOLERANCE));
+      const inABox = regionsForPage.some((r) => containedIn(box, r, GEOMETRY_TOLERANCE));
       expect(
         inABox,
         `${label} page ${pageIndex + 1}: text "${box.str}" at [${box.x0.toFixed(1)},${box.y0.toFixed(1)}]-[${box.x1.toFixed(1)},${box.y1.toFixed(1)}] is outside every known field box/table/footer region`,
