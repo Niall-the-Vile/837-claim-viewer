@@ -18,6 +18,7 @@ import { applyFieldOverrides, findEditableField, editableFieldsForClaim, cloneCl
 import { defaultExportFileName, batchExportFileName, uniqueFileName, sanitizeFileNamePart } from '../src/app/export/exportNaming.js';
 import { buildCsvExport, buildJsonExport } from '../src/app/export/structuredExport.js';
 import type { EffectiveClaimForExport } from '../src/app/export/structuredExport.js';
+import { serializeClaimsToX12 } from '../src/sources/x12/x12ClaimSerializer.js';
 import {
   decodePlaceOfService,
   decodeRevenueCode,
@@ -919,6 +920,20 @@ function makeCollisionPredicate(dir: string, claimed: Set<string>): (candidate: 
   return (candidate) => claimed.has(candidate) || existsSync(join(dir, candidate));
 }
 
+/**
+ * Build 5 (X12 837 export) control-number sequence — one counter for this
+ * whole app process, incremented before every 837 export (single or
+ * combined) and handed to `serializeClaimsToX12`'s `controlSeq` parameter.
+ * See x12ClaimSerializer.ts's own header comment for the full collision-
+ * avoidance rationale: this is the "monotonically increasing" half of the
+ * scheme, paired with the current time inside `makeControlNumbers`.
+ */
+let x12ExportSeq = 0;
+function nextX12ExportSeq(): number {
+  x12ExportSeq += 1;
+  return x12ExportSeq;
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('dialog:openClaim', async (event: IpcMainInvokeEvent, droppedPath: unknown): Promise<OpenClaimResult | null> => {
     // Drag-and-drop open (welcome/preview pane, spec §4): the renderer
@@ -1341,6 +1356,58 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('dialog:exportJson', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown, options: unknown): Promise<string | null> => {
     return exportStructured(event, sessionId, index, options, 'json');
+  });
+
+  // --- Build 5: X12 837 export (docs/BUILD_LOG.md Build 5 section) ---------
+  // Same scope-only pattern as exportStructured above (scope: 'claim' | 'all'
+  // — 'includeIdentifiers' from StructuredExportOptionsDto is deliberately
+  // ignored here, see preload.ts's own doc comment: X12 is always a
+  // faithful, fully-identified EDI reproduction). Every claim's EFFECTIVE
+  // (overrides-applied) values are serialized, and the SAME `applied` array
+  // getEffectiveClaim produced drives the mandatory K3 EDITED-equivalent
+  // marker inside x12ClaimSerializer.ts — identical "one source of truth"
+  // wiring as the CSV/JSON EDITED marking above.
+  ipcMain.handle('dialog:exportX12', async (event: IpcMainInvokeEvent, sessionId: unknown, indexRaw: unknown, optionsRaw: unknown): Promise<string | null> => {
+    const session = getSession(sessionId);
+    const singleClaim = getSessionClaim(sessionId, indexRaw);
+    const index = indexRaw as number;
+    const { scope } = parseStructuredExportOptions(optionsRaw);
+    const indices = scope === 'all' ? session.claims.map((_c, i) => i) : [index];
+
+    const effectiveClaims: EffectiveClaimForExport[] = [];
+    for (const i of indices) {
+      const { effective, applied } = await getEffectiveClaim(sessionId, i);
+      effectiveClaims.push({ claim: effective, applied });
+    }
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const baseSourceName = sanitizeFileNamePart(session.fileName.replace(/\.[^./]+$/, '')) || 'claims';
+    const baseSingleName = defaultExportFileName(singleClaim).replace(/\.pdf$/, '');
+    const defaultName = `${scope === 'all' ? baseSourceName : baseSingleName}.837`;
+
+    // --- TEST-ONLY SEAM ----------------------------------------------------
+    const e2eSavePath = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_SAVE_X12'] : undefined;
+    let filePath: string;
+    if (e2eSavePath) {
+      filePath = e2eSavePath;
+    } else {
+      const result = await showSaveDialog(win, {
+        title: 'Export claim data as X12 837 (EDI)',
+        defaultPath: defaultName,
+        filters: [
+          { name: 'X12 837', extensions: ['837'] },
+          { name: 'Text', extensions: ['txt'] },
+        ],
+      });
+      if (result.canceled || !result.filePath) return null;
+      filePath = result.filePath;
+    }
+    // --- end TEST-ONLY SEAM --------------------------------------------------
+
+    const content = serializeClaimsToX12(effectiveClaims, new Date(), nextX12ExportSeq());
+    await writeFileAtomic(filePath, Buffer.from(content, 'utf8'));
+    lastExportedPath = filePath;
+    return filePath;
   });
 
   // "Open containing folder" / "Open PDF" toast actions after a successful

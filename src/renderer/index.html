@@ -395,6 +395,10 @@
                   <input type="radio" name="exportFormat" value="json" id="exportFormatJson" />
                   <span>JSON</span>
                 </label>
+                <label class="radioOption">
+                  <input type="radio" name="exportFormat" value="x12" id="exportFormatX12" />
+                  <span>X12 837 (EDI)</span>
+                </label>
               </div>
             </div>
 
@@ -501,10 +505,14 @@
                 correction <b>is</b> saved on this machine too (separately from the original
                 file, which stays untouched) so it's there next time you open the same claim &mdash;
                 every edited value stays visibly marked, and any export built from an edited claim
-                is stamped EDITED, in every export format. Batch PDF, combined-PDF, CSV and JSON
-                exports all write only to a location you choose; CSV/JSON exports exclude patient
-                identifiers (name, date of birth, address, full member ID) unless you explicitly
-                check "Include patient identifiers" in the export dialog. A file or folder name can
+                is stamped EDITED, in every export format &mdash; including X12 837, via a K3
+                free-text marker since X12 has no visual-watermark concept. Batch PDF,
+                combined-PDF, CSV, JSON, and X12 837 exports all write only to a location you
+                choose; CSV/JSON exports exclude patient identifiers (name, date of birth, address,
+                full member ID) unless you explicitly check "Include patient identifiers" in the
+                export dialog (X12 837 is always fully identified &mdash; it's the genuine
+                submission-shaped format, not a PHI-minimal profile, though this app still never
+                submits it anywhere). A file or folder name can
                 be PHI-adjacent &mdash; use
                 <span class="mono">File &rarr; Forget open tabs &amp; recent files</span> to clear
                 that trail at any time. Runs fully offline; nothing ever leaves this machine.

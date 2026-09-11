@@ -118,6 +118,7 @@ export const exportScopeAllLabelEl = requireEl<HTMLSpanElement>('exportScopeAllL
 export const exportFormatPdfRadio = requireEl<HTMLInputElement>('exportFormatPdf');
 export const exportFormatCsvRadio = requireEl<HTMLInputElement>('exportFormatCsv');
 export const exportFormatJsonRadio = requireEl<HTMLInputElement>('exportFormatJson');
+export const exportFormatX12Radio = requireEl<HTMLInputElement>('exportFormatX12');
 export const exportCombinePdfRowEl = requireEl<HTMLLabelElement>('exportCombinePdfRow');
 export const exportCombinePdfCheckbox = requireEl<HTMLInputElement>('exportCombinePdfCheckbox');
 export const exportIdentifiersGroupEl = requireEl<HTMLDivElement>('exportIdentifiersGroup');

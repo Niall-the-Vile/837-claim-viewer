@@ -20,6 +20,7 @@ import {
   exportFormatPdfRadio,
   exportFormatCsvRadio,
   exportFormatJsonRadio,
+  exportFormatX12Radio,
   exportCombinePdfRowEl,
   exportCombinePdfCheckbox,
   exportIdentifiersGroupEl,
@@ -256,12 +257,13 @@ export function trapTabInOverlay(event: KeyboardEvent): void {
 // (docs/BUILD_QUEUE.md Build 4 — export suite).
 // ---------------------------------------------------------------------------
 
-type ExportFormat = 'pdf' | 'csv' | 'json';
+type ExportFormat = 'pdf' | 'csv' | 'json' | 'x12';
 type ExportScope = 'claim' | 'all';
 
 function currentExportFormat(): ExportFormat {
   if (exportFormatCsvRadio.checked) return 'csv';
   if (exportFormatJsonRadio.checked) return 'json';
+  if (exportFormatX12Radio.checked) return 'x12';
   return 'pdf';
 }
 
@@ -282,11 +284,14 @@ function updateExportDialogForSelection(): void {
   const isBatchPdf = format === 'pdf' && scope === 'all';
 
   exportCombinePdfRowEl.hidden = !isBatchPdf;
-  exportIdentifiersGroupEl.hidden = format === 'pdf';
+  // X12 is always a faithful, fully-identified EDI reproduction (see
+  // preload.ts's exportX12 doc comment) — there is no PHI-minimal profile
+  // to opt into, so the identifiers checkbox never applies to it either.
+  exportIdentifiersGroupEl.hidden = format === 'pdf' || format === 'x12';
   // The manifest/PHI-notice block describes ONE claim's own stats (form
   // type, its service-line count, its total) — meaningless for a PDF batch
   // covering every claim, whose own progress/summary view supersedes it;
-  // CSV/JSON keep it regardless of scope since those still write through
+  // CSV/JSON/X12 keep it regardless of scope since those still write through
   // this same confirm step either way.
   exportManifestEl.hidden = isBatchPdf;
 
@@ -294,7 +299,7 @@ function updateExportDialogForSelection(): void {
   const summary = tab?.summaries[tab.currentIndex];
   const claimLabel = summary?.claimId || 'claim';
   const claimCount = tab?.summaries.length ?? 1;
-  const formatWord = format === 'csv' ? 'CSV' : format === 'json' ? 'JSON' : 'PDF';
+  const formatWord = format === 'csv' ? 'CSV' : format === 'json' ? 'JSON' : format === 'x12' ? 'X12 837' : 'PDF';
 
   if (format === 'pdf') {
     exportDialogTitleEl.textContent = scope === 'all' ? 'Batch export claims as PDF' : 'Export claim as PDF';
@@ -307,7 +312,7 @@ function updateExportDialogForSelection(): void {
   exportConfirmBtn.textContent = isBatchPdf ? 'Choose folder & export' : 'Export';
 }
 
-for (const radio of [exportScopeClaimRadio, exportScopeAllRadio, exportFormatPdfRadio, exportFormatCsvRadio, exportFormatJsonRadio]) {
+for (const radio of [exportScopeClaimRadio, exportScopeAllRadio, exportFormatPdfRadio, exportFormatCsvRadio, exportFormatJsonRadio, exportFormatX12Radio]) {
   radio.addEventListener('change', updateExportDialogForSelection);
 }
 
@@ -373,6 +378,12 @@ export async function confirmExport(): Promise<void> {
       // PHI-free default name) and writes the PDF; it resolves the saved
       // path, or null if the user cancels that dialog.
       path = await window.claimApi.exportPdf(tab.sessionId, tab.currentIndex);
+    } else if (format === 'x12') {
+      // No identifiers opt-in for X12 — see updateExportDialogForSelection's
+      // own comment; the option group stays hidden, so this always reads as
+      // its unchecked default and is simply ignored by main anyway.
+      const options: StructuredExportOptionsDto = { scope, includeIdentifiers: false };
+      path = await window.claimApi.exportX12(tab.sessionId, tab.currentIndex, options);
     } else {
       const options: StructuredExportOptionsDto = { scope, includeIdentifiers: exportIncludeIdentifiersCheckbox.checked };
       path = format === 'csv' ? await window.claimApi.exportCsv(tab.sessionId, tab.currentIndex, options) : await window.claimApi.exportJson(tab.sessionId, tab.currentIndex, options);

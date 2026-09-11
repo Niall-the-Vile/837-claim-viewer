@@ -195,6 +195,7 @@ test.describe('837 Claim Viewer — E2E', () => {
         'exportCsv',
         'exportJson',
         'exportPdf',
+        'exportX12',
         'forgetSession',
         'getAppInfo',
         'getDetail',

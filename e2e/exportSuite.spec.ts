@@ -402,4 +402,70 @@ test.describe('837 Claim Viewer — E2E — export suite (docs/BUILD_QUEUE.md Bu
       rmSync(destDir, { recursive: true, force: true });
     }
   });
+
+  // --- Build 5: X12 837 export (docs/BUILD_LOG.md Build 5 section) --------
+  test('X12 837 export: writes a well-formed .837 file for the current claim', async () => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'claim-viewer-e2e-x12-'));
+    const x12Path = join(saveDir, 'export.837');
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500, CLAIM_VIEWER_E2E_SAVE_X12: x12Path });
+    try {
+      const page = await openWorkspace(app);
+
+      await page.locator('#exportBtn').click();
+      await expect(page.locator('#exportIdentifiersGroup')).toBeHidden(); // PDF is the default format — no identifiers toggle yet
+      await page.locator('#exportFormatX12').click();
+      await expect(page.locator('#exportIdentifiersGroup')).toBeHidden(); // X12 never gets the identifiers opt-in either — see preload.ts's exportX12 doc comment
+      await page.locator('#exportConfirmBtn').click();
+      await expect(page.locator('#exportOverlay')).toBeHidden();
+      await expect.poll(() => existsSync(x12Path)).toBe(true);
+
+      const edi = readFileSync(x12Path, 'utf8');
+      expect(edi.startsWith('ISA')).toBe(true);
+      expect(edi).toContain('GS*HC*');
+      expect(edi).toContain('ST*837*');
+      expect(edi).toContain('SE*');
+      expect(edi).toContain('IEA*1*');
+      // With NO override active, CLM01 (Patient Control Number) carries the
+      // claim's real claimId, not patient.accountNumber — see
+      // x12ClaimSerializer.ts's clmSegment doc comment (an unedited
+      // JSON-sourced claim can legitimately have the two differ).
+      expect(edi).toContain('CLM*900000001*');
+      expect(edi).not.toContain('MODIFIED FROM THE ORIGINAL SOURCE'); // no overrides active — no EDITED marker
+    } finally {
+      await app.close();
+      rmSync(saveDir, { recursive: true, force: true });
+    }
+  });
+
+  test('exporting an edited claim as X12 837 carries the EDI-native EDITED-equivalent K3 marker', async () => {
+    const saveDir = mkdtempSync(join(tmpdir(), 'claim-viewer-e2e-x12-edited-'));
+    const x12Path = join(saveDir, 'edited.837');
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500, CLAIM_VIEWER_E2E_SAVE_X12: x12Path });
+    try {
+      const page = await openWorkspace(app);
+      await page.locator('#editModeToggleBtn').click();
+      const accountRow = page.locator('.inspRow', { hasText: 'ACCT-0001' });
+      await accountRow.locator('.rowEditBtn').click();
+      await accountRow.locator('.inspRowEditInput').fill('ACCT-EDITED-X12');
+      await accountRow.locator('.inspRowEditForm button', { hasText: 'Save' }).click();
+      await expect(page.locator('.inspRow', { hasText: 'ACCT-EDITED-X12' }).locator('.editedBadge')).toBeVisible();
+
+      await page.locator('#exportBtn').click();
+      await page.locator('#exportFormatX12').click();
+      await page.locator('#exportConfirmBtn').click();
+      await expect.poll(() => existsSync(x12Path)).toBe(true);
+
+      const edi = readFileSync(x12Path, 'utf8');
+      expect(edi).toContain('K3*THIS CLAIM DATA WAS MODIFIED FROM THE ORIGINAL SOURCE FILE BY 837 CLAIM VIEWER');
+      expect(edi).toContain('MODIFIED FIELDS');
+      expect(edi).toContain('Patient account number');
+      // patient.accountNumber and CLM01 are the same wire position in X12
+      // (see x12ClaimSerializer.ts's clmSegment doc comment) — the override
+      // shows up as the claim's own control number too, not just in a note.
+      expect(edi).toContain('CLM*ACCT-EDITED-X12*');
+    } finally {
+      await app.close();
+      rmSync(saveDir, { recursive: true, force: true });
+    }
+  });
 });

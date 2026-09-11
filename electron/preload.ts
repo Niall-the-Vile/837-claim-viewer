@@ -295,6 +295,19 @@ const claimApi = Object.freeze({
   exportCsv: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportCsv', sessionId, index, options),
   /** Structured JSON export (4.4) — same scope/identifiers semantics as exportCsv above. */
   exportJson: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportJson', sessionId, index, options),
+
+  // --- Build 5: X12 837 export (docs/BUILD_LOG.md Build 5 section) --------
+  /**
+   * Serializes the claim at `index` (scope: 'claim') or every claim in this
+   * tab's session (scope: 'all', one combined .837 file) to a genuine X12
+   * 5010 837P/837I/837D interchange — see src/sources/x12/x12ClaimSerializer.ts.
+   * `includeIdentifiers` on `StructuredExportOptionsDto` is IGNORED here (X12
+   * is always a faithful, fully-identified EDI reproduction — there is no
+   * PHI-minimal profile for the actual submission format); only `scope` is
+   * read. Opens a native save dialog; resolves the saved path, or `null` if
+   * canceled.
+   */
+  exportX12: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportX12', sessionId, index, options),
 });
 
 export type ClaimApi = typeof claimApi;

@@ -55,7 +55,8 @@ function editedFieldLabelsFor(applied: AppliedFieldEdit[]): string {
   return applied.map((a) => a.label).join('; ');
 }
 
-function lineIsEdited(applied: AppliedFieldEdit[], lineIndex: number): boolean {
+/** Exported for reuse by the X12 837 serializer's per-line EDITED-equivalent K3 marker (docs/BUILD_LOG.md's Build 5 section) — same "one source of truth for which lines were touched" reasoning as everything else in this module. */
+export function lineIsEdited(applied: AppliedFieldEdit[], lineIndex: number): boolean {
   const prefix = `serviceLines[${lineIndex}].`;
   return applied.some((a) => a.fieldPath.startsWith(prefix));
 }
