@@ -145,3 +145,20 @@ The export dialog offers a **scope** (this claim, or all claims in the open file
 Every export in this suite writes to a location **you** choose (a save dialog or folder picker) —
 none of it uses the `userData` persistence mechanism, and the same unencrypted-PHI/BitLocker
 notice shown for a single-claim PDF export applies here too.
+
+### X12 837 export (Build 5)
+
+The export dialog's format choice also includes **X12 837 (EDI)** — a genuine X12 5010
+implementation-guide-shaped 837P/837I/837D serializer (`src/sources/x12/x12ClaimSerializer.ts`),
+scope-only (no identifiers opt-in — X12 is always a faithful, fully-identified EDI reproduction,
+arguably the single most sensitive export format this app produces since it's the actual
+submission wire format). It writes a `.837` file to a location you choose, same as every other
+export here — **this is still just a file-format export**, exactly like the PDF/CSV/JSON paths:
+the app has no network code and no payer connection, and this build adds none. Nothing in this
+repo submits a claim anywhere.
+
+Every export is validated by round-tripping it back through this app's own X12 parser
+(`test/x12ClaimSerializer.test.ts`) and comparing the result to the claim that was exported — see
+`docs/BUILD_LOG.md`'s Build 5 section for the full design writeup, including the EDI-native
+"EDITED" equivalent (a `K3` free-text segment, since X12 has no visual-watermark concept) and the
+control-number generation scheme.

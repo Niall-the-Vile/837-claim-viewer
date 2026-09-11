@@ -1171,3 +1171,279 @@ run against stale `dist/` output briefly looked like two failures; rebuilding
 `dist/` and rerunning confirmed both were test-harness staleness, not product
 bugs, and the final full `npm run verify` run reflects the true, current
 state).
+
+---
+
+## Build 5 — X12 837 export
+STATUS: GREEN
+
+Start: 2026-09-11 (this session)     End: 2026-09-11 (this session)
+Commit: (this build's commits, see `git log`)     Tag: `build-5-green`
+
+Starting point: `build-4-green` — `npm run verify` confirmed green (typecheck
+clean across all 3 configs, 398 vitest, 68 Playwright E2E, `npm run build`
+clean) before any change in this section.
+
+Scope: `docs/CLAUDE_CODE_NEXT_SESSION.md`'s decision 3 — a genuine, submission-
+shaped X12 5010 837P/837I/837D serializer, its own export path in the existing
+export dialog, and a hard round-trip-validation requirement. This is
+explicitly **not** a claim-submission feature — see "Scope discipline" below.
+
+### What shipped
+- `src/sources/x12/x12ClaimSerializer.ts` — the inverse of
+  `src/sources/x12/x12ClaimSource.ts`. Reuses that file's own loop/segment/
+  element positions directly (every composite/index this module writes was
+  picked by reading the corresponding `extractXxx` function, not re-derived
+  from the 005010X222/223/224 implementation guides from scratch) — ISA/GS/ST/
+  BHT/1000A/1000B envelope, then one independent HL(20 billing/22 subscriber/
+  23 patient) tree per claim, 2300 claim-level segments (CLM, DTP, HI,
+  referring/rendering/facility NM1 loops, REF/NTE), and 2400 service lines
+  (SV1/SV2/SV3 per form kind, plus dental TOO tooth/surface segments), closed
+  out with SE/GE/IEA.
+- New IPC path: `dialog:exportX12` (main) / `claimApi.exportX12` (preload),
+  wired into `electron/preload.ts`, `electron/main.ts`,
+  `src/renderer/global.d.ts` (derived automatically from the `ClaimApi` type —
+  no separate edit needed there), and the sorted `apiKeys` array in
+  `e2e/app.spec.ts`, all in the commits for this build. Mirrors the existing
+  `dialog:exportCsv`/`dialog:exportJson` scope-only pattern (`'claim'` |
+  `'all'`) rather than `dialog:exportPdf`/`export:batch`'s per-file-batch
+  shape — an `'all'`-scope X12 export produces ONE combined multi-claim `.837`
+  file (every claim gets its own independent HL tree inside it), which is
+  both simpler to implement correctly and a more realistic shape for a real
+  837 batch than N separate single-claim files would be.
+- Export dialog UI: a fourth format radio, "X12 837 (EDI)", alongside PDF/CSV/
+  JSON (`src/renderer/index.html`, `src/renderer/dom.ts`,
+  `src/renderer/overlays.ts`). No identifiers opt-in for this format — X12 is
+  always a faithful, fully-identified EDI reproduction (there is no PHI-
+  minimal profile for the actual submission wire format), so
+  `exportIdentifiersGroup` stays hidden whenever X12 is selected.
+- EDI-native "EDITED" equivalent — see "Design decision: EDI-native EDITED
+  signal" below.
+- Control-number generation — see "Design decision: control-number scheme"
+  below.
+- `test/x12ClaimSerializer.test.ts` (29 tests) — the round-trip validation
+  suite this build's task brief made a hard requirement. See "Round-trip
+  results per form type" below.
+- `e2e/exportSuite.spec.ts` — two new tests: exporting a claim to `.837` and
+  confirming the file is written and well-formed (envelope present, claim
+  data present, no EDITED marker when unedited), and exporting an edited
+  claim and confirming the K3 EDITED marker (plus the CLM01/claimId aliasing
+  behavior — see below) is present.
+- `README.md` ("X12 837 export (Build 5)" under PHI/data policy) and the
+  About screen (`src/renderer/index.html`) both updated to mention the new
+  export format and its EDITED-marking/PHI posture, per this repo's standing
+  rule that a new content-writing export path updates both.
+
+### Design decision: EDI-native EDITED signal
+X12 has no visual-watermark concept the way a PDF page does (invariant from
+`docs/EDITABLE_FIELDS_DESIGN.md` this build had to resolve, not skip). Chosen
+mechanism: **`K3` (Fixed-Format Information)** — a real 005010X222/223/224
+segment reserved specifically for free-text supplemental information the IG
+doesn't otherwise accommodate. This was chosen over `NTE` (Claim Note)
+deliberately: every valid `NTE01` qualifier at the 2300 level (`ADD`/`CER`/
+`DCP`/`DGN`/`RTV`/`TPO`) carries a specific clinical or billing-narrative
+meaning a downstream system could misinterpret as legitimate claim content;
+`K3` carries no such semantic weight and `x12ClaimSource.ts` never reads it
+anywhere in this app, so it is 100% inert to the round-trip parse — it can
+only ever change what a human or text search sees in the raw file, never what
+the reparsed `Claim` looks like.
+
+Two markers, both driven directly and unconditionally off the SAME
+`AppliedFieldEdit[]` array `getEffectiveClaim` already produces for every
+other export format (no separate flag, no code path that can see a non-empty
+`applied` and skip emitting them):
+- **Claim-level** (mandatory whenever `applied.length > 0`): a fixed notice —
+  `K3*THIS CLAIM DATA WAS MODIFIED FROM THE ORIGINAL SOURCE FILE BY 837 CLAIM
+  VIEWER - NOT FOR SUBMISSION~` — followed by one or more `K3` segments
+  listing exactly which fields changed (`MODIFIED FIELDS: <label>; <label>…`,
+  chunked at 80 chars per segment, X12 K301's practical element-length
+  ceiling).
+- **Per-line** (the task brief's "per-line consideration if practical"): one
+  `K3*LINE <n> MODIFIED FROM ORIGINAL SOURCE~` right after any service line
+  that itself carries an override — never on lines that weren't touched
+  (`test/x12ClaimSerializer.test.ts`'s "only marks the LINE that was actually
+  edited" case asserts this both ways).
+
+Verified per form type, not just on 837P: `test/x12ClaimSerializer.test.ts`'s
+"EDI-native EDITED-equivalent signal (K3)" describe block has a dedicated
+case for 837I and 837D each (not only inferring it from shared code), plus
+`e2e/exportSuite.spec.ts`'s end-to-end case through the real IPC/save-dialog
+path.
+
+### Design decision: control-number scheme
+ISA13/GS06/ST02 are each derived from **the current wall-clock second** (6
+digits) plus **a per-process, monotonically increasing sequence counter**
+(`electron/main.ts`'s `x12ExportSeq`, incremented once per `dialog:exportX12`
+call and passed to `makeControlNumbers`) — never a hardcoded literal, which
+would collide on every single export from this app. The three numbers within
+one export are `seq`, `seq+1`, `seq+2` (mod 1000) appended to the same
+seconds prefix, so ISA/GS/ST are always mutually distinct within one export
+too, matching how real trading partners issue independent control numbers
+per envelope level.
+
+Documented, tested bound (`test/x12ClaimSerializer.test.ts`'s "control-number
+scheme" describe block): **guaranteed unique across up to 999 consecutive
+exports within the same wall-clock second**, and **always unique across
+different seconds regardless of `seq`** (the seconds prefix alone
+disambiguates). The scheme does NOT claim global, all-time uniqueness — two
+exports more than 999 apart within the exact same second would wrap the `%
+1000` counter and collide. This bound is judged acceptable because the only
+call site is one user-initiated export action at a time (never a tight
+per-claim batch loop — an `'all'`-scope export is ONE `serializeClaimsToX12`
+call for every claim in the file, not one call per claim), so exceeding
+999 real exports inside one wall-clock second is not a realistic usage
+pattern for this app. Flagged explicitly here rather than silently assumed
+safe, per this build's adversarial-audit requirement.
+
+### Other findings from writing the round-trip test (adversarial value, not just confirmation)
+Two real, non-obvious issues were caught by actually running the round-trip
+test against real fixtures rather than eyeballing the serializer's output —
+exactly the point of the hard requirement:
+1. **`claimFormRaw` (GS08/ST03 version string)**: an early version hardcoded
+   a fixed canonical version per kind (e.g. `005010X222A1` for every 837P),
+   which failed round-trip against fixtures declaring a different real
+   version (`005010X222A2`). Fixed: `versionStringFor()` now reuses the
+   claim's own `claimFormRaw` whenever it's already a valid version for that
+   kind, falling back to the canonical default only when it isn't (e.g. a
+   JSON-sourced claim with no real X12 version string).
+2. **`patient.accountNumber` vs. `claimId` aliasing**: `x12ClaimSource.ts`
+   reads BOTH `claim.claimId` and `claim.patient.accountNumber` off the SAME
+   wire position, CLM01 ("Patient Control Number") — there is no second slot
+   for these to diverge into on the wire. For a claim that originated from
+   X12 the two are always equal anyway (guaranteed by `x12ClaimSource.ts`'s
+   own `buildClaim`), so this is invisible on every round-trip fixture. But
+   `docs/EDITABLE_FIELDS_DESIGN.md` lets a user override `accountNumber`
+   independently of `claimId`, and a JSON-sourced claim can legitimately
+   carry two different values for them from the start — an early version of
+   `clmSegment` always preferred `accountNumber`, which silently discarded an
+   UNEDITED JSON-sourced claim's real `claimId`. Fixed: CLM01 defaults to
+   `claim.claimId` and only substitutes `patient.accountNumber` when
+   `applied` shows that field was SPECIFICALLY overridden — the one case
+   where a user has explicitly asked to correct "the account number" and X12
+   has no way to honor that request except by changing the same slot
+   `claimId` also lives in. This is now a **documented, intentional**
+   behavior (not a bug): overriding `patient.accountNumber` is the ONE
+   editable field where the reparsed claim's `claimId` legitimately changes
+   too, verified explicitly by
+   `test/x12ClaimSerializer.test.ts`'s "overriding patient.accountNumber
+   changes the exported CLM01" case.
+
+### Known, documented scope gaps (not silent)
+Fields `x12ClaimSource.ts` never populates from ANY X12 input, regardless of
+file content, are not serialized either: `hospitalization`, `otherInsurance`,
+`insured.employer`, `totals.amountPaid`, `serviceLines[].patientResponsibility`.
+For a claim that originated from X12 (every fixture the round-trip suite
+uses) these are already always their zero-value, so this is a no-op scope
+limitation for that case — but a JSON-sourced claim that happens to carry one
+of those fields (the JSON source DOES map some of them) would lose it on an
+X12 export/reparse round trip. This is the honest boundary of "faithfully
+reproduce what the normalized Claim model + X12 5010 can both represent" —
+extending X12 export to cover fields the app's own X12 PARSER doesn't read
+back would make the export format strictly richer than what this app can
+ever verify by re-parsing its own output, which is exactly the risk profile
+the round-trip requirement exists to rule out.
+
+### Round-trip results per form type
+All via `test/x12ClaimSerializer.test.ts` (29 tests, all green) — every
+claim in every listed fixture, not a single hand-picked happy path:
+
+| Form | Fixtures | Claims round-tripped |
+|---|---|---|
+| 837P (professional) | `837P-all-fields.dat`, `837P-minimal.dat` | every claim in both |
+| 837I (institutional) | `837I-all-fields.dat`, `837I-minimal.dat`, `837I-multi-claim.dat` (individually AND as one combined multi-claim re-export), `837I-long-lines.dat` | every claim in all four, plus the combined-file variant |
+| 837I (throughput) | `837I-400-claims.dat` | all 400+ claims, per-claim claimId/diagnosis-count/line-count/total-charge spot-check (full deep-equal skipped at this volume for a targeted, still-systemic-bug-catching check — see the test file's own comment) |
+| 837D (dental) | `837D-all-fields.dat` | every claim, including explicit TOO tooth/surface and DN1/DN2 orthodontics/missing-teeth assertions |
+
+Plus: 3 active-override round-trip cases (one per form type, each with the
+override value confirmed present in the reparsed claim), the 3 K3-marker
+tests (one per form type), the accountNumber/claimId aliasing case, 4
+control-number tests, 3 scope/kind guard tests (unsupported form type, mixed-
+kind batch, zero claims), and 3 envelope-shape tests (SE01 count, ISA15 usage
+indicator, delimiter-hostile override sanitization).
+
+### Dedicated adversarial audit (this build's own pass, beyond the routine one)
+Each defaults to REFUTED unless a concrete test confirms it — all three
+CONFIRMED below:
+
+1. **For each supported form type, does round-trip export→reparse→compare
+   actually pass, or was only the happy path on one fixture tested? —
+   CONFIRMED (real, broad coverage).** See the table above: 837P has 2
+   fixtures' worth of claims, 837I has 4 fixtures (5 including the combined-
+   file variant) plus a 400+-claim throughput fixture, 837D has its one real
+   fixture with explicit sub-assertions on the trickiest part (multi-tooth/
+   multi-surface TOO round-trip). Two genuine bugs (`claimFormRaw`,
+   `patient.accountNumber`/`claimId` aliasing — see above) were caught and
+   fixed specifically BECAUSE this ran against real fixture data instead of
+   a hand-built minimal claim; that's the round-trip requirement doing its
+   job, not a formality.
+2. **Could any control-number scheme chosen collide across a batch or across
+   repeated exports? — CONFIRMED (bounded, and the bound is honest, not
+   overclaimed).** Two independent axes tested: uniqueness within a single
+   export (ISA/GS/ST always mutually distinct) and uniqueness across
+   999 consecutive exports within the same wall-clock second, PLUS
+   unconditional uniqueness across different seconds regardless of `seq`.
+   The scheme's one real limit (>999 exports inside the exact same second)
+   is stated plainly above rather than glossed over, with the reasoning for
+   why it's an acceptable bound given this app's actual call pattern (one
+   export action at a time, never a tight per-claim loop for X12
+   specifically).
+3. **Does the EDI-native edited-signal ever get omitted when overrides are
+   active? — CONFIRMED (no).** `editedClaimMarkers`/`editedLineMarker` in
+   `x12ClaimSerializer.ts` both take `applied: AppliedFieldEdit[]` as a
+   plain function argument and gate on `applied.length > 0` / `lineIsEdited`
+   directly — there is no parameter, flag, or branch anywhere in
+   `claimLevelSegments`/`serviceLineSegments` that can suppress this once
+   true. Verified per form type (P/I/D each have a dedicated K3-presence
+   test, not just inferred from shared code), per line (the "only marks the
+   LINE that was actually edited" case proves it isn't all-or-nothing at the
+   line level), and end-to-end through the real IPC/save-dialog path
+   (`e2e/exportSuite.spec.ts`).
+
+### Scope discipline — this is still not a submission feature
+No network code was added or touched by this build. `dialog:exportX12` does
+exactly what `dialog:exportCsv`/`dialog:exportJson` already do — serialize to
+a string and `writeFileAtomic` it to a path the USER chose via a native save
+dialog — and nothing else; there is no payer connection, no clearinghouse
+integration, and no code path that transmits the written file anywhere. The
+one interpretation call worth flagging explicitly (per this build's own
+instruction to log a concern rather than guess past it): ISA15 (interchange
+usage indicator) is hardcoded to `'T'` (Test), never `'P'` (Production) —
+a deliberate signal, visible to any real EDI tooling that might later
+inspect a file this app produced, that this was never meant to be submitted.
+This was judged the safer default rather than a coin-flip; no other design
+choice in this build edges closer to "functions as a submission tool" than
+the PDF/CSV/JSON export paths already did.
+
+### Verification
+- typecheck: pass (all 3 configs — `tsconfig.json`, `tsconfig.renderer.json`,
+  `tsconfig.e2e.json`)
+- vitest: 398 -> 427, pass (29 new, all in `test/x12ClaimSerializer.test.ts`)
+- E2E: 68 -> 70, pass (2 new, in `e2e/exportSuite.spec.ts`)
+- `npm run build:app`: clean
+- Full `npm run verify` (typecheck + vitest + build + Playwright E2E): green,
+  end to end, after every change in this section
+
+### Preload/IPC surface changes (rule 7b)
+- `exportX12` added — `electron/preload.ts` (bridge function),
+  `electron/main.ts` (`dialog:exportX12` handler + `x12ExportSeq` counter),
+  `src/renderer/global.d.ts` (no direct edit needed — derived from the
+  `ClaimApi` type preload.ts exports), `e2e/app.spec.ts`'s sorted `apiKeys`
+  array — all in this build's commits.
+
+### Session process note
+Ran as a single agent end-to-end, same reasoning as Builds 4 and the
+editable-fields build: the serializer, its round-trip test, the IPC handler,
+and the export-dialog UI change are tightly coupled (the round-trip test is
+what proves the serializer is correct at all, and the UI/IPC wiring has to
+land together for `npm run typecheck`/E2E to pass), so splitting this across
+file-disjoint subagents would have meant re-deriving the same design
+decisions (the K3-vs-NTE choice, the control-number scheme, the CLM01
+aliasing fix) in more than one place. Checkpoint discipline: full `npm run
+verify` confirmed green at the start (inherited from `build-4-green`), the
+serializer + its dedicated round-trip test suite were built and verified in
+isolation first (`npx vitest run test/x12ClaimSerializer.test.ts`) before
+any IPC/UI wiring was added, then the full `npm run verify` pipeline
+(typecheck + all vitest + build + all Playwright E2E) was run green after
+the IPC/UI/e2e wiring landed, and once more after this build's adversarial-
+audit fixes (the two round-trip bugs above) and the README/About-screen
+doc updates — all green at each point checked.
