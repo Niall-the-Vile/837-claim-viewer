@@ -1,12 +1,39 @@
 import {
   exportBtn,
   exportOverlayEl,
+  exportDialogTitleEl,
+  exportConfirmViewEl,
   exportIntroEl,
   manifestFormEl,
   manifestLinesEl,
   manifestTotalEl,
   manifestWarningsEl,
+  exportManifestEl,
+  exportPhiNoticeEl,
+  exportDialogFooterEl,
+  exportGhostBtn,
   exportConfirmBtn,
+  exportScopeGroupEl,
+  exportScopeClaimRadio,
+  exportScopeAllRadio,
+  exportScopeAllLabelEl,
+  exportFormatPdfRadio,
+  exportFormatCsvRadio,
+  exportFormatJsonRadio,
+  exportCombinePdfRowEl,
+  exportCombinePdfCheckbox,
+  exportIdentifiersGroupEl,
+  exportIncludeIdentifiersCheckbox,
+  exportBatchProgressEl,
+  batchProgressLabelEl,
+  batchProgressFillEl,
+  batchProgressTrackEl,
+  batchProgressClaimEl,
+  batchCancelBtn,
+  exportBatchSummaryEl,
+  batchSummaryTextEl,
+  batchSummaryFailuresEl,
+  batchSummaryOpenFolderBtn,
   shortcutsOverlayEl,
   aboutOverlayEl,
   forgetOverlayEl,
@@ -18,7 +45,9 @@ import {
   toastCloseBtn,
 } from './dom.js';
 import { activeTab } from './tabs.js';
+import type { TabState } from './tabState.js';
 import { formatMoney, formTypeText } from './inspector.js';
+import type { BatchExportProgressDto, BatchExportOptionsDto, StructuredExportOptionsDto } from '../../electron/preload.js';
 
 /**
  * Export dialog, shortcuts sheet's generic overlay mechanics (open/close/
@@ -222,6 +251,86 @@ export function trapTabInOverlay(event: KeyboardEvent): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Export dialog — scope (this claim / all claims) x format (PDF/CSV/JSON)
+// (docs/BUILD_QUEUE.md Build 4 — export suite).
+// ---------------------------------------------------------------------------
+
+type ExportFormat = 'pdf' | 'csv' | 'json';
+type ExportScope = 'claim' | 'all';
+
+function currentExportFormat(): ExportFormat {
+  if (exportFormatCsvRadio.checked) return 'csv';
+  if (exportFormatJsonRadio.checked) return 'json';
+  return 'pdf';
+}
+
+function currentExportScope(): ExportScope {
+  return exportScopeAllRadio.checked ? 'all' : 'claim';
+}
+
+/**
+ * Shows/hides every format- and scope-dependent control and rewrites the
+ * dialog's title/intro/confirm-button label for the CURRENT radio
+ * selection. Called on open and on every scope/format `change` event, so
+ * switching from (say) "All claims" + PDF to CSV never leaves a stale
+ * combined-PDF checkbox visible.
+ */
+function updateExportDialogForSelection(): void {
+  const format = currentExportFormat();
+  const scope = currentExportScope();
+  const isBatchPdf = format === 'pdf' && scope === 'all';
+
+  exportCombinePdfRowEl.hidden = !isBatchPdf;
+  exportIdentifiersGroupEl.hidden = format === 'pdf';
+  // The manifest/PHI-notice block describes ONE claim's own stats (form
+  // type, its service-line count, its total) — meaningless for a PDF batch
+  // covering every claim, whose own progress/summary view supersedes it;
+  // CSV/JSON keep it regardless of scope since those still write through
+  // this same confirm step either way.
+  exportManifestEl.hidden = isBatchPdf;
+
+  const tab = activeTab();
+  const summary = tab?.summaries[tab.currentIndex];
+  const claimLabel = summary?.claimId || 'claim';
+  const claimCount = tab?.summaries.length ?? 1;
+  const formatWord = format === 'csv' ? 'CSV' : format === 'json' ? 'JSON' : 'PDF';
+
+  if (format === 'pdf') {
+    exportDialogTitleEl.textContent = scope === 'all' ? 'Batch export claims as PDF' : 'Export claim as PDF';
+    exportIntroEl.textContent = scope === 'all' ? `Export all ${claimCount} claims in this file as individual PDFs.` : `Export this claim (${claimLabel}) as a PDF.`;
+  } else {
+    exportDialogTitleEl.textContent = scope === 'all' ? `Batch export claim data as ${formatWord}` : `Export claim data as ${formatWord}`;
+    exportIntroEl.textContent =
+      scope === 'all' ? `Export all ${claimCount} claims in this file into one ${formatWord} file.` : `Export this claim (${claimLabel}) as ${formatWord}.`;
+  }
+  exportConfirmBtn.textContent = isBatchPdf ? 'Choose folder & export' : 'Export';
+}
+
+for (const radio of [exportScopeClaimRadio, exportScopeAllRadio, exportFormatPdfRadio, exportFormatCsvRadio, exportFormatJsonRadio]) {
+  radio.addEventListener('change', updateExportDialogForSelection);
+}
+
+/** Resets every control to its safe default — called every time the dialog opens, never carrying a previous session's choices forward. Scope/format default to "this claim"/"PDF" (unchanged from before this build); the identifiers opt-in and combine-PDF checkbox always reset to OFF (spec §5: "never silently change the user's last-used profile"). */
+function resetExportDialogControls(): void {
+  exportScopeClaimRadio.checked = true;
+  exportFormatPdfRadio.checked = true;
+  exportCombinePdfCheckbox.checked = false;
+  exportIncludeIdentifiersCheckbox.checked = false;
+
+  exportConfirmViewEl.hidden = false;
+  exportBatchProgressEl.hidden = true;
+  exportBatchSummaryEl.hidden = true;
+  batchSummaryOpenFolderBtn.hidden = true;
+  batchSummaryFailuresEl.replaceChildren();
+
+  exportDialogFooterEl.hidden = false;
+  exportGhostBtn.hidden = false;
+  exportGhostBtn.textContent = 'Cancel';
+  exportConfirmBtn.hidden = false;
+  exportConfirmBtn.disabled = false;
+}
+
 export function openExportDialog(): void {
   if (exportBtn.disabled) return;
   const tab = activeTab();
@@ -230,27 +339,44 @@ export function openExportDialog(): void {
   const detail = tab.detail;
   if (!summary || !detail) return;
 
-  exportIntroEl.textContent = `Export this claim (${summary.claimId || 'claim'}) as a PDF.`;
+  resetExportDialogControls();
+
+  exportScopeGroupEl.hidden = tab.summaries.length <= 1;
+  exportScopeAllLabelEl.textContent = `All ${tab.summaries.length} claims in this file`;
+
   manifestFormEl.textContent = formTypeText(summary.formType);
   manifestLinesEl.textContent = String(detail.serviceLines.length);
   manifestTotalEl.textContent = formatMoney(detail.totals.totalCharge);
   manifestWarningsEl.textContent = detail.warnings.length === 0 ? 'None' : `${detail.warnings.length} noted in the inspector`;
 
-  exportConfirmBtn.disabled = false;
-  exportConfirmBtn.textContent = 'Export';
+  updateExportDialogForSelection();
   openOverlay('export');
 }
 
 export async function confirmExport(): Promise<void> {
   const tab = activeTab();
   if (!tab || !tab.sessionId) return;
+  const format = currentExportFormat();
+  const scope = currentExportScope();
+
+  if (format === 'pdf' && scope === 'all') {
+    await runBatchExport(tab);
+    return;
+  }
+
   exportConfirmBtn.disabled = true;
   exportConfirmBtn.textContent = 'Exporting…';
   try {
-    // claimApi.exportPdf opens its own native save-file dialog (with a
-    // PHI-free default name) and writes the PDF; it resolves the saved
-    // path, or null if the user cancels that dialog.
-    const path = await window.claimApi.exportPdf(tab.sessionId, tab.currentIndex);
+    let path: string | null;
+    if (format === 'pdf') {
+      // claimApi.exportPdf opens its own native save-file dialog (with a
+      // PHI-free default name) and writes the PDF; it resolves the saved
+      // path, or null if the user cancels that dialog.
+      path = await window.claimApi.exportPdf(tab.sessionId, tab.currentIndex);
+    } else {
+      const options: StructuredExportOptionsDto = { scope, includeIdentifiers: exportIncludeIdentifiersCheckbox.checked };
+      path = format === 'csv' ? await window.claimApi.exportCsv(tab.sessionId, tab.currentIndex, options) : await window.claimApi.exportJson(tab.sessionId, tab.currentIndex, options);
+    }
     closeOverlay('export');
     // The export "done" state (Open containing folder / Open PDF, design
     // ClaimViewer_v2.dc.html:776-777 / spec §7) lives in the toast rather
@@ -266,6 +392,102 @@ export async function confirmExport(): Promise<void> {
     exportConfirmBtn.textContent = 'Export';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Batch export (docs/BUILD_QUEUE.md Build 4.1) + combined PDF (4.2) — swaps
+// the dialog's body into a determinate progress view, then a results
+// summary, never a second overlay stacked on the export dialog.
+// ---------------------------------------------------------------------------
+
+let unsubscribeBatchProgress: (() => void) | null = null;
+
+function renderBatchProgress(progress: BatchExportProgressDto): void {
+  const pct = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
+  batchProgressLabelEl.textContent = `Exporting ${progress.done} of ${progress.total}…`;
+  batchProgressFillEl.style.width = `${pct}%`;
+  batchProgressTrackEl.setAttribute('aria-valuenow', String(pct));
+  batchProgressClaimEl.textContent = progress.claimId ? `Claim: ${progress.claimId}` : '';
+}
+
+async function runBatchExport(tab: TabState): Promise<void> {
+  if (!tab.sessionId) return;
+  const sessionId = tab.sessionId;
+  const options: BatchExportOptionsDto = { combinePdf: exportCombinePdfCheckbox.checked };
+
+  exportConfirmViewEl.hidden = true;
+  exportBatchSummaryEl.hidden = true;
+  exportBatchProgressEl.hidden = false;
+  exportDialogFooterEl.hidden = true; // the progress view carries its own Cancel-export button instead
+  batchProgressLabelEl.textContent = 'Choosing a destination folder…';
+  batchProgressFillEl.style.width = '0%';
+  batchProgressTrackEl.setAttribute('aria-valuenow', '0');
+  batchProgressClaimEl.textContent = '';
+
+  unsubscribeBatchProgress?.();
+  unsubscribeBatchProgress = window.claimApi.onBatchProgress((progress) => {
+    if (progress.sessionId === sessionId) renderBatchProgress(progress);
+  });
+
+  try {
+    const result = await window.claimApi.exportBatch(sessionId, options);
+    unsubscribeBatchProgress?.();
+    unsubscribeBatchProgress = null;
+
+    exportBatchProgressEl.hidden = true;
+    exportBatchSummaryEl.hidden = false;
+    exportDialogFooterEl.hidden = false;
+    exportConfirmBtn.hidden = true;
+    exportGhostBtn.textContent = 'Close';
+
+    if (result.canceled && result.destinationFolder === null) {
+      // The folder picker itself was canceled before any work started —
+      // there is nothing to summarize; just return to the confirm step.
+      exportBatchSummaryEl.hidden = true;
+      exportConfirmViewEl.hidden = false;
+      exportDialogFooterEl.hidden = false;
+      exportConfirmBtn.hidden = false;
+      exportGhostBtn.textContent = 'Cancel';
+      return;
+    }
+
+    renderBatchSummary(result);
+  } catch (err) {
+    unsubscribeBatchProgress?.();
+    unsubscribeBatchProgress = null;
+    closeOverlay('export');
+    showToast(errorMessage(err), true);
+  }
+}
+
+function renderBatchSummary(result: import('../../electron/preload.js').BatchExportResultDto): void {
+  const failures = result.results.filter((r) => r.status === 'failed');
+  const parts: string[] = [];
+  parts.push(result.canceled ? `Export canceled after ${result.succeeded + result.failed} of ${result.total} claims.` : `Exported ${result.succeeded} of ${result.total} claims.`);
+  if (failures.length > 0) parts.push(`${failures.length} claim${failures.length === 1 ? '' : 's'} could not be rendered.`);
+  if (result.combinedPdfFileName) parts.push(`Combined PDF: ${result.combinedPdfFileName}.`);
+  batchSummaryTextEl.textContent = parts.join(' ');
+
+  batchSummaryFailuresEl.replaceChildren(
+    ...failures.map((f) => {
+      const li = document.createElement('li');
+      li.textContent = `Claim ${f.claimId || `#${f.index + 1}`}: ${f.error ?? 'render failed'}`;
+      return li;
+    }),
+  );
+
+  const hasOutput = result.succeeded > 0 || result.combinedPdfFileName !== null;
+  batchSummaryOpenFolderBtn.hidden = !hasOutput;
+}
+
+batchCancelBtn.addEventListener('click', () => {
+  const tab = activeTab();
+  if (!tab?.sessionId) return;
+  void window.claimApi.cancelBatchExport(tab.sessionId).catch(() => {});
+});
+
+batchSummaryOpenFolderBtn.addEventListener('click', () => {
+  void window.claimApi.openExport('folder').catch((err) => showToast(errorMessage(err), true));
+});
 
 /** Ctrl+Shift+E ("export this claim, skip the confirmation dialog"): calls claimApi.exportPdf directly — the user still sees the native OS save dialog (there's no way around that), only the app's own manifest/PHI-notice confirmation step is skipped. */
 export async function exportCurrentClaimSkipDialog(): Promise<void> {

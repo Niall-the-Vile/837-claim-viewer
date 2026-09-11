@@ -336,9 +336,16 @@
         </span>
       </div>
 
-      <!-- Export dialog -->
+      <!-- Export dialog. Build 4 (docs/BUILD_QUEUE.md Build 4 — export
+           suite) extended this from a single PDF-only confirm step into a
+           small wizard: scope (this claim / all claims in the file) x
+           format (PDF/CSV/JSON), with format-specific options (combined
+           PDF; the PHI-minimal-by-default identifiers opt-in), and — for a
+           PDF batch — an in-place progress view and a results summary that
+           replace the body while the export runs, never a second overlay
+           stacked on top (src/renderer/overlays.ts's confirmExport). -->
       <div id="exportOverlay" class="overlay" hidden>
-        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+        <div class="dialog dialogWide" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
           <div class="dialogTitlebar">
             <span id="exportDialogTitle">Export claim as PDF</span>
             <div class="toolSpacer"></div>
@@ -347,21 +354,105 @@
             </button>
           </div>
           <div class="dialogBody">
+            <!-- The "confirm" wizard step — scope/format/options/manifest.
+                 Swapped out for #exportBatchProgress / #exportBatchSummary
+                 (never a second overlay) once a PDF batch starts running —
+                 see src/renderer/overlays.ts's runBatchExport. -->
+            <div id="exportConfirmView">
             <p id="exportIntro" class="exportIntro"></p>
-            <div class="manifest">
+
+            <!-- Scope (only shown when the open file holds >1 claim — spec
+                 §4: "This claim" / "All N claims in this file", not a
+                 separate menu item). -->
+            <div id="exportScopeGroup" class="exportOptionGroup" hidden>
+              <div class="exportOptionLabel" id="exportScopeLabel">Export</div>
+              <div class="radioRow" role="radiogroup" aria-labelledby="exportScopeLabel">
+                <label class="radioOption">
+                  <input type="radio" name="exportScope" value="claim" id="exportScopeClaim" checked />
+                  <span>This claim</span>
+                </label>
+                <label class="radioOption">
+                  <input type="radio" name="exportScope" value="all" id="exportScopeAll" />
+                  <span id="exportScopeAllLabel">All claims in this file</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Format: PDF (default) / CSV / JSON (spec §5). XLSX is
+                 deferred — docs/BUILD_QUEUE.md 4.3. -->
+            <div id="exportFormatGroup" class="exportOptionGroup">
+              <div class="exportOptionLabel" id="exportFormatLabel">Format</div>
+              <div class="radioRow" role="radiogroup" aria-labelledby="exportFormatLabel">
+                <label class="radioOption">
+                  <input type="radio" name="exportFormat" value="pdf" id="exportFormatPdf" checked />
+                  <span>PDF</span>
+                </label>
+                <label class="radioOption">
+                  <input type="radio" name="exportFormat" value="csv" id="exportFormatCsv" />
+                  <span>CSV</span>
+                </label>
+                <label class="radioOption">
+                  <input type="radio" name="exportFormat" value="json" id="exportFormatJson" />
+                  <span>JSON</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 4.2 — only relevant for a PDF + "all claims" batch. -->
+            <label id="exportCombinePdfRow" class="checkboxRow" hidden>
+              <input type="checkbox" id="exportCombinePdfCheckbox" />
+              <span>Also create one combined PDF of every claim (in addition to one file per claim)</span>
+            </label>
+
+            <!-- CSV/JSON only: PHI-minimal is the pre-selected default every
+                 time this dialog opens (spec §5: "never silently change the
+                 user's last-used profile") — see resetExportDialog in
+                 overlays.ts, which always unchecks this on open. -->
+            <div id="exportIdentifiersGroup" class="exportOptionGroup" hidden>
+              <label class="checkboxRow checkboxRowSensitive">
+                <input type="checkbox" id="exportIncludeIdentifiersCheckbox" />
+                <span>Include patient identifiers</span>
+              </label>
+              <div class="identifiersConsequence">Adds patient name, date of birth, address, and full member ID to the file.</div>
+            </div>
+
+            <div class="manifest" id="exportManifest">
               <span class="manifestLabel">Form</span><span id="manifestForm"></span>
               <span class="manifestLabel">Service lines</span><span id="manifestLines" class="mono"></span>
               <span class="manifestLabel">Billed total</span><span id="manifestTotal" class="mono"></span>
               <span class="manifestLabel">Sheet size</span><span>US Letter, 8.5 &times; 11 in</span>
               <span class="manifestLabel">Warnings carried</span><span id="manifestWarnings"></span>
             </div>
-            <div class="phiNotice">
+            <div class="phiNotice" id="exportPhiNotice">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-              <span><b>This PDF is unencrypted PHI.</b> Store it on a BitLocker volume only, and delete it when the negotiation is closed.</span>
+              <span id="exportPhiNoticeText"><b>This file is unencrypted PHI.</b> Store it on a BitLocker volume only, and delete it when the negotiation is closed.</span>
+            </div>
+            </div>
+            <!-- /#exportConfirmView -->
+
+            <!-- Batch progress (docs/BUILD_QUEUE.md Build 4.1 §4): determinate,
+                 with the current claim id and a cancel button — replaces
+                 everything above while a batch export is running. -->
+            <div id="exportBatchProgress" class="batchProgress" hidden>
+              <div id="batchProgressLabel" class="batchProgressLabel" aria-live="polite">Exporting 0 of 0&hellip;</div>
+              <div id="batchProgressTrack" class="progressTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="batchProgressLabel">
+                <div id="batchProgressFill" class="progressFill" style="width: 0%"></div>
+              </div>
+              <div id="batchProgressClaim" class="batchProgressClaim"></div>
+              <button id="batchCancelBtn" class="btn btnGhost" type="button">Cancel export</button>
+            </div>
+
+            <!-- Batch result summary — replaces the progress view once the
+                 run finishes (or is canceled). Never closes automatically:
+                 the failure list (if any) needs to stay readable. -->
+            <div id="exportBatchSummary" class="batchSummary" hidden>
+              <p id="batchSummaryText"></p>
+              <ul id="batchSummaryFailures" class="batchSummaryFailures"></ul>
+              <button id="batchSummaryOpenFolderBtn" class="btn btnGhost" type="button" hidden>Open containing folder</button>
             </div>
           </div>
-          <div class="dialogFooter">
-            <button class="btn btnGhost" type="button" data-close="export">Cancel</button>
+          <div class="dialogFooter" id="exportDialogFooter">
+            <button id="exportGhostBtn" class="btn btnGhost" type="button" data-close="export">Cancel</button>
             <button id="exportConfirmBtn" class="btn btnPrimary" type="button">Export</button>
           </div>
         </div>
@@ -410,7 +501,11 @@
                 correction <b>is</b> saved on this machine too (separately from the original
                 file, which stays untouched) so it's there next time you open the same claim &mdash;
                 every edited value stays visibly marked, and any export built from an edited claim
-                is stamped EDITED. A file or folder name can be PHI-adjacent &mdash; use
+                is stamped EDITED, in every export format. Batch PDF, combined-PDF, CSV and JSON
+                exports all write only to a location you choose; CSV/JSON exports exclude patient
+                identifiers (name, date of birth, address, full member ID) unless you explicitly
+                check "Include patient identifiers" in the export dialog. A file or folder name can
+                be PHI-adjacent &mdash; use
                 <span class="mono">File &rarr; Forget open tabs &amp; recent files</span> to clear
                 that trail at any time. Runs fully offline; nothing ever leaves this machine.
               </span>

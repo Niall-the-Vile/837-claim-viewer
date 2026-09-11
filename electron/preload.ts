@@ -143,6 +143,46 @@ export interface ClaimDetailDto {
 
 export type OpenExportMode = 'file' | 'folder';
 
+// --- Export suite (docs/BUILD_QUEUE.md Build 4) --------------------------
+
+/** Batch export (Build 4.1) options — structurally identical to electron/main.ts's `BatchExportOptionsDto`. */
+export interface BatchExportOptionsDto {
+  /** 4.2 — also merge every successfully-rendered claim into one combined PDF, alongside (never instead of) the one-file-per-claim output. */
+  combinePdf: boolean;
+}
+
+export interface BatchExportClaimResultDto {
+  index: number;
+  claimId: string;
+  fileName: string | null;
+  status: 'success' | 'failed';
+  error?: string;
+}
+
+export interface BatchExportResultDto {
+  canceled: boolean;
+  destinationFolder: string | null;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchExportClaimResultDto[];
+  combinedPdfFileName: string | null;
+}
+
+/** Pushed over `export:batchProgress` while a batch export is running — the bridge's first push channel (docs/BUILD_QUEUE.md Build 4.1). */
+export interface BatchExportProgressDto {
+  sessionId: string;
+  done: number;
+  total: number;
+  claimId: string;
+}
+
+/** Shared by CSV (Build 4.3) and JSON (Build 4.4) export — `scope: 'all'` includes every claim in the open file in one document; `'claim'` includes only the currently-active one. `includeIdentifiers` is the explicit, visually-marked opt-in to add patient/insured identifying fields (docs/CLAUDE_CODE_NEXT_SESSION.md's PHI-minimal-by-default decision) — always defaults to `false` in the renderer, never inherited from a previous export. */
+export interface StructuredExportOptionsDto {
+  scope: 'claim' | 'all';
+  includeIdentifiers: boolean;
+}
+
 export interface AppInfoDto {
   version: string;
   buildDate: string;
@@ -221,6 +261,40 @@ const claimApi = Object.freeze({
   clearOverridesForClaim: (sessionId: string, index: number): Promise<ClaimDetailDto> => ipcRenderer.invoke('claim:clearOverridesForClaim', sessionId, index),
   /** The stale-overrides banner's "Discard saved edits" action: deletes every saved override for this tab's file (its `correctedClaimStatus` was `'stale'`). Never applies them — only ever discards. */
   discardStaleOverrides: (sessionId: string): Promise<void> => ipcRenderer.invoke('claim:discardStaleOverrides', sessionId),
+
+  // --- Export suite (docs/BUILD_QUEUE.md Build 4) --------------------------
+  /**
+   * Batch export (4.1): opens a native folder picker, then renders every
+   * claim in this tab's session to its own PDF in that folder (main owns
+   * the loop — see electron/main.ts's `export:batch` handler), optionally
+   * ALSO merging every successfully-rendered claim into one combined PDF
+   * (4.2, `options.combinePdf`). Resolves once the run finishes, is
+   * canceled (`cancelBatchExport`), or the folder picker itself is
+   * canceled (`result.canceled: true`, no folder ever chosen) — progress
+   * arrives separately over `onBatchProgress` while this promise is still
+   * pending.
+   */
+  exportBatch: (sessionId: string, options: BatchExportOptionsDto): Promise<BatchExportResultDto> => ipcRenderer.invoke('export:batch', sessionId, options),
+  /** Requests that an in-flight batch export for this session stop after its current claim — a no-op if no batch is running. Already-written files are kept; see BatchExportResultDto.canceled's own doc comment. */
+  cancelBatchExport: (sessionId: string): Promise<void> => ipcRenderer.invoke('export:cancelBatch', sessionId),
+  /**
+   * Subscribes to batch-export progress pushes — the bridge's first push
+   * channel (docs/BUILD_QUEUE.md Build 4.1). Wraps `ipcRenderer.on`,
+   * stripping the `IpcRendererEvent` sender argument before it reaches the
+   * renderer's callback (same "no sender object crosses the bridge"
+   * discipline as every invoke-based call here), and returns an
+   * unsubscribe function so the caller can stop listening when the batch
+   * dialog closes.
+   */
+  onBatchProgress: (cb: (progress: BatchExportProgressDto) => void): (() => void) => {
+    const listener = (_event: unknown, progress: BatchExportProgressDto): void => cb(progress);
+    ipcRenderer.on('export:batchProgress', listener);
+    return () => ipcRenderer.removeListener('export:batchProgress', listener);
+  },
+  /** Structured CSV export (4.3) of the claim at `index` (scope: 'claim') or every claim in this tab's session (scope: 'all') — PHI-minimal columns by default; `options.includeIdentifiers` is the explicit opt-in. Opens a native save dialog; resolves the saved path, or `null` if canceled. */
+  exportCsv: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportCsv', sessionId, index, options),
+  /** Structured JSON export (4.4) — same scope/identifiers semantics as exportCsv above. */
+  exportJson: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportJson', sessionId, index, options),
 });
 
 export type ClaimApi = typeof claimApi;

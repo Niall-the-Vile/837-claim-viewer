@@ -94,12 +94,46 @@ export const copySummaryBtn = requireEl<HTMLButtonElement>('copySummaryBtn');
 export const statusNoFileEl = requireEl<HTMLSpanElement>('statusNoFile');
 
 export const exportOverlayEl = requireEl<HTMLDivElement>('exportOverlay');
+export const exportDialogTitleEl = requireEl<HTMLSpanElement>('exportDialogTitle');
+export const exportConfirmViewEl = requireEl<HTMLDivElement>('exportConfirmView');
 export const exportIntroEl = requireEl<HTMLParagraphElement>('exportIntro');
 export const manifestFormEl = requireEl<HTMLSpanElement>('manifestForm');
 export const manifestLinesEl = requireEl<HTMLSpanElement>('manifestLines');
 export const manifestTotalEl = requireEl<HTMLSpanElement>('manifestTotal');
 export const manifestWarningsEl = requireEl<HTMLSpanElement>('manifestWarnings');
+export const exportManifestEl = requireEl<HTMLDivElement>('exportManifest');
+export const exportPhiNoticeEl = requireEl<HTMLDivElement>('exportPhiNotice');
+export const exportDialogFooterEl = requireEl<HTMLDivElement>('exportDialogFooter');
+export const exportGhostBtn = requireEl<HTMLButtonElement>('exportGhostBtn');
 export const exportConfirmBtn = requireEl<HTMLButtonElement>('exportConfirmBtn');
+
+// Export suite (docs/BUILD_QUEUE.md Build 4): scope (this claim / all claims
+// in the file), format (PDF/CSV/JSON), combined-PDF and identifiers-opt-in
+// controls, and the batch progress/summary views that replace the export
+// dialog's body while a batch export is running/just finished.
+export const exportScopeGroupEl = requireEl<HTMLDivElement>('exportScopeGroup');
+export const exportScopeClaimRadio = requireEl<HTMLInputElement>('exportScopeClaim');
+export const exportScopeAllRadio = requireEl<HTMLInputElement>('exportScopeAll');
+export const exportScopeAllLabelEl = requireEl<HTMLSpanElement>('exportScopeAllLabel');
+export const exportFormatPdfRadio = requireEl<HTMLInputElement>('exportFormatPdf');
+export const exportFormatCsvRadio = requireEl<HTMLInputElement>('exportFormatCsv');
+export const exportFormatJsonRadio = requireEl<HTMLInputElement>('exportFormatJson');
+export const exportCombinePdfRowEl = requireEl<HTMLLabelElement>('exportCombinePdfRow');
+export const exportCombinePdfCheckbox = requireEl<HTMLInputElement>('exportCombinePdfCheckbox');
+export const exportIdentifiersGroupEl = requireEl<HTMLDivElement>('exportIdentifiersGroup');
+export const exportIncludeIdentifiersCheckbox = requireEl<HTMLInputElement>('exportIncludeIdentifiersCheckbox');
+
+export const exportBatchProgressEl = requireEl<HTMLDivElement>('exportBatchProgress');
+export const batchProgressLabelEl = requireEl<HTMLDivElement>('batchProgressLabel');
+export const batchProgressFillEl = requireEl<HTMLDivElement>('batchProgressFill');
+export const batchProgressTrackEl = requireEl<HTMLDivElement>('batchProgressTrack');
+export const batchProgressClaimEl = requireEl<HTMLDivElement>('batchProgressClaim');
+export const batchCancelBtn = requireEl<HTMLButtonElement>('batchCancelBtn');
+
+export const exportBatchSummaryEl = requireEl<HTMLDivElement>('exportBatchSummary');
+export const batchSummaryTextEl = requireEl<HTMLParagraphElement>('batchSummaryText');
+export const batchSummaryFailuresEl = requireEl<HTMLUListElement>('batchSummaryFailures');
+export const batchSummaryOpenFolderBtn = requireEl<HTMLButtonElement>('batchSummaryOpenFolderBtn');
 
 export const shortcutsOverlayEl = requireEl<HTMLDivElement>('shortcutsOverlay');
 export const shortcutsGridEl = requireEl<HTMLDivElement>('shortcutsGrid');

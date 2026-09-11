@@ -904,3 +904,270 @@ would have meant re-deriving the same design decisions in each one. Checkpoint
 discipline (verify before/after each logical unit, commit before moving on,
 adversarial self-check before calling it done, log honestly including the
 E2E limitation found) follows the same process this repo's other builds use.
+
+## Build 4 — Export suite
+STATUS: GREEN
+
+Start: 2026-09-11 (this session)     End: 2026-09-11 (this session)
+Commit: (this build's commit, tagged `build-4-green`)     Tag: build-4-green
+
+Starting point: `build-editable-fields-green` — `npm run verify` confirmed green
+(typecheck clean across all 3 configs, 398 vitest at completion vs. 366 at start,
+60 Playwright E2E, `npm run build` clean) before any change in this section.
+
+Scope: `docs/CLAUDE_CODE_NEXT_SESSION.md`'s "Build 4 — Export suite" (4.1 batch
+export, 4.2 combined PDF, 4.3 CSV, 4.4 JSON), following `docs/BUILD_QUEUE.md`'s
+Build 4 section for the exact IPC/process-split spec and
+`docs/UI_REQUIREMENTS_v3_queued_features.md` §4-6 for the UX. 4.5 (appended
+summary pages — cover/field annex/UB-04 revenue rollup/warnings page) is
+explicitly deferred — see "Not done and why" below.
+
+### Benchmark (required before building the progress UI, docs/BUILD_QUEUE.md 4.1)
+
+Ran the 400-claim fixture (`test/fixtures/x12/837I-400-claims.dat`) through
+`loadClaims` + a sequential `renderClaim` loop (one claim at a time, bytes
+dropped between iterations, yielding via `setImmediate` — the same shape as the
+real batch loop), via a standalone script against the built `dist/src/app/
+claimService.js`:
+
+- **79.5 ms/claim average, ~12.6 claims/sec, peak RSS ~230 MB** for the full
+  400-claim run (total ~31.8s). This is above the ~10 claims/sec floor the task
+  set as the "state the honest number" threshold, so the determinate progress
+  UI's implied responsiveness is not overstating what the app can actually do.
+
+### What shipped
+
+- **4.1 — Batch export.** New IPC handler `export:batch` (main-process loop,
+  one claim at a time): renders each claim's EFFECTIVE claim (overrides
+  applied, via the existing `getEffectiveClaim`), writes it with the existing
+  `writeFileAtomic`, drops the byte reference before the next claim (never
+  accumulates rendered PDFs in an array — the one deliberate, bounded exception
+  is the combined-PDF document, see 4.2 below), calls `win.setProgressBar`,
+  sends `export:batchProgress` over the bridge's first push channel, then
+  `await new Promise(r => setImmediate(r))` so cancel/progress are actually
+  serviced. A per-claim failure is caught, recorded as `{status:'failed',
+  error}`, and the loop continues — **the batch never aborts for one bad
+  claim**. `export:cancelBatch` sets a per-session flag the loop checks once
+  per iteration; a mid-run cancel keeps every already-written file and reports
+  exactly how far it got. Filenames follow
+  `<billing provider> - <service date> - <NNN>.pdf` (NNN = 1-based ordinal,
+  zero-padded to the claim count's digit width), with a numeric ` (2)`/` (3)`
+  collision suffix as the documented second-line fallback
+  (`src/app/export/exportNaming.ts`'s `uniqueFileName`, used against both
+  `existsSync` on the destination folder AND this run's own already-claimed
+  names). Renderer: the export dialog gained a scope choice ("This claim" /
+  "All N claims in this file", shown only when the open file has >1 claim), an
+  in-dialog determinate progress view (percentage bar, "Exporting N of M…",
+  current claim id, Cancel button) and a results summary view (X of Y exported,
+  failures listed by claim id + reason, "Open containing folder") — the SAME
+  dialog, never a second overlay stacked on top.
+- **4.2 — Combined single PDF.** An "Also create one combined PDF" checkbox,
+  visible only for a PDF + "All claims" batch. Once each claim's PDF bytes
+  exist in the loop (4.1), they're merged via `PDFDocument.load()` +
+  `copyPages()` into a running `combinedDoc`, in claim order, offered alongside
+  — never instead of — the one-file-per-claim output. `combined.pdf` (its own
+  numeric collision suffix if one already exists) is written once at the end,
+  from whatever claims succeeded (a mid-run cancel still produces a combined
+  PDF of the claims that made it). This is the one place a rendered claim's
+  bytes outlive their own loop iteration — bounded (at most one claim's raw
+  bytes held at a time; `combinedDoc` only grows by pages already safely
+  written to disk moments before) and reasoned through explicitly in
+  `electron/main.ts`'s handler comment against 4.1's "never accumulate" rule.
+- **4.3 — Structured CSV export** (`src/app/export/structuredExport.ts`'s
+  `buildCsvExport`, a pure, zero-dependency string formatter written with the
+  existing `writeFileAtomic`, per the task's "CSV/JSON only, XLSX deferred"
+  decision). One row per service line + header-level fields (claim id, patient
+  account number, billing provider name/NPI, total charge, form type) — a
+  claim with zero service lines still emits exactly one row so its header
+  fields/EDITED marking are never silently dropped. **PHI-minimal by default**:
+  patient name/DOB/address/phone and insured name/member ID/DOB/address are
+  excluded unless the export dialog's explicit, visually-marked (distinct
+  color, `.checkboxRowSensitive`) "Include patient identifiers" checkbox is
+  checked — never pre-checked, never remembered across dialog reopens (see the
+  adversarial audit below). **EDITED marking**: every row carries `claimEdited`
+  (true whenever the claim has ANY active override) and `editedFieldLabels`
+  (which fields), plus a per-line `lineEdited` for line-specific overrides —
+  computed directly from the same `AppliedFieldEdit[]` the PDF path's mandatory
+  stamp uses.
+- **4.4 — Structured JSON export** (`buildJsonExport`), same PHI-minimal
+  posture (redacted identifier fields carry a fixed sentinel string,
+  `'[not included — identifiers opt-in]'`, rather than being silently omitted —
+  same column count/shape either way, only the values change) and the same
+  `edited`/`editedFieldCount`/`edits` marking, kept close to the app's own
+  normalized `Claim` model (claim/patient/insured/billing/rendering/totals/
+  diagnoses/service lines) per the backlog's "natural feed for
+  repricing/automation tooling" framing, rather than inventing a third schema.
+  The claim's own `raw`/`claimFormRaw` source dump is deliberately excluded
+  from BOTH formats (not part of the normalized model, and a channel by which
+  full source PHI could otherwise leak past the identifiers gate).
+- **Preload/IPC surface** (rule 7b, same commit): `electron/preload.ts` gained
+  `exportBatch`, `cancelBatchExport`, `onBatchProgress` (wrapping
+  `ipcRenderer.on`, stripping the `IpcRendererEvent` argument, returning an
+  unsubscribe — the bridge's first push channel), `exportCsv`, `exportJson`;
+  `electron/main.ts` gained the matching `export:batch`/`export:cancelBatch`/
+  `dialog:exportCsv`/`dialog:exportJson` handlers; `src/renderer/global.d.ts`
+  needed no direct edit (it only re-exports the `ClaimApi` type from
+  preload.ts, so the new keys flow through automatically) but was reviewed as
+  part of this same change; `e2e/app.spec.ts`'s sorted key-array assertion
+  updated in the same commit.
+- **New test-only E2E seams** (same `!isRealPackagedApp()` guard as every
+  existing seam in `electron/main.ts`): `CLAIM_VIEWER_E2E_BATCH_DIR`
+  (substitutes the batch folder picker), `CLAIM_VIEWER_E2E_SAVE_CSV`/
+  `CLAIM_VIEWER_E2E_SAVE_JSON` (substitute the CSV/JSON save dialogs), and the
+  batch loop now also honors the PRE-EXISTING
+  `CLAIM_VIEWER_E2E_FAIL_PDF_INDEX` (previously only read by `claim:getPdf`)
+  so a batch run can force exactly one claim's render to fail deterministically
+  for the "one bad claim" test.
+- **New pure modules**: `src/app/export/exportNaming.ts` (pure-moved out of
+  `electron/main.ts`: `sanitizeFileNamePart`/`sanitizeNamePart`/
+  `earliestServiceDate`/`defaultExportFileName`, unchanged behavior, plus new
+  `batchExportFileName`/`uniqueFileName`) and
+  `src/app/export/structuredExport.ts` (`buildCsvExport`/`buildJsonExport`,
+  new). Both are Electron-free and directly unit-tested.
+- **Renderer**: `src/renderer/index.html`'s export dialog restructured into a
+  scope x format wizard (`#exportConfirmView`, swapped for
+  `#exportBatchProgress`/`#exportBatchSummary` during/after a PDF batch, never
+  a second overlay); `src/renderer/dom.ts`/`overlays.ts` extended accordingly;
+  `src/renderer/style.css` gained the radio/checkbox/progress-bar/summary-list
+  styling (`.exportOptionGroup`, `.radioRow`, `.checkboxRowSensitive`,
+  `.progressTrack`/`.progressFill`, `.batchSummaryFailures`, etc.).
+- **`README.md`** gained an "Export suite" subsection (batch/combined-PDF/CSV/
+  JSON policy) and an updated top-of-policy sentence (the "one exception is an
+  explicit export" language now covers all of this build's export paths); the
+  **About screen** (`index.html`'s `#aboutOverlay`) gained a sentence stating
+  the EDITED stamp applies "in every export format" and that CSV/JSON exclude
+  patient identifiers unless explicitly opted in.
+
+### Not done and why
+
+- **4.5 — Appended summary pages** (cover / field annex / UB-04 revenue-code
+  rollup / warnings page) — **explicitly deferred**, per the task's own
+  "if you're running low on budget, this is the one to defer" allowance. This
+  is the largest, most design-sensitive sub-item (inherits Build 3.2's
+  region-builder test-pattern requirement, `test/support/regions.ts`/
+  `test/invariants.test.ts`, for FOUR new page kinds, each needing its own
+  derived region set with no hand-copied coordinates and no loosened overlap
+  tolerance) and was judged not safely completable to the same depth of
+  correctness/testing as 4.1-4.4 within this session's remaining budget.
+  Nothing about 4.1-4.4's design blocks picking this up later — appended pages
+  are additive to the existing per-claim render call, and the batch/combined-
+  PDF loop already renders whatever `renderClaim` produces without assuming a
+  fixed page count.
+
+### Verification
+
+- **typecheck**: pass (all 3 configs — `tsconfig.json`, `tsconfig.renderer.json`,
+  `tsconfig.e2e.json`), at every checkpoint.
+- **vitest**: 366 → **398** (+32): `test/exportNaming.test.ts` (12, new,
+  every value asserted — not spot-checked, per rule on new lookup/format
+  tables) and `test/structuredExport.test.ts` (20, new: full header-row
+  equality, PHI-minimal-by-default absence checks, the identifiers opt-in,
+  CSV-escaping, zero-service-line claims, multi-claim documents, and the
+  EDITED-marking behavior for both claim-level and line-level overrides, in
+  both CSV and JSON). Zero regressions — every pre-existing test file passes
+  unchanged.
+- **Playwright E2E**: 60 → **68** (+8, all in the new
+  `e2e/exportSuite.spec.ts`): batch export success, one-bad-claim tolerance,
+  the combined-PDF merge (with a page-count cross-check against the per-claim
+  files), CSV export default columns + the identifiers opt-in (plus a
+  same-session reopen-resets-to-default check), JSON export default (redacted)
+  + opt-in, and the mandatory EDITED marking present in CSV, JSON, AND the
+  combined PDF when a claim carries an active override. **All 68 tests green,
+  no flake, no retry needed.**
+- `npm run build:app`: clean at every checkpoint (one pre-existing, unrelated
+  Vite chunk-size warning about `pdfjs-dist` — present before this build too).
+- **`npm run verify` overall**: green, no caveats — this session's console was
+  never locked, so none of the clipboard-dependent-test environmental artifact
+  noted in the editable-fields build's log applied here.
+
+### Preload/IPC surface changes (rule 7b) — final key list
+
+`window.claimApi`, sorted (matches `e2e/app.spec.ts`'s assertion exactly):
+
+```
+cancelBatchExport, clearOverridesForClaim, closeSession, discardStaleOverrides,
+exportBatch, exportCsv, exportJson, exportPdf, forgetSession, getAppInfo,
+getDetail, getPathForFile, getPdf, getSessionRestoreState, onBatchProgress,
+openClaim, openExport, revertFieldOverride, saveSession, saveUiScale,
+setFieldOverride
+```
+
+New this build: `cancelBatchExport`, `exportBatch`, `exportCsv`, `exportJson`,
+`onBatchProgress`.
+
+### Adversarial self-audit (required before calling this done)
+
+Each invariant below defaults to REFUTED unless a concrete code path and test
+confirm it.
+
+1. **Can any new export path ever omit the EDITED marking when overrides are
+   active, in ANY format? — CONFIRMED (no).** Every one of the four new/
+   extended paths reads the SAME `applied: AppliedFieldEdit[]` array
+   `getEffectiveClaim` produces for the claim actually being exported, with no
+   branch that skips using it:
+   - Single/batch PDF: `dialog:exportPdf`/`export:batch` both construct
+     `provenance.edited`/`editedFieldCount` unconditionally from
+     `applied.length` in the same handler invocation that renders the claim —
+     structurally identical to the mechanism the editable-fields build already
+     proved safe.
+   - Combined PDF: never re-renders anything — it `copyPages()`s the
+     ALREADY-STAMPED per-claim PDF's own pages, so it inherits whatever stamp
+     that page carries with no separate code path to get wrong.
+   - CSV/JSON: `buildCsvExport`/`buildJsonExport` take `applied` as a plain
+     function argument and compute `claimEdited`/`editedFieldLabels`/
+     `lineEdited` (CSV) or `edited`/`editedFieldCount`/`edits` (JSON)
+     unconditionally from it — there is no parameter or code path that
+     suppresses this computation.
+   Verified end-to-end, not just by code inspection: `e2e/exportSuite.spec.ts`'s
+   "exporting a claim with an active field override carries the mandatory
+   EDITED marking in CSV and JSON" and "...in the combined PDF" tests actually
+   edit a field, export through the real IPC path, and assert the marking is
+   present in the written file; the "batch export... reports an accurate
+   summary" test's UNEDITED claims are cross-checked to confirm the stamp is
+   ABSENT when there's nothing to mark (no false positives).
+2. **Can the PHI-minimal default ever be silently bypassed? — CONFIRMED
+   (no).** `parseStructuredExportOptions` (electron/main.ts) treats anything
+   other than the literal boolean `true` as `includeIdentifiers: false` — there
+   is no "last used" value read from anywhere; every IPC call supplies this
+   argument fresh from whatever the renderer's DOM state is at that instant.
+   On the renderer side, `resetExportDialogControls()` unconditionally sets the
+   identifiers checkbox (and the format/scope radios) back to their safe
+   defaults at the TOP of every `openExportDialog()` call — including a
+   reopen within the SAME running app, immediately after a previous export
+   that DID opt in. Verified end-to-end: `e2e/exportSuite.spec.ts`'s CSV
+   opt-in test explicitly reopens the dialog after an opt-in export and
+   asserts both the format radio AND the identifiers checkbox are back to
+   their PHI-minimal defaults, not just on a fresh launch.
+3. **Does the batch loop ever silently drop a claim on failure instead of
+   reporting it? — CONFIRMED (no).** Every loop iteration that STARTS (i.e.
+   isn't skipped by a pre-iteration cancel check) pushes exactly one
+   `BatchExportClaimResultDto` — `'success'` or `'failed'` with the caught
+   error's message — before moving to the next claim; there is no `continue`
+   or swallowed exception that skips this push. A mid-run cancel stops the
+   loop from STARTING further claims (correctly absent from `results`, since
+   they were never attempted) and is reported honestly via `canceled: true`
+   and the renderer's "Export canceled after X of Y claims." text — never
+   conflated with a silent drop. Verified end-to-end: the "one bad claim"
+   test forces a real render failure via the seam and confirms the OTHER
+   claim still succeeds and is still written to disk, with the failure listed
+   by claim id and reason in the summary.
+
+### Session process note
+
+Ran as a single agent end-to-end (no subagent delegation), for the same
+reason as the editable-fields build: the batch loop, the combined-PDF
+merge, the structured formatters, and the export dialog's scope/format
+state machine are tightly coupled enough that splitting the work across
+file-disjoint subagents would have meant re-deriving the same design
+decisions (naming convention reuse, the EDITED-marking single-source-of-
+truth, the PHI-minimal-reset-on-open rule) in more than one place. Checkpoint
+discipline followed this repo's standard process: full `npm run verify`
+before starting, after the backend IPC layer typechecked, after the renderer
+UI + new unit tests landed, and again after the new E2E suite — all green
+at each point, with the one intentional rebuild-before-e2e-rerun step noted
+here for completeness (adding the `CLAIM_VIEWER_E2E_FAIL_PDF_INDEX` seam to
+the batch loop after an earlier full verify meant the first `exportSuite`
+run against stale `dist/` output briefly looked like two failures; rebuilding
+`dist/` and rerunning confirmed both were test-harness staleness, not product
+bugs, and the final full `npm run verify` run reflects the true, current
+state).

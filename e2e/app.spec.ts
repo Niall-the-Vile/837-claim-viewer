@@ -181,12 +181,19 @@ test.describe('837 Claim Viewer — E2E', () => {
       // saveUiScale added by Build 2.0's UI text scale, docs/UI_REQUIREMENTS_v3_queued_features.md §9.
       // setFieldOverride/revertFieldOverride/clearOverridesForClaim/
       // discardStaleOverrides added by the editable-fields feature,
-      // docs/EDITABLE_FIELDS_DESIGN.md.)
+      // docs/EDITABLE_FIELDS_DESIGN.md. exportBatch/cancelBatchExport/
+      // onBatchProgress (batch PDF export + combined-PDF option) and
+      // exportCsv/exportJson (structured export) added by the Build 4
+      // export suite, docs/BUILD_QUEUE.md Build 4.)
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
       expect(apiKeys).toEqual([
+        'cancelBatchExport',
         'clearOverridesForClaim',
         'closeSession',
         'discardStaleOverrides',
+        'exportBatch',
+        'exportCsv',
+        'exportJson',
         'exportPdf',
         'forgetSession',
         'getAppInfo',
@@ -194,6 +201,7 @@ test.describe('837 Claim Viewer — E2E', () => {
         'getPathForFile',
         'getPdf',
         'getSessionRestoreState',
+        'onBatchProgress',
         'openClaim',
         'openExport',
         'revertFieldOverride',

@@ -72,8 +72,10 @@ Real claim files are **PHI** and must never be committed. Only **synthetic** fix
 
 Claim **content** is never written to disk by this app — every form preview and PDF render
 happens fully in memory (`test/phi-at-rest.test.ts`), and closing a tab drops its parsed claim
-from main-process memory immediately. The one exception is an explicit, user-directed **export**:
-the app writes the rendered PDF only to a path the user picked in a save dialog.
+from main-process memory immediately. The exceptions are all explicit, user-directed **exports**:
+a single claim's PDF, a batch of PDFs (one per claim, plus an optional combined PDF merging all of
+them) written to a folder the user picked, or a structured **CSV/JSON** export of the normalized
+claim data written to a path the user picked — see "Export suite" below for the CSV/JSON policy.
 
 As of the multi-file tabs build (`docs/TABS_BUILD_PLAN.md` §2e — an approved, deliberate policy
 change), the app **does** persist a small amount of non-content state to `session.json` under
@@ -121,3 +123,25 @@ change as a direct result:
 This is a narrower, more deliberate version of the "structured export"/"per-line notes" write
 capabilities already anticipated (and deferred) elsewhere in this app's roadmap — see
 `docs/EDITABLE_FIELDS_DESIGN.md` for the full design and what's still out of scope.
+
+### Export suite (Build 4 — batch PDF, combined PDF, CSV, JSON)
+
+The export dialog offers a **scope** (this claim, or all claims in the open file) and a
+**format** (PDF, CSV, or JSON):
+
+- **Batch PDF export**: renders every claim in the open file to its own PDF in a folder you pick,
+  with a determinate progress bar and a Cancel button; one bad claim is reported individually and
+  never aborts the rest of the batch. An optional checkbox additionally merges every successfully
+  rendered claim's pages into one combined PDF, alongside — never instead of — the one-file-per-
+  claim output.
+- **Structured CSV/JSON export**: writes the normalized claim model (claim/service-line
+  identifiers, codes, amounts, dates, and provider info) to a file you pick. **Patient identifiers
+  (name, date of birth, address, full member ID) are excluded by default** — a clearly labeled
+  "Include patient identifiers" checkbox is the explicit opt-in, and it is never pre-checked or
+  remembered from a previous export. Every claim/row also carries an explicit EDITED indicator
+  whenever any of its fields have an active correction (see above), so an edited claim's exported
+  data — in every format, not just PDF — can never be mistaken for the claim's original values.
+
+Every export in this suite writes to a location **you** choose (a save dialog or folder picker) —
+none of it uses the `userData` persistence mechanism, and the same unencrypted-PHI/BitLocker
+notice shown for a single-claim PDF export applies here too.

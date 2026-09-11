@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, session, shell } from 'electron';
 import type { IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from 'electron';
+import { PDFDocument } from 'pdf-lib';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { dirname, join, basename, extname, resolve } from 'node:path';
@@ -14,6 +15,9 @@ import * as sessionStore from '../src/app/persistence/sessionStore.js';
 import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
 import * as correctedClaimStore from '../src/app/persistence/correctedClaimStore.js';
 import { applyFieldOverrides, findEditableField, editableFieldsForClaim, cloneClaim } from '../src/model/editableFields.js';
+import { defaultExportFileName, batchExportFileName, uniqueFileName, sanitizeFileNamePart } from '../src/app/export/exportNaming.js';
+import { buildCsvExport, buildJsonExport } from '../src/app/export/structuredExport.js';
+import type { EffectiveClaimForExport } from '../src/app/export/structuredExport.js';
 import {
   decodePlaceOfService,
   decodeRevenueCode,
@@ -849,6 +853,72 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Export suite (docs/BUILD_QUEUE.md Build 4 / docs/CLAUDE_CODE_NEXT_SESSION.md
+// Build 4 — Export suite): batch PDF export (4.1) with an optional combined
+// single PDF (4.2), and structured CSV/JSON export (4.3/4.4). All three write
+// claim CONTENT to a user-CHOSEN location (never `userData`), reusing the
+// existing writeFileAtomic and the editable-fields EFFECTIVE-claim machinery
+// so a claim's active field overrides are always reflected and always
+// mandatorily marked, in every format, exactly like the single-claim PDF
+// export already does.
+// ---------------------------------------------------------------------------
+
+interface BatchExportOptionsDto {
+  /** 4.2 — when true, ALSO merge every successfully-rendered claim's pages into one combined PDF (pdf-lib copyPages, claim order), alongside — never instead of — the one-file-per-claim output. */
+  combinePdf: boolean;
+}
+
+interface BatchExportClaimResultDto {
+  index: number;
+  claimId: string;
+  /** The written filename (not a full path — the folder is already known/echoed once as destinationFolder), or `null` on failure. */
+  fileName: string | null;
+  status: 'success' | 'failed';
+  /** User-facing message, present only when status is 'failed'. A batch NEVER fails wholesale because one claim's render/write failed — see the loop below, which always continues to the next claim. */
+  error?: string;
+}
+
+interface BatchExportResultDto {
+  /** True only when the user canceled the destination-folder picker itself (no folder was ever chosen) OR clicked Cancel mid-run (export:cancelBatch) — in the cancel-mid-run case, every claim rendered before the cancel took effect is still a normal 'success'/'failed' entry in `results`; cancellation only stops the loop from continuing, it never discards already-written files. */
+  canceled: boolean;
+  destinationFolder: string | null;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchExportClaimResultDto[];
+  /** The combined PDF's filename (see BatchExportOptionsDto.combinePdf), or `null` when that option was off, no claim rendered successfully, or the picker was canceled before any work started. */
+  combinedPdfFileName: string | null;
+}
+
+interface BatchExportProgressDto {
+  sessionId: string;
+  done: number;
+  total: number;
+  claimId: string;
+}
+
+/** Cancellation flags for an in-flight batch export, keyed by sessionId — set by `export:cancelBatch`, checked once per iteration of the batch loop below (see docs/BUILD_QUEUE.md Build 4.1: "yielding to the event loop between claims ... so progress and cancel are actually serviced"). A sessionId with no in-flight batch is a harmless no-op for the cancel handler. */
+const batchCancelFlags = new Map<string, boolean>();
+
+function parseBatchExportOptions(options: unknown): BatchExportOptionsDto {
+  const o = options && typeof options === 'object' ? (options as Record<string, unknown>) : {};
+  return { combinePdf: o['combinePdf'] === true };
+}
+
+/** Same PHI-minimal-by-default posture as CSV/JSON below: `scope`/`includeIdentifiers` are read fresh from whatever the renderer just sent, defaulting to the safe values ('claim' scope, identifiers EXCLUDED) on anything else — this can never silently inherit a previous call's "include identifiers" choice, because there IS no persisted state to inherit; every invocation is a fresh IPC call with its own explicit argument. */
+function parseStructuredExportOptions(options: unknown): { scope: 'claim' | 'all'; includeIdentifiers: boolean } {
+  const o = options && typeof options === 'object' ? (options as Record<string, unknown>) : {};
+  const scope = o['scope'] === 'all' ? 'all' : 'claim';
+  const includeIdentifiers = o['includeIdentifiers'] === true;
+  return { scope, includeIdentifiers };
+}
+
+/** `existsSync` on `dir/candidate` OR already claimed earlier in THIS batch run (`claimed`) — the two-part collision check `uniqueFileName` (src/app/export/exportNaming.ts) needs so two claims that would otherwise render to the identical name within one run still don't collide, on top of not colliding with a file left over from a previous run. */
+function makeCollisionPredicate(dir: string, claimed: Set<string>): (candidate: string) => boolean {
+  return (candidate) => claimed.has(candidate) || existsSync(join(dir, candidate));
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('dialog:openClaim', async (event: IpcMainInvokeEvent, droppedPath: unknown): Promise<OpenClaimResult | null> => {
     // Drag-and-drop open (welcome/preview pane, spec §4): the renderer
@@ -1068,6 +1138,211 @@ function registerIpcHandlers(): void {
     return filePath;
   });
 
+  // --- Batch export (docs/BUILD_QUEUE.md Build 4.1) + combined PDF (4.2) ---
+  // Rendering happens HERE in the main process, one claim at a time, exactly
+  // per the spec: never accumulate rendered PDF byte buffers in an array
+  // (each claim's `bytes` is dropped — goes out of scope — before the next
+  // iteration starts; the ONE deliberate exception is `combinedDoc` below,
+  // which the task's own 4.2 requires and which grows by design when the
+  // user opts into it — seepableits own comment), yield to the event loop
+  // between claims so the cancel invoke and progress sends are actually
+  // serviced, and never fail the whole batch because one claim's render or
+  // write failed — every claim gets its own success/failure entry in
+  // `results`, and the loop always continues to the next one.
+  ipcMain.handle('export:batch', async (event: IpcMainInvokeEvent, sessionId: unknown, optionsRaw: unknown): Promise<BatchExportResultDto> => {
+    const session = getSession(sessionId);
+    const sid = sessionId as string;
+    const total = session.claims.length;
+    const options = parseBatchExportOptions(optionsRaw);
+    const win = BrowserWindow.fromWebContents(event.sender);
+
+    // --- TEST-ONLY SEAM ----------------------------------------------------
+    // Mirrors the dialog:openClaim/dialog:exportPdf seams: Playwright can't
+    // drive the native folder picker, so CLAIM_VIEWER_E2E_BATCH_DIR
+    // substitutes a fixed destination folder — gated on !isRealPackagedApp()
+    // like every other test-only seam in this file, so it's provably
+    // unreachable in the asar-packed app regardless of the environment.
+    const e2eBatchDir = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_BATCH_DIR'] : undefined;
+    let destFolder: string;
+    if (e2eBatchDir) {
+      destFolder = e2eBatchDir;
+    } else {
+      const result = await showOpenDialog(win, {
+        title: 'Choose a folder for the exported PDFs',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true, destinationFolder: null, total, succeeded: 0, failed: 0, results: [], combinedPdfFileName: null };
+      }
+      destFolder = result.filePaths[0]!;
+    }
+    // --- end TEST-ONLY SEAM --------------------------------------------------
+
+    batchCancelFlags.set(sid, false);
+    const buildInfo = readBuildInfo();
+    const renderedAt = new Date();
+    const claimedNames = new Set<string>();
+    const isUnique = makeCollisionPredicate(destFolder, claimedNames);
+    const results: BatchExportClaimResultDto[] = [];
+    let combinedDoc: PDFDocument | null = options.combinePdf ? await PDFDocument.create() : null;
+    let canceled = false;
+
+    for (let i = 0; i < total; i++) {
+      if (batchCancelFlags.get(sid)) {
+        canceled = true;
+        break;
+      }
+      const claim = session.claims[i]!;
+      try {
+        // --- TEST-ONLY SEAM --------------------------------------------
+        // Reuses claim:getPdf's own CLAIM_VIEWER_E2E_FAIL_PDF_INDEX seam
+        // (same env var, same !isRealPackagedApp() guard) so
+        // e2e/exportSuite.spec.ts can force exactly one claim's render to
+        // fail deterministically and assert the batch still reports every
+        // OTHER claim as a success rather than aborting the whole run.
+        const failIndex = !isRealPackagedApp() ? process.env['CLAIM_VIEWER_E2E_FAIL_PDF_INDEX'] : undefined;
+        if (failIndex !== undefined && String(i) === failIndex) {
+          throw new Error('Simulated PDF render failure (E2E test seam).');
+        }
+        // --- end TEST-ONLY SEAM ------------------------------------------
+        const { effective, applied } = await getEffectiveClaim(sessionId, i);
+        const provenance: RenderProvenance = {
+          sourceFileName: session.fileName,
+          sourceSha256: session.sourceSha256,
+          appVersion: buildInfo?.version ?? app.getVersion(),
+          renderedAt,
+          edited: applied.length > 0,
+          editedFieldCount: applied.length,
+        };
+        const bytes = await renderClaim(effective, provenance);
+        const fileName = uniqueFileName(batchExportFileName(claim, i + 1, total), isUnique);
+        claimedNames.add(fileName);
+        await writeFileAtomic(join(destFolder, fileName), Buffer.from(bytes));
+
+        // 4.2 — combined single PDF: merge this claim's already-rendered
+        // pages into the running combined document via copyPages, then let
+        // `bytes`/`srcDoc` go out of scope. This is the one place a
+        // rendered claim's data outlives its own loop iteration — required
+        // by the task's own 4.2 spec (the combined file needs every page in
+        // one document) and bounded: at most one claim's raw bytes are ever
+        // held at a time, and combinedDoc itself only ever grows by pages
+        // already written safely to disk moments before. See this handler's
+        // own header comment for why this doesn't violate 4.1's "never
+        // accumulate rendered PDFs in an array" rule.
+        if (combinedDoc) {
+          const srcDoc = await PDFDocument.load(bytes);
+          const copiedPages = await combinedDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+          copiedPages.forEach((p) => combinedDoc!.addPage(p));
+        }
+
+        results.push({ index: i, claimId: claim.claimId, fileName, status: 'success' });
+      } catch (err) {
+        results.push({ index: i, claimId: claim.claimId, fileName: null, status: 'failed', error: (err as Error).message });
+      }
+
+      win?.setProgressBar((i + 1) / total);
+      const progress: BatchExportProgressDto = { sessionId: sid, done: i + 1, total, claimId: claim.claimId };
+      event.sender.send('export:batchProgress', progress);
+      // Yields to the event loop between claims so the cancel invoke above
+      // and the progress send just issued are actually serviced by the
+      // renderer before the next (possibly heavy) render starts.
+      await new Promise((r) => setImmediate(r));
+    }
+
+    win?.setProgressBar(-1);
+    batchCancelFlags.delete(sid);
+
+    let combinedPdfFileName: string | null = null;
+    if (combinedDoc && results.some((r) => r.status === 'success')) {
+      const combinedBytes = await combinedDoc.save();
+      combinedPdfFileName = uniqueFileName('combined.pdf', isUnique);
+      claimedNames.add(combinedPdfFileName);
+      await writeFileAtomic(join(destFolder, combinedPdfFileName), Buffer.from(combinedBytes));
+    }
+    combinedDoc = null;
+
+    const lastSuccess = [...results].reverse().find((r) => r.status === 'success');
+    if (combinedPdfFileName) lastExportedPath = join(destFolder, combinedPdfFileName);
+    else if (lastSuccess?.fileName) lastExportedPath = join(destFolder, lastSuccess.fileName);
+
+    return {
+      canceled,
+      destinationFolder: destFolder,
+      total,
+      succeeded: results.filter((r) => r.status === 'success').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      results,
+      combinedPdfFileName,
+    };
+  });
+
+  // Cancel button on the batch-export progress dialog — sets the flag the
+  // running loop above checks once per iteration. A no-op if no batch is
+  // currently running for this sessionId (e.g. it already finished).
+  ipcMain.handle('export:cancelBatch', async (_event: IpcMainInvokeEvent, sessionId: unknown): Promise<void> => {
+    if (typeof sessionId === 'string') batchCancelFlags.set(sessionId, true);
+  });
+
+  // --- Structured CSV/JSON export (docs/BUILD_QUEUE.md Build 4.3, this
+  // build's 4.4) — zero-dependency string formatters (src/app/export/
+  // structuredExport.ts) written with the existing writeFileAtomic, exactly
+  // like the spec calls for. `scope: 'all'` includes every claim in the
+  // open file (in source order) in ONE csv/json document; `scope: 'claim'`
+  // includes only the one at `index`. Every claim's EFFECTIVE (overrides-
+  // applied) values are used, and the structured formatter is handed the
+  // SAME `applied` array getEffectiveClaim produced, so the EDITED marking
+  // in the file can never disagree with what was actually exported.
+  async function exportStructured(event: IpcMainInvokeEvent, sessionId: unknown, indexRaw: unknown, optionsRaw: unknown, format: 'csv' | 'json'): Promise<string | null> {
+    const session = getSession(sessionId);
+    const singleClaim = getSessionClaim(sessionId, indexRaw);
+    const index = indexRaw as number;
+    const { scope, includeIdentifiers } = parseStructuredExportOptions(optionsRaw);
+    const indices = scope === 'all' ? session.claims.map((_c, i) => i) : [index];
+
+    const effectiveClaims: EffectiveClaimForExport[] = [];
+    for (const i of indices) {
+      const { effective, applied } = await getEffectiveClaim(sessionId, i);
+      effectiveClaims.push({ claim: effective, applied });
+    }
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const ext = format;
+    const baseSourceName = sanitizeFileNamePart(session.fileName.replace(/\.[^./]+$/, '')) || 'claims';
+    const baseSingleName = defaultExportFileName(singleClaim).replace(/\.pdf$/, '');
+    const defaultName = `${scope === 'all' ? baseSourceName : baseSingleName}.${ext}`;
+
+    // --- TEST-ONLY SEAM ----------------------------------------------------
+    const e2eEnvVar = format === 'csv' ? 'CLAIM_VIEWER_E2E_SAVE_CSV' : 'CLAIM_VIEWER_E2E_SAVE_JSON';
+    const e2eSavePath = !isRealPackagedApp() ? process.env[e2eEnvVar] : undefined;
+    let filePath: string;
+    if (e2eSavePath) {
+      filePath = e2eSavePath;
+    } else {
+      const result = await showSaveDialog(win, {
+        title: format === 'csv' ? 'Export structured claim data (CSV)' : 'Export structured claim data (JSON)',
+        defaultPath: defaultName,
+        filters: [{ name: format.toUpperCase(), extensions: [ext] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      filePath = result.filePath;
+    }
+    // --- end TEST-ONLY SEAM --------------------------------------------------
+
+    const content =
+      format === 'csv' ? buildCsvExport(effectiveClaims, { includeIdentifiers }) : buildJsonExport(effectiveClaims, { includeIdentifiers }, new Date());
+    await writeFileAtomic(filePath, Buffer.from(content, 'utf8'));
+    lastExportedPath = filePath;
+    return filePath;
+  }
+
+  ipcMain.handle('dialog:exportCsv', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown, options: unknown): Promise<string | null> => {
+    return exportStructured(event, sessionId, index, options, 'csv');
+  });
+
+  ipcMain.handle('dialog:exportJson', async (event: IpcMainInvokeEvent, sessionId: unknown, index: unknown, options: unknown): Promise<string | null> => {
+    return exportStructured(event, sessionId, index, options, 'json');
+  });
+
   // "Open containing folder" / "Open PDF" toast actions after a successful
   // export (design ClaimViewer_v2.dc.html:776-777 / spec §7). Takes no path
   // from the renderer — see lastExportedPath's doc comment — only a mode.
@@ -1215,52 +1490,12 @@ function getSessionClaim(sessionId: unknown, index: unknown): Claim {
   return session.claims[index]!;
 }
 
-/**
- * Default export filename: "<billing provider> - <service date>.pdf",
- * e.g. "NATIONWIDE CHILDRENS HOSPITAL - 2026-06-03.pdf".
- *
- * Stays PHI-free by design — the patient name is deliberately NOT used, so an
- * export sitting in a folder listing, a recent-files list or a backup doesn't
- * identify a member. Provider + date of service is what negotiators file by.
- *
- * Any part the claim doesn't carry is skipped, and if none are available it
- * falls back to the claim id so the file is never named just ".pdf".
- */
-function defaultExportFileName(claim: Claim): string {
-  const parts = [
-    sanitizeNamePart(claim.billingProvider.name),
-    sanitizeNamePart(earliestServiceDate(claim)),
-  ].filter((p) => p !== '');
-  const base = parts.length > 0 ? parts.join(' - ') : `claim_${sanitizeFileNamePart(claim.claimId) || 'claim'}`;
-  return `${base}.pdf`;
-}
-
-function sanitizeFileNamePart(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);
-}
-
-/**
- * Filename-safe version of a name/provider that KEEPS spaces so the result
- * still reads naturally ("MILLER THEODORE Z"). Strips the characters Windows
- * forbids in a filename, the comma composeName inserts, and any control
- * characters, then collapses whitespace.
- */
-function sanitizeNamePart(value: string): string {
-  return value
-    .split('')
-    .map((ch) => (ch.charCodeAt(0) < 32 || '\\/:*?"<>|,'.includes(ch) ? ' ' : ch))
-    .join('')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 70);
-}
-
-/** Earliest service-line date on the claim (YYYY-MM-DD, already normalized by the sources), or '' when no line carries one. */
-function earliestServiceDate(claim: Claim): string {
-  const dates = claim.serviceLines.map((l) => l.fromDate).filter((d) => d !== '');
-  if (dates.length === 0) return '';
-  return dates.reduce((a, b) => (a < b ? a : b));
-}
+// defaultExportFileName/batchExportFileName/uniqueFileName/sanitizeFileNamePart
+// (single-claim export naming, Build 3.3, and the batch-export naming rule,
+// docs/BUILD_QUEUE.md Build 4.1) now live in src/app/export/exportNaming.ts
+// — a pure-moved, Electron-free module both the single-claim and batch
+// export handlers below import, per this repo's "same building block, one
+// place" convention (see that module's header comment).
 
 /**
  * Removes any `.<name>.*.tmp` sibling already sitting in `dir` before this
