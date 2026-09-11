@@ -909,7 +909,7 @@ E2E limitation found) follows the same process this repo's other builds use.
 STATUS: GREEN
 
 Start: 2026-09-11 (this session)     End: 2026-09-11 (this session)
-Commit: (this build's commit, tagged `build-4-green`)     Tag: build-4-green
+Commit: `2cdbc66`     Tag: build-4-green
 
 Starting point: `build-editable-fields-green` — `npm run verify` confirmed green
 (typecheck clean across all 3 configs, 398 vitest at completion vs. 366 at start,
