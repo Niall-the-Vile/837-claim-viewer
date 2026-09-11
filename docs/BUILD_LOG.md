@@ -1178,7 +1178,7 @@ state).
 STATUS: GREEN
 
 Start: 2026-09-11 (this session)     End: 2026-09-11 (this session)
-Commit: (this build's commits, see `git log`)     Tag: `build-5-green`
+Commit: `e00ccc1` (serializer/IPC/UI/tests), `7229d57` (docs)     Tag: `build-5-green`
 
 Starting point: `build-4-green` — `npm run verify` confirmed green (typecheck
 clean across all 3 configs, 398 vitest, 68 Playwright E2E, `npm run build`
