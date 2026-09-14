@@ -44,6 +44,16 @@ export interface AppState {
    * does) — reconsider only if the project owner asks.
    */
   fastOpenEnabled: boolean;
+  /**
+   * Ease-of-use + accessibility batch, item 6 (high-contrast/greyscale
+   * render mode) — app-level, not per-tab, like `theme`: a VIEW toggle only
+   * (docs/UI_REQUIREMENTS_v3_queued_features.md §9's Build-6 half). Applied
+   * as a CSS filter on the shared `#pdfCanvas` element itself
+   * (src/renderer/main.ts's `toggleHighContrast`) — it never touches the
+   * rendered PDF bytes or any export path, so there is nothing here for
+   * `electron/main.ts`'s renderers to even read.
+   */
+  highContrastEnabled: boolean;
 }
 
 export const state: AppState = {
@@ -53,6 +63,7 @@ export const state: AppState = {
   theme: 'light',
   editModeOn: false,
   fastOpenEnabled: false,
+  highContrastEnabled: false,
 };
 
 // ---------------------------------------------------------------------------

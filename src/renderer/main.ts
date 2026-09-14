@@ -66,6 +66,8 @@ import {
   deferredRenderBtn,
   fastOpenToggleBtn,
   fastOpenValueLabelEl,
+  highContrastToggleBtn,
+  highContrastValueLabelEl,
 } from './dom.js';
 import {
   state,
@@ -300,6 +302,21 @@ function toggleFastOpen(): void {
 function renderPendingClaim(): void {
   const tab = activeTab();
   if (tab) void ensureClaimRendered(tab, { forceReload: true, userRequested: true });
+}
+
+// ---------------------------------------------------------------------------
+// High-contrast/greyscale render mode (ease-of-use + accessibility batch,
+// item 6) — a VIEW toggle only. A CSS filter on the shared #pdfCanvas
+// element; never touches the rendered PDF bytes, never crosses into the
+// export path (electron/main.ts's renderers run in the main process and
+// have no way to observe this renderer-only, in-memory setting).
+// ---------------------------------------------------------------------------
+
+function toggleHighContrast(): void {
+  state.highContrastEnabled = !state.highContrastEnabled;
+  highContrastToggleBtn.setAttribute('aria-checked', state.highContrastEnabled ? 'true' : 'false');
+  highContrastValueLabelEl.textContent = state.highContrastEnabled ? 'On' : 'Off';
+  pdfCanvasEl.classList.toggle('isHighContrast', state.highContrastEnabled);
 }
 
 /** Shows/hides the "saved edits exist for a different version of this file" banner (§5) for the active tab. Never applies the stale overrides itself — only offers Discard (delete them) or Dismiss (hide the banner for now, artifact untouched). */
@@ -1232,6 +1249,9 @@ function runAction(action: string): void {
       break;
     case 'toggleFastOpen':
       toggleFastOpen();
+      break;
+    case 'toggleHighContrast':
+      toggleHighContrast();
       break;
     case 'shortcuts':
       openShortcuts();

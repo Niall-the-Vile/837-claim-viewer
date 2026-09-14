@@ -80,6 +80,15 @@
               Fast open (render form on demand)
               <span id="fastOpenValueLabel" class="menuValueLabel">Off</span>
             </button>
+            <!-- Ease-of-use + accessibility batch, item 6 (high-contrast /
+                 greyscale render mode): a VIEW toggle only — a CSS filter on
+                 #pdfCanvas (src/renderer/main.ts's toggleHighContrast). The
+                 exported PDF is always the faithful facsimile; this never
+                 touches export. -->
+            <button type="button" role="menuitemcheckbox" aria-checked="false" id="highContrastToggle" data-action="toggleHighContrast">
+              High-contrast form render (view only)
+              <span id="highContrastValueLabel" class="menuValueLabel">Off</span>
+            </button>
             <div class="menuSep" role="separator"></div>
             <!-- Ease-of-use + accessibility batch, item 3 (command palette):
                  fuzzy-filters over the EXISTING menu/toolbar actions, open

@@ -87,6 +87,10 @@ export const deferredRenderBtn = requireEl<HTMLButtonElement>('deferredRenderBtn
 export const fastOpenToggleBtn = requireEl<HTMLButtonElement>('fastOpenToggle');
 export const fastOpenValueLabelEl = requireEl<HTMLSpanElement>('fastOpenValueLabel');
 
+// High-contrast render mode (ease-of-use + accessibility batch, item 6).
+export const highContrastToggleBtn = requireEl<HTMLButtonElement>('highContrastToggle');
+export const highContrastValueLabelEl = requireEl<HTMLSpanElement>('highContrastValueLabel');
+
 export const inspectorEl = requireEl<HTMLElement>('inspector');
 export const expandAllBtn = requireEl<HTMLButtonElement>('expandAllBtn');
 export const inspectorBodyEl = requireEl<HTMLDivElement>('inspectorBody');

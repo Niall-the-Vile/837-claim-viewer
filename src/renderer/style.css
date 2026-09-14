@@ -1318,6 +1318,22 @@ a:focus-visible {
   display: none;
 }
 /*
+ * High-contrast/greyscale render mode (item 6) — a VIEW toggle only
+ * (main.ts's toggleHighContrast toggles this class on #pdfCanvas itself).
+ * A pure CSS filter on the already-rendered pixels: it never touches the
+ * PDF bytes pdf.js rendered from, and it is applied nowhere near the
+ * export path (electron/main.ts's renderers, which run in the main
+ * process and have no idea this renderer-only class exists) — the
+ * exported PDF is always the faithful facsimile. grayscale(1) removes the
+ * CMS-1500 red drop-out / UB-04 tint-block color dependence entirely;
+ * contrast(1.6) pushes the remaining greys toward black/white so faint
+ * form rules and light-grey field boxes stay legible for the low-vision
+ * and colour-blind reviewers who filed this.
+ */
+#pdfCanvas.isHighContrast {
+  filter: grayscale(1) contrast(1.6);
+}
+/*
  * Subtle fade-in on a claim/page change (spec requirement 7) so stepping
  * pages/claims doesn't hard-cut the preview. main.ts only adds this class
  * for an actual page/claim change, never for a Ctrl+wheel zoom redraw (zoom

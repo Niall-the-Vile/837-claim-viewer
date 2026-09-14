@@ -1647,5 +1647,94 @@ None — item 5 is renderer-only; no new preload function or IPC handler.
   uiScale suites re-run in full to confirm zero regression to the
   default-off path)
 
-### Not done yet in this batch (tracked, not forgotten)
-Item 6 (high-contrast render mode) is still to come.
+### Checkpoint 4 — item 6 (high-contrast/greyscale render mode) and batch close-out
+
+**6. High-contrast/greyscale render mode.** A VIEW toggle only
+(`state.highContrastEnabled`, a new View menu `role="menuitemcheckbox"` —
+"High-contrast form render (view only)"). Implemented as a plain CSS
+`filter: grayscale(1) contrast(1.6)` toggled on the shared `#pdfCanvas`
+element itself (`main.ts`'s `toggleHighContrast`) — no re-render, no touch
+to pdf.js, no touch to the rendered PDF bytes at all. This cannot leak into
+export by construction: the export path (`electron/main.ts`'s
+`dialog:exportPdf`/`export:batch`/etc.) runs entirely in the main process
+and has no IPC parameter, and never had one, that could carry this
+renderer-only, in-memory boolean across the bridge.
+
+### Adversarial self-audit (per the task's required checks)
+
+1. **Does the command palette's action list ever drift from the real
+   menu/shortcuts? — REFUTED (no drift, by construction).** Verified by
+   reading `src/renderer/features/palette.ts`'s `collectMenuActions()`:
+   it queries `.menuPanel [data-action]` LIVE from the DOM and each
+   resulting `PaletteItem.run` calls `.click()` on that exact button
+   element — the same node `main.ts`'s `setupMenus()` already attached its
+   own `closeAllMenus(); runAction(...)` listener to. There is no second
+   array of `{id, label, run}` hand-copied from the menus; the palette
+   reads and re-clicks the real menu. The one honest exception, stated
+   plainly rather than glossed over: `TOOLBAR_ONLY_ACTION_IDS` (6 toolbar
+   controls with no menu item — page/claim steppers, edit-mode toggle,
+   inspector toggle) is a small, manually-maintained enumeration; its
+   ACTIVATION still calls `.click()` on the real button, so a missed
+   addition to that list only ever means "the palette doesn't offer this
+   one yet," never "the palette does something different from the real
+   control." `e2e/easeOfUse.spec.ts`'s command-palette tests exercise both
+   the menu-scraped path (opening a claim) and confirm disabled actions
+   carry the live `disabled` state, not a stale copy.
+2. **Does deferred-render mode ever break the existing background-tab
+   pdfDoc release/rebuild cycle? — REFUTED (no break; same code path by
+   design).** `ensureClaimRendered`'s fast-mode short-circuit only ever
+   fires when `needsReload` is already true (missing pdfDoc or
+   `forceReload`) — it does not introduce a new trigger condition, it
+   only changes what happens once that pre-existing condition is met.
+   Background-tab release (`activateTabById`'s `setActivePdfDoc(previousTab,
+   null)`) is completely untouched — it still nulls `pdfDoc`
+   unconditionally on switch-away, regardless of fast mode. The full
+   pre-existing `e2e/tabs.spec.ts` suite (background-tab release,
+   canvas-fingerprint-restore, rapid un-awaited tab switching, claim:getPdf
+   rejection handling) was re-run in full with fast mode at its default OFF
+   and passed unmodified; `e2e/easeOfUse.spec.ts` additionally covers the
+   ON case (a background tab reactivated under fast mode shows the
+   placeholder rather than auto-rendering, and a zoom/page action still
+   correctly resolves and paints afterward).
+3. **Does high-contrast mode ever leak into the export path? — REFUTED (no
+   leak, verified two ways).** (a) Code-level: `electron/preload.ts`'s
+   `exportPdf`/`exportBatch`/`exportCsv`/`exportJson`/`exportX12` signatures
+   carry no render-mode parameter, and `state.highContrastEnabled` is a
+   `src/renderer/tabs.ts`-only value never read by any `claimApi.*` call
+   site. (b) Behaviorally: `e2e/easeOfUse.spec.ts`'s adversarial test calls
+   `claimApi.getPdf` (the undecorated bytes both the on-screen preview and
+   a single-claim export render from) before and after toggling
+   high-contrast on, and asserts the returned byte arrays are identical.
+   (A full round-tripped EXPORTED FILE comparison was deliberately not used
+   for this assertion — `dialog:exportPdf` stamps a genuine, unrelated
+   `renderedAt: new Date()` provenance timestamp, so two real exports of the
+   same claim are never byte-identical regardless of this feature; comparing
+   the undecorated `getPdf` bytes is the precise, noise-free version of the
+   same claim.)
+
+### Preload/IPC surface changes (rule 7b)
+None — item 6 is renderer-only.
+
+### Verification
+- typecheck: pass (all 3 configs)
+- vitest: 442 -> 442 (no new unit tests — a CSS-filter view toggle has no
+  meaningful unit-test surface; covered end-to-end instead)
+- E2E: 87 -> 89 (2 new, in `e2e/easeOfUse.spec.ts`)
+- `npm run build:app`: clean
+- Full `npm run verify`: green — typecheck + 442 vitest + build:app + **89**
+  Playwright E2E (up from 70 at the start of this batch)
+
+### Batch summary — all 7 items shipped
+1. Tooltips — done (checkpoint 1).
+2. Recent Files on the welcome screen — done (checkpoint 1).
+3. Command palette (Ctrl+K) — done (checkpoint 2).
+4. Bundled sample-claim set — done (checkpoint 1).
+5. Deferred-render fast mode — done (checkpoint 3).
+6. High-contrast render mode (view only) — done (checkpoint 4).
+7. Clickable warnings (inspector/DOM half) — done (checkpoint 2). The
+   PDF-canvas-box half stays explicitly deferred to whenever Build 3.4's
+   per-box geometry work happens, per this batch's scope.
+
+Nothing in this batch touched `docs/FEATURE_BACKLOG.md`'s "Out of scope"
+section, and no Build 6 (notes/audit) or Build 7 (installation) work was
+started.

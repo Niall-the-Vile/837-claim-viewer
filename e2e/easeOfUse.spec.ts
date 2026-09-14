@@ -513,3 +513,75 @@ test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch �
     }
   });
 });
+
+test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch — item 6: high-contrast render mode (view only)', () => {
+  test('toggling it on/off from the View menu applies and removes a CSS filter on #pdfCanvas, nothing else', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      const filterOf = () => page.locator('#pdfCanvas').evaluate((el) => getComputedStyle(el).filter);
+      expect(await filterOf()).toBe('none');
+
+      await page.locator('[data-menu-trigger="view"]').click();
+      const toggle = page.locator('#highContrastToggle');
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+      expect(await filterOf()).not.toBe('none');
+      await expect(page.locator('#pdfCanvas')).toHaveClass(/isHighContrast/);
+
+      // Turning it back off restores the canvas exactly.
+      await page.locator('[data-menu-trigger="view"]').click();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      expect(await filterOf()).toBe('none');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('adversarial check: toggling high-contrast never changes the underlying PDF bytes (claimApi.getPdf — the exact bytes export also renders from)', async () => {
+    // Comparing two full EXPORTED files across two app launches would be
+    // contaminated by the unrelated, legitimate provenance footer
+    // (electron/main.ts's dialog:exportPdf stamps a real `renderedAt: new
+    // Date()`, so two genuinely separate exports of the same claim are
+    // NEVER byte-identical regardless of this feature). claimApi.getPdf is
+    // the undecorated, deterministic render (no provenance — see that
+    // handler's own comment) that both the on-screen preview AND, for a
+    // single-claim export, the same renderClaim() call underneath draw
+    // from — asserting it is untouched by the renderer-only
+    // highContrastEnabled flag is the precise, noise-free version of "this
+    // never leaks into export."
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      const pdfBytesAsCsv = () =>
+        page.evaluate(async () => {
+          const sessionId = document.querySelector('.tab.isActive')?.getAttribute('data-tab-session-id') ?? '';
+          const claimApi = (window as unknown as { claimApi: { getPdf: (s: string, i: number) => Promise<Uint8Array> } }).claimApi;
+          const bytes = await claimApi.getPdf(sessionId, 0);
+          return Array.from(bytes).join(',');
+        });
+
+      const before = await pdfBytesAsCsv();
+
+      await page.locator('[data-menu-trigger="view"]').click();
+      await page.locator('#highContrastToggle').click();
+      await expect(page.locator('#pdfCanvas')).toHaveClass(/isHighContrast/);
+
+      const after = await pdfBytesAsCsv();
+      expect(after).toBe(before);
+    } finally {
+      await app.close();
+    }
+  });
+});

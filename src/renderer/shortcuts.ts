@@ -59,6 +59,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Light / dark', keys: 'Ctrl+Shift+L' },
       { label: 'UI text scale — cycle 100/125/150/175%', keys: '—' },
       { label: 'Fast open (render form on demand) — View menu checkbox', keys: '—' },
+      { label: 'High-contrast form render (view only) — View menu checkbox', keys: '—' },
     ],
   },
   {
