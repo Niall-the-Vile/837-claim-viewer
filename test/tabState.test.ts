@@ -73,6 +73,7 @@ function makeFakeTab(overrides: Partial<TabState> = {}): TabState {
     errorMessage: '',
     correctedClaimStatus: 'none',
     isSample: false,
+    pendingRender: false,
     ...overrides,
   };
 }

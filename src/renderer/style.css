@@ -2176,6 +2176,43 @@ a:focus-visible {
   background: var(--surface-inset);
 }
 
+/* Deferred-render fast mode (item 5) — a placeholder card INSIDE #pdfScroll,
+ * a sibling of #pdfCanvas (never a new state screen). Deliberately carries
+ * NO `zoom: var(--ui-scale)` — #pdfScroll/#pdfCanvas are the two elements
+ * this file's UI-scale architecture explicitly excludes from chrome
+ * scaling (see the "#9 UI text scale" comment above #welcomeScreen), and
+ * this card is a descendant of #pdfScroll, not of one of the nine scaled
+ * chrome regions. It renders at a fixed size regardless of --ui-scale,
+ * same as the canvas it stands in for. */
+.deferredRenderCard {
+  align-self: center;
+  width: 100%;
+  max-width: 360px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  padding: 26px 26px 22px;
+  text-align: center;
+}
+.deferredRenderTitle {
+  font: 600 15px var(--font-sans);
+  color: var(--ink);
+}
+.deferredRenderMeta {
+  margin-top: 8px;
+  font: 400 13px var(--font-sans);
+  color: var(--ink-2);
+}
+.deferredRenderHint {
+  margin-top: 10px;
+  font: 400 12px var(--font-sans);
+  color: var(--ink-3);
+  font-style: italic;
+}
+#deferredRenderBtn {
+  margin-top: 16px;
+}
+
 /* Recent files on the welcome screen (item 2) — the SAME .recentFileItem
  * buttons main.ts already builds for the File menu (style.css's existing
  * `.menuPanel button.recentFileItem` rule only applies inside a .menuPanel

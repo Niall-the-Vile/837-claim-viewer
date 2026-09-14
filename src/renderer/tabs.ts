@@ -35,6 +35,15 @@ export interface AppState {
   theme: 'light' | 'dark';
   /** Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md §3) — app-level, not per-tab: the toolbar's "Edit fields" toggle. While `false` (the default), every inspector row behaves exactly as before this feature (copy-only). While `true`, rows with an editable field additionally show a pencil affordance. Plain click never starts an edit in either mode — see the design doc. */
   editModeOn: boolean;
+  /**
+   * Ease-of-use + accessibility batch, item 5 (deferred-render fast mode) —
+   * app-level, not per-tab: the View menu's "Fast open" checkbox. `false`
+   * (the default) means every existing render-on-open behavior is
+   * unchanged. In-memory only, not persisted across a relaunch (no spec
+   * text called for that, unlike the UI-scale setting, which explicitly
+   * does) — reconsider only if the project owner asks.
+   */
+  fastOpenEnabled: boolean;
 }
 
 export const state: AppState = {
@@ -43,6 +52,7 @@ export const state: AppState = {
   inspectorOpen: true,
   theme: 'light',
   editModeOn: false,
+  fastOpenEnabled: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -167,6 +177,7 @@ export function createTab(input: NewTabInput = {}, opts: { activate?: boolean } 
     errorMessage: '',
     correctedClaimStatus: input.correctedClaimStatus ?? 'none',
     isSample: input.isSample ?? false,
+    pendingRender: false,
   };
   state.tabs.push(tab);
   if (opts.activate) state.activeTabId = tab.tabId;

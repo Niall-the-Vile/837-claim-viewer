@@ -28,7 +28,38 @@ import { computeFitPageZoom, computeFitWidthZoom } from './fitMath.js';
  * tabs.ts, not here — see that file's header comment for why (pdf.js's real
  * `.destroy()` lives on the `PDFDocumentLoadingTask`, which this module
  * never sees — only the `PDFDocumentProxy` a tab's `pdfDoc` holds).
+ *
+ * Ease-of-use + accessibility batch, item 5 (deferred-render fast mode):
+ * every zoom/page entry point below (zoomBy, zoomToActualSize, fitPage,
+ * fitWidth, stepPage, and the Ctrl+wheel handler) resolves a tab's pending
+ * deferred render FIRST, via `initDeferredRender`'s injected callback — "the
+ * placeholder is replaced in place on ... any zoom/page action"
+ * (docs/UI_REQUIREMENTS_v3_queued_features.md §11). The callback itself
+ * (main.ts's loadPdfDocForTab) only fetches bytes and builds the pdf.js
+ * document; it never paints, so each entry point's own existing zoom/page
+ * logic runs immediately afterward exactly as it always has, now against a
+ * freshly-populated `tab.pdfDoc` instead of null. Dependency-injected
+ * (same pattern as tabs.ts's TabStripDeps / shortcuts.ts's ShortcutDeps)
+ * rather than importing main.ts's tab-loading machinery directly, which
+ * main.ts already imports FROM this file.
  */
+
+export interface DeferredRenderDeps {
+  ensureRendered: (tab: TabState) => Promise<void>;
+}
+
+let deferredRenderDeps: DeferredRenderDeps | null = null;
+
+export function initDeferredRender(deps: DeferredRenderDeps): void {
+  deferredRenderDeps = deps;
+}
+
+/** No-ops instantly unless `tab.pendingRender` is actually set — every call site below can call this unconditionally. */
+async function resolvePendingRender(tab: TabState): Promise<void> {
+  if (tab.pendingRender && deferredRenderDeps) {
+    await deferredRenderDeps.ensureRendered(tab);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // PDF preview: loading, rendering, zoom, pagination
@@ -62,6 +93,7 @@ function availableViewport(): { width: number; height: number } {
 }
 
 async function pageBaseSize(tab: TabState): Promise<{ width: number; height: number }> {
+  await resolvePendingRender(tab);
   if (!tab.pdfDoc) return { width: 612, height: 792 };
   const page = await tab.pdfDoc.getPage(tab.pageNum);
   const viewport = page.getViewport({ scale: 1 });
@@ -175,6 +207,7 @@ export function cancelInFlightRender(): void {
 
 /** Sets zoom (clamped 25%-400%), updates the toolbar label/active states (only when `tab` is the active tab — a background tab's zoom change, if that ever happens, must never touch chrome for the wrong tab), and redraws. Does not change zoomMode — callers set that first. `fade` only ever arrives `true` from fitPage()'s initial call on a freshly loaded claim. */
 export async function applyZoom(tab: TabState, z: number, fade = false): Promise<void> {
+  await resolvePendingRender(tab);
   tab.zoom = Math.min(4, Math.max(0.25, Math.round(z * 100) / 100));
   if (tab.tabId === state.activeTabId) {
     zoomLabelEl.textContent = `${Math.round(tab.zoom * 100)}%`;
@@ -212,6 +245,7 @@ export async function fitWidth(tab: TabState, fade = false): Promise<void> {
 }
 
 export async function stepPage(tab: TabState, delta: number): Promise<void> {
+  await resolvePendingRender(tab);
   const next = tab.pageNum + delta;
   if (next < 1 || next > tab.pageCount) return;
   tab.pageNum = next;
@@ -258,7 +292,12 @@ pdfScrollEl.addEventListener(
   (event: WheelEvent) => {
     if (!event.ctrlKey && !event.metaKey) return;
     const tab = activeTab();
-    if (currentScreen() !== 'workspace' || !tab || !tab.pdfDoc) return;
+    // `!tab.pdfDoc` is deliberately NOT part of this guard (unlike before
+    // item 5): a tab mid deferred-render has no pdfDoc yet, but Ctrl+wheel
+    // is exactly one of the "any zoom/page action" gestures that should
+    // resolve it (docs/UI_REQUIREMENTS_v3_queued_features.md §11) —
+    // applyZoom() below calls resolvePendingRender() itself.
+    if (currentScreen() !== 'workspace' || !tab) return;
     event.preventDefault();
 
     // Cursor position as a 0-1 fraction of the rendered page. Recomputed per

@@ -3,17 +3,20 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { waitForFirstRender, UNRENDERED_CANVAS_WIDTH } from './support/canvas.js';
 
 /**
  * Ease-of-use + accessibility batch (docs/CLAUDE_CODE_NEXT_SESSION.md) — E2E
  * coverage for:
  *   1. Tooltips with shortcut hints on icon-only toolbar controls.
  *   2. Recent Files surfaced on the welcome/empty-state screen.
+ *   3. Keyboard command palette.
  *   4. Bundled sample-claim set ("Open Sample Claim").
- * (Items 3, 5, 6, 7 have their own describe blocks appended below as they
- * land, per this batch's plan — one file for the whole batch rather than a
- * scattering of one-off specs, matching the existing per-feature-file
- * convention loosely while keeping this batch's coverage together.)
+ *   5. Deferred-render fast mode.
+ *   7. Clickable warnings (inspector half).
+ * One file for the whole batch rather than a scattering of one-off specs,
+ * matching the existing per-feature-file convention loosely while keeping
+ * this batch's coverage together.
  *
  * Drives the real, unpackaged dist/electron/main.js build, same as every
  * other E2E file in this suite.
@@ -396,6 +399,115 @@ test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch �
       await page.keyboard.press('Escape');
       await expect(page.locator('#paletteOverlay')).toBeHidden();
       await expect(page.locator('#welcomeOpenBtn')).toBeFocused();
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch — item 5: deferred-render fast mode', () => {
+  test('default (Fast open OFF): opening a claim renders the canvas immediately, same as before this feature', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+      await waitForFirstRender(page);
+      await expect(page.locator('#deferredRenderCard')).toBeHidden();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Fast open ON: opening a claim populates the inspector but shows the placeholder card instead of rendering, and "Render form" renders it in place', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+
+      // Enable Fast open from the welcome screen, before opening anything.
+      // The menu item's own click handler closes the menu (same as every
+      // other [data-action] menu button), so no explicit Escape is needed.
+      await page.locator('[data-menu-trigger="view"]').click();
+      const fastOpenToggle = page.locator('#fastOpenToggle');
+      await expect(fastOpenToggle).toHaveAttribute('aria-checked', 'false');
+      await fastOpenToggle.click();
+      await expect(fastOpenToggle).toHaveAttribute('aria-checked', 'true');
+
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      // The inspector is populated (this is NOT a new state screen)...
+      await expect(page.locator('#inspectorBody')).toContainText('Patient');
+      // ...but the canvas has never actually been rendered into.
+      await expect(page.locator('#pdfCanvas')).toBeHidden();
+      expect(await page.locator('#pdfCanvas').evaluate((el) => (el as HTMLCanvasElement).width)).toBe(UNRENDERED_CANVAS_WIDTH);
+
+      const card = page.locator('#deferredRenderCard');
+      await expect(card).toBeVisible();
+      await expect(card).toContainText('Professional');
+      await expect(card).toContainText('service line');
+
+      await page.locator('#deferredRenderBtn').click();
+
+      await expect(card).toBeHidden();
+      await waitForFirstRender(page);
+      await expect(page.locator('#pdfCanvas')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Fast open ON: a zoom action (not just the Render form button) resolves the placeholder in place', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('[data-menu-trigger="view"]').click();
+      await page.locator('#fastOpenToggle').click();
+      await page.keyboard.press('Escape');
+
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#deferredRenderCard')).toBeVisible();
+
+      await page.locator('#zoomInBtn').click();
+
+      await expect(page.locator('#deferredRenderCard')).toBeHidden();
+      await waitForFirstRender(page);
+      await expect(page.locator('#pdfCanvas')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Fast open ON: reactivating a background tab returns to the placeholder rather than auto-rendering', async () => {
+    const FIXTURE_837I = join(repoRoot, 'test', 'fixtures', 'x12', '837I-multi-claim.dat');
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: [FIXTURE_1500, FIXTURE_837I].join(';') });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('[data-menu-trigger="view"]').click();
+      await page.locator('#fastOpenToggle').click();
+      await page.keyboard.press('Escape');
+
+      // First tab: render it fully via the placeholder button.
+      await page.locator('#welcomeOpenBtn').click();
+      await page.locator('#deferredRenderBtn').click();
+      await waitForFirstRender(page);
+
+      // Second tab opens straight into the placeholder too.
+      await page.locator('#openBtn').click();
+      await expect(page.locator('.tab')).toHaveCount(2);
+      await expect(page.locator('#deferredRenderCard')).toBeVisible();
+
+      // Back to the first tab (now a BACKGROUND tab reactivating) — even
+      // though it was fully rendered before, background release already
+      // nulled its pdfDoc, so fast mode shows the placeholder again rather
+      // than auto-rendering.
+      await page.locator('.tab').first().click();
+      await expect(page.locator('#deferredRenderCard')).toBeVisible();
+      await expect(page.locator('#pdfCanvas')).toBeHidden();
     } finally {
       await app.close();
     }

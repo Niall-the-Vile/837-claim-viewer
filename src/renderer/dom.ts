@@ -79,6 +79,14 @@ export const unsupportedNoteEl = requireEl<HTMLDivElement>('unsupportedNote');
 export const pdfScrollEl = requireEl<HTMLDivElement>('pdfScroll');
 export const pdfCanvasEl = requireEl<HTMLCanvasElement>('pdfCanvas');
 
+// Deferred-render fast mode (ease-of-use + accessibility batch, item 5).
+export const deferredRenderCardEl = requireEl<HTMLDivElement>('deferredRenderCard');
+export const deferredRenderFormTypeEl = requireEl<HTMLSpanElement>('deferredRenderFormType');
+export const deferredRenderLineCountEl = requireEl<HTMLSpanElement>('deferredRenderLineCount');
+export const deferredRenderBtn = requireEl<HTMLButtonElement>('deferredRenderBtn');
+export const fastOpenToggleBtn = requireEl<HTMLButtonElement>('fastOpenToggle');
+export const fastOpenValueLabelEl = requireEl<HTMLSpanElement>('fastOpenValueLabel');
+
 export const inspectorEl = requireEl<HTMLElement>('inspector');
 export const expandAllBtn = requireEl<HTMLButtonElement>('expandAllBtn');
 export const inspectorBodyEl = requireEl<HTMLDivElement>('inspectorBody');

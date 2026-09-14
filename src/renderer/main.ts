@@ -59,6 +59,13 @@ import {
   staleOverridesBannerEl,
   staleOverridesDiscardBtn,
   staleOverridesDismissBtn,
+  pdfCanvasEl,
+  deferredRenderCardEl,
+  deferredRenderFormTypeEl,
+  deferredRenderLineCountEl,
+  deferredRenderBtn,
+  fastOpenToggleBtn,
+  fastOpenValueLabelEl,
 } from './dom.js';
 import {
   state,
@@ -77,7 +84,7 @@ import {
   type TabState,
   type NewTabInput,
 } from './tabs.js';
-import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, cancelInFlightRender } from './preview.js';
+import { renderPdfPage, fitPage, fitWidth, zoomBy, zoomToActualSize, stepPage, cancelInFlightRender, initDeferredRender } from './preview.js';
 import { renderInspector, updateInspectorVisibility, toggleInspector, formatMoney, formTypeText, initInspectorEditing } from './inspector.js';
 import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog, confirmExport, exportCurrentClaimSkipDialog, openOverlay, closeOverlay } from './overlays.js';
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
@@ -220,6 +227,26 @@ function syncScreenUI(): void {
 
   updateToolbarVisibility();
   updateInspectorVisibility();
+  updateDeferredRenderCard(tab);
+}
+
+/**
+ * Ease-of-use + accessibility batch, item 5 (deferred-render fast mode):
+ * shows/hides `#deferredRenderCard` (a sibling of `#pdfCanvas` inside
+ * `#pdfScroll` — NOT a new state screen) and, while shown, populates its
+ * form-type/line-count text from the tab's already-fetched `detail`. Called
+ * from syncScreenUI() — every place that decides screen/tab-dependent
+ * visibility already runs through there.
+ */
+function updateDeferredRenderCard(tab: TabState | null): void {
+  const show = currentScreen() === 'workspace' && tab !== null && tab.pendingRender;
+  deferredRenderCardEl.hidden = !show;
+  pdfCanvasEl.hidden = show;
+  if (show && tab?.detail) {
+    deferredRenderFormTypeEl.textContent = formTypeText(tab.detail.formType);
+    const n = tab.detail.serviceLines.length;
+    deferredRenderLineCountEl.textContent = `${n} service line${n === 1 ? '' : 's'}`;
+  }
 }
 
 function updateToolbarVisibility(): void {
@@ -249,6 +276,30 @@ function toggleEditMode(): void {
   editModeToggleBtn.setAttribute('aria-pressed', state.editModeOn ? 'true' : 'false');
   const tab = activeTab();
   if (tab?.detail) renderInspector(tab, tab.detail);
+}
+
+// ---------------------------------------------------------------------------
+// Deferred-render fast mode (ease-of-use + accessibility batch, item 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * View menu's "Fast open" checkbox — app-level, opt-in, default OFF
+ * (docs/UI_REQUIREMENTS_v3_queued_features.md §11). Flipping it never
+ * retroactively defers an already-rendered claim (turning it OFF mid-session
+ * also never forces an immediate render of a currently-placeholder'd one —
+ * both only take effect the next time `ensureClaimRendered` runs: the next
+ * tab activation, claim step, or file open).
+ */
+function toggleFastOpen(): void {
+  state.fastOpenEnabled = !state.fastOpenEnabled;
+  fastOpenToggleBtn.setAttribute('aria-checked', state.fastOpenEnabled ? 'true' : 'false');
+  fastOpenValueLabelEl.textContent = state.fastOpenEnabled ? 'On' : 'Off';
+}
+
+/** The placeholder card's "Render form" button — forces the real render (bypassing the fast-mode short-circuit) for the currently-pending active tab, then fits/paints it exactly like a fresh load. */
+function renderPendingClaim(): void {
+  const tab = activeTab();
+  if (tab) void ensureClaimRendered(tab, { forceReload: true, userRequested: true });
 }
 
 /** Shows/hides the "saved edits exist for a different version of this file" banner (§5) for the active tab. Never applies the stale overrides itself — only offers Discard (delete them) or Dismiss (hide the banner for now, artifact untouched). */
@@ -398,34 +449,76 @@ async function loadClaimDetail(tab: TabState, index: number): Promise<void> {
 }
 
 /**
- * Ensures `tab.pdfDoc` reflects `tab.currentIndex` (rebuilding it via
- * claimApi.getPdf + loadPdfDocument, through the leak-safe setActivePdfDoc,
- * whenever it's missing or `forceReload` says the claim index just
- * changed), then — only if `tab` is the active tab — paints it onto the
- * shared canvas. Safe to call for a background tab: the pdf.js document
- * still gets rebuilt (or left alone) as needed, but the shared canvas is
- * never touched for a tab that isn't currently showing.
+ * Fetches PDF bytes for `tab.currentIndex` and builds a fresh pdf.js
+ * document (through the leak-safe setActivePdfDoc) — the fetch-and-build
+ * half of what `ensureClaimRendered` below used to do inline, split out so
+ * `preview.ts`'s deferred-render hook (item 5 — any zoom/page action
+ * resolves a pending render) can call the SAME logic without duplicating
+ * it. Deliberately does NOT paint anything: `ensureClaimRendered` paints
+ * with `fitPage` for a fresh load, while a zoom/page action that triggered
+ * this mid-gesture paints with whatever IT was asked to do (zoom to a
+ * specific level, step to a specific page) immediately afterward.
  */
-async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean } = {}): Promise<void> {
+async function loadPdfDocForTab(tab: TabState): Promise<void> {
+  if (!tab.sessionId) return;
+  // Diagnostic (harmless — no PHI, just an internal tab id) that also
+  // doubles as an E2E-observable signal for the background-tab release fix
+  // (docs/AUDIT_BUILD1.md MUST FIX #1 — see e2e/tabs.spec.ts's
+  // "background tab release" test) and, since item 5, for a deferred
+  // render actually resolving.
+  console.debug(`[tabs] rebuilding pdf.js document for tab ${tab.tabId}`);
+  const bytes = await window.claimApi.getPdf(tab.sessionId, tab.currentIndex);
+  const doc = await loadPdfDocument(bytes);
+  await setActivePdfDoc(tab, doc);
+  tab.pageCount = doc.numPages;
+  tab.pageNum = 1;
+  tab.pendingRender = false;
+  renderTabStrip();
+  if (tab.tabId === state.activeTabId) {
+    updateToolbarVisibility(); // pageGroup may now apply (multi-page claim).
+    updateDeferredRenderCard(tab); // hides the placeholder card immediately.
+  }
+}
+
+/**
+ * Ensures `tab.pdfDoc` reflects `tab.currentIndex` (rebuilding it via
+ * loadPdfDocForTab whenever it's missing or `forceReload` says the claim
+ * index just changed), then — only if `tab` is the active tab — paints it
+ * onto the shared canvas. Safe to call for a background tab: the pdf.js
+ * document still gets rebuilt (or left alone) as needed, but the shared
+ * canvas is never touched for a tab that isn't currently showing.
+ *
+ * Ease-of-use + accessibility batch, item 5 (deferred-render fast mode,
+ * docs/UI_REQUIREMENTS_v3_queued_features.md §11): when `state.fastOpenEnabled`
+ * is on and this call would otherwise trigger a real reload, it shows the
+ * placeholder card instead (`tab.pendingRender = true`) and returns without
+ * ever fetching bytes — `opts.userRequested` (set only by the placeholder's
+ * "Render form" button) bypasses this and forces the real render, same as
+ * every zoom/page action does via preview.ts's own resolvePendingRender.
+ * This is the SAME code path as background-tab pdf release and lazy session
+ * restore, not a separate lifecycle: a background tab's pdfDoc is already
+ * nulled on switch-away regardless of fast mode, so reactivating it while
+ * fast mode is on naturally lands here with `needsReload` true and shows
+ * the placeholder again, with no extra code.
+ */
+async function ensureClaimRendered(tab: TabState, opts: { forceReload?: boolean; userRequested?: boolean } = {}): Promise<void> {
   if (!tab.sessionId) return;
   const needsReload = opts.forceReload === true || !tab.pdfDoc;
-  if (needsReload) {
-    // Diagnostic (harmless — no PHI, just an internal tab id) that also
-    // doubles as an E2E-observable signal for the background-tab release
-    // fix (docs/AUDIT_BUILD1.md MUST FIX #1 — see
-    // e2e/tabs.spec.ts's "background tab release" test): a tab whose
-    // pdf.js document was actually released on switch-away
-    // (activateTabById's setActivePdfDoc(previousTab, null)) rebuilds it
-    // here, from scratch, the next time it's reactivated — a tab that was
-    // never released (the pre-fix bug) never logs a second rebuild for the
-    // same tabId, since `tab.pdfDoc` stays truthy and `needsReload` never
-    // becomes true again.
-    console.debug(`[tabs] rebuilding pdf.js document for tab ${tab.tabId}`);
-    const bytes = await window.claimApi.getPdf(tab.sessionId, tab.currentIndex);
-    const doc = await loadPdfDocument(bytes);
-    await setActivePdfDoc(tab, doc);
-    tab.pageCount = doc.numPages;
+
+  if (needsReload && state.fastOpenEnabled && !opts.userRequested) {
+    await setActivePdfDoc(tab, null);
+    tab.pendingRender = true;
+    tab.pageCount = 1;
     tab.pageNum = 1;
+    tab.status = 'ready';
+    renderTabStrip();
+    if (tab.tabId !== state.activeTabId) return;
+    syncScreenUI();
+    return;
+  }
+
+  if (needsReload) {
+    await loadPdfDocForTab(tab);
   }
   tab.status = 'ready';
   // The tab strip's data-tab-status reflects live status (testability for
@@ -1137,6 +1230,9 @@ function runAction(action: string): void {
     case 'cycleUiScale':
       cycleUiScale();
       break;
+    case 'toggleFastOpen':
+      toggleFastOpen();
+      break;
     case 'shortcuts':
       openShortcuts();
       break;
@@ -1215,6 +1311,7 @@ nextClaimBtn.addEventListener('click', () => void stepClaim(1));
 inspectorToggleBtn.addEventListener('click', toggleInspector);
 themeToggleBtn.addEventListener('click', toggleTheme);
 editModeToggleBtn.addEventListener('click', toggleEditMode);
+deferredRenderBtn.addEventListener('click', renderPendingClaim);
 staleOverridesDiscardBtn.addEventListener('click', () => void discardStaleOverrides());
 staleOverridesDismissBtn.addEventListener('click', dismissStaleOverridesBanner);
 
@@ -1304,3 +1401,4 @@ void initUiScale();
 initSearch({ jumpToClaim: goToClaimIndex });
 initSamples({ openSample: openSampleById });
 initPalette({ activateTab: activateTabById, jumpToClaim: goToClaimIndex });
+initDeferredRender({ ensureRendered: loadPdfDocForTab });

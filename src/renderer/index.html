@@ -71,6 +71,15 @@
               UI text scale
               <span id="uiScaleValueLabel" class="menuValueLabel">100%</span>
             </button>
+            <!-- Ease-of-use + accessibility batch, item 5 (deferred-render
+                 fast mode): opt-in, default OFF (docs/
+                 UI_REQUIREMENTS_v3_queued_features.md §11). A genuine
+                 checkbox item (role=menuitemcheckbox), not a cycling value
+                 like UI text scale above — this is a plain on/off. -->
+            <button type="button" role="menuitemcheckbox" aria-checked="false" id="fastOpenToggle" data-action="toggleFastOpen">
+              Fast open (render form on demand)
+              <span id="fastOpenValueLabel" class="menuValueLabel">Off</span>
+            </button>
             <div class="menuSep" role="separator"></div>
             <!-- Ease-of-use + accessibility batch, item 3 (command palette):
                  fuzzy-filters over the EXISTING menu/toolbar actions, open
@@ -300,6 +309,23 @@
                  a bare <canvas>, which is never focusable. -->
             <div id="pdfScroll" tabindex="-1">
               <canvas id="pdfCanvas"></canvas>
+              <!-- Ease-of-use + accessibility batch, item 5 (deferred-render
+                   fast mode, docs/UI_REQUIREMENTS_v3_queued_features.md §11):
+                   opt-in, default OFF (View menu). NOT a new state screen —
+                   #workspaceScreen still shows; this is a placeholder card
+                   inside #pdfScroll, shown instead of the canvas until the
+                   user clicks "Render form" or takes any zoom/page action
+                   (src/renderer/main.ts / preview.ts). -->
+              <div id="deferredRenderCard" class="deferredRenderCard" hidden>
+                <div class="deferredRenderTitle">Form not rendered yet</div>
+                <div class="deferredRenderMeta">
+                  <span id="deferredRenderFormType"></span>
+                  <span class="statusSep" aria-hidden="true"></span>
+                  <span id="deferredRenderLineCount"></span>
+                </div>
+                <div class="deferredRenderHint">Fast open is on — every field is already in the inspector.</div>
+                <button id="deferredRenderBtn" class="btn btnPrimary" type="button">Render form</button>
+              </div>
             </div>
           </div>
         </div>

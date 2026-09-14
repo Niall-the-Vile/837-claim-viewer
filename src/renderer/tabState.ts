@@ -57,6 +57,20 @@ export interface TabState {
    * content sniff.
    */
   isSample: boolean;
+
+  /**
+   * Ease-of-use + accessibility batch, item 5 (deferred-render fast mode,
+   * docs/UI_REQUIREMENTS_v3_queued_features.md §11): true when this tab's
+   * current claim has NOT been rendered to pdf.js yet because the app-level
+   * "Fast open" setting is on — `pdfDoc` is `null` in exactly the same way
+   * it is for a released background tab (see setActivePdfDoc below), but
+   * this flag is what tells `syncScreenUI()` to show the placeholder card
+   * instead of silently leaving a stale/blank canvas. Cleared the moment a
+   * real render actually happens (main.ts's `loadPdfDocForTab`), regardless
+   * of whether Fast open is still on — it describes THIS claim's state, not
+   * the setting itself.
+   */
+  pendingRender: boolean;
 }
 
 /**

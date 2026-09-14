@@ -1597,6 +1597,55 @@ preload function or IPC handler was added.
 - Full `npm run verify`: green (typecheck + vitest + build:app +
   all 83 Playwright E2E)
 
+### Checkpoint 3 — item 5 (deferred-render fast mode)
+
+Opt-in, default OFF (`state.fastOpenEnabled`, a new View menu
+`role="menuitemcheckbox"` — "Fast open (render form on demand)"). While off,
+every existing render-on-open path is byte-for-byte unchanged (confirmed by
+the full existing E2E suite staying green with no changes needed).
+
+While on, `ensureClaimRendered` (`main.ts`) short-circuits any reload it
+would otherwise trigger (fresh open, tab reactivation, claim step) into
+showing a new placeholder card — `#deferredRenderCard`, a sibling of
+`#pdfCanvas` **inside** `#pdfScroll`, never a new state screen — populated
+from the already-fetched `ClaimDetailDto` (form type + service-line count).
+The card's "Render form" button, or ANY zoom/page action (Ctrl+wheel, the
+toolbar zoom/fit buttons, Ctrl+Left/Right page stepping — every one of
+preview.ts's public entry points), resolves it in place via a new
+`loadPdfDocForTab` (the fetch-and-build half factored out of
+`ensureClaimRendered`) injected into `preview.ts` through `initDeferredRender`
+— the same dependency-injection pattern as `TabStripDeps`/`ShortcutDeps`.
+A background tab reactivated while fast mode is on returns to the
+placeholder rather than auto-rendering — this required no new code at all:
+background-tab release already nulls `pdfDoc` regardless of fast mode, so
+reactivation already lands on `ensureClaimRendered`'s existing `needsReload`
+branch, which the fast-mode check intercepts the same as a fresh open.
+
+The placeholder card is deliberately excluded from the View menu's UI-scale
+`zoom: var(--ui-scale)` chrome-scaling — it's a descendant of `#pdfScroll`,
+one of the two elements (`#pdfCanvas` the other) that architecture
+explicitly keeps out of chrome scaling, so it renders at a fixed size
+regardless of `--ui-scale`, same as the canvas it stands in for.
+
+### Preload/IPC surface changes (rule 7b)
+None — item 5 is renderer-only; no new preload function or IPC handler.
+
+### Verification
+- typecheck: pass (all 3 configs)
+- vitest: 442 -> 442 (no new unit tests for this item — it's an
+  interaction/lifecycle feature best covered end-to-end, which is where its
+  4 new tests landed; `test/tabState.test.ts`'s fake-tab factory was updated
+  for the new `pendingRender` field so existing pdf.js-lifecycle unit tests
+  keep passing)
+- E2E: 83 -> 87 (4 new, all in `e2e/easeOfUse.spec.ts`, including the exact
+  test the spec calls for: enable it, assert the inspector is populated
+  while `#pdfCanvas` is still at its unrendered default, then assert the
+  canvas renders after the user requests it)
+- `npm run build:app`: clean
+- Full `npm run verify`: green (typecheck + vitest + build:app + all 87
+  Playwright E2E, including the full pre-existing tabs/session-restore/a11y/
+  uiScale suites re-run in full to confirm zero regression to the
+  default-off path)
+
 ### Not done yet in this batch (tracked, not forgotten)
-Items 5 (deferred-render fast mode) and 6 (high-contrast render mode) are
-still to come.
+Item 6 (high-contrast render mode) is still to come.
