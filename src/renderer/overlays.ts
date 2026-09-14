@@ -39,6 +39,7 @@ import {
   aboutOverlayEl,
   forgetOverlayEl,
   samplesOverlayEl,
+  paletteOverlayEl,
   toastEl,
   toastMessageEl,
   toastActionsEl,
@@ -99,7 +100,7 @@ function prefersReducedMotion(): boolean {
  * invariant explicit rather than relying on one shared variable never being
  * clobbered by the wrong caller.
  */
-const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null, samples: null };
+const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null, samples: null, palette: null };
 
 /**
  * The scrim + dialog fade/scale out on close (spec requirement 4) rather
@@ -119,9 +120,16 @@ const OVERLAY_EXIT_MS = 150; // keep in sync with .overlay.isClosing / .dialog's
  * one-line addition to OVERLAY_IDS/overlayElFor instead of touching every
  * function in this file.
  */
-export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget' | 'samples';
-const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget', 'samples'];
-const overlayCloseTimers: Record<OverlayId, number | undefined> = { export: undefined, shortcuts: undefined, about: undefined, forget: undefined, samples: undefined };
+export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget' | 'samples' | 'palette';
+const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget', 'samples', 'palette'];
+const overlayCloseTimers: Record<OverlayId, number | undefined> = {
+  export: undefined,
+  shortcuts: undefined,
+  about: undefined,
+  forget: undefined,
+  samples: undefined,
+  palette: undefined,
+};
 
 function overlayElFor(id: OverlayId): HTMLDivElement {
   switch (id) {
@@ -135,6 +143,8 @@ function overlayElFor(id: OverlayId): HTMLDivElement {
       return forgetOverlayEl;
     case 'samples':
       return samplesOverlayEl;
+    case 'palette':
+      return paletteOverlayEl;
   }
 }
 
@@ -214,6 +224,34 @@ export function closeOverlay(id: OverlayId): void {
   }
   overlay.classList.add('isClosing');
   overlayCloseTimers[id] = window.setTimeout(finish, OVERLAY_EXIT_MS);
+}
+
+/**
+ * Closes `id` immediately — no fade-out — leaving `overlay.hidden` true the
+ * instant this call returns. closeOverlay's normal animated close keeps
+ * `hidden` false for OVERLAY_EXIT_MS while it fades, which is fine for a
+ * plain dismiss but wrong for "close this overlay, THEN immediately run an
+ * action" (the command palette's item activation, features/palette.ts):
+ * several existing guarded actions (goToClaimIndex, reopenLastClosedTab, …)
+ * check `anyOverlayOpen()` and silently no-op while it's still true, so a
+ * palette-triggered claim jump or tab reopen was otherwise swallowed for the
+ * ~150ms the animated close was still mid-flight. Deliberately skips
+ * closeOverlay's focus-restore too — the caller is about to move focus
+ * itself via the action it runs next, so restoring it to the Ctrl+K
+ * invoker first would just be immediately overridden (or, worse, win a
+ * race against an async focus move and steal it back afterward).
+ */
+export function closeOverlayInstant(id: OverlayId): void {
+  const overlay = overlayElFor(id);
+  if (overlay.hidden) return;
+  lastFocusedBeforeOverlay[id] = null;
+  const pending = overlayCloseTimers[id];
+  if (pending !== undefined) {
+    window.clearTimeout(pending);
+    overlayCloseTimers[id] = undefined;
+  }
+  overlay.hidden = true;
+  overlay.classList.remove('isClosing');
 }
 
 export function anyOverlayOpen(): boolean {
@@ -524,7 +562,7 @@ for (const id of OVERLAY_IDS) {
   });
 }
 function isOverlayId(value: string | undefined): value is OverlayId {
-  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget' || value === 'samples';
+  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget' || value === 'samples' || value === 'palette';
 }
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((btn) => {
   btn.addEventListener('click', () => {

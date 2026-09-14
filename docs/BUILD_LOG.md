@@ -1521,8 +1521,82 @@ needed since `dist/src/**/*` is already listed):
 - `npm run build:app`: clean, `copy-samples.mjs` copies all 4 fixtures
 - Full `npm run verify`: green
 
+### Checkpoint 2 — items 7 and 3 (clickable warnings, command palette)
+
+**7. Clickable warnings — inspector/DOM half only.** Added `ClaimWarningAnchor`
+(`src/model/claim.ts`: `{ groupId, lineNumbers? }`, `groupId` restricted to
+the actual inspector group ids `inspector.ts`'s `buildGroup()` calls use) and
+attached one to every warning rule in `src/model/validate.ts` plus the four
+codes `x12ClaimSource.ts` pushes directly (`dental-transaction-type-unknown`,
+`edi-bad-date-qualifier`, `edi-se-count-mismatch`, `edi-duplicate-claim-id`).
+Carried through `electron/main.ts`'s `buildClaimDetail` and
+`electron/preload.ts`'s `ClaimDetailDto` unchanged (optional field, so every
+existing consumer of a warning object is untouched). In the inspector's
+"Data warnings" group, a row with an anchor is now click/Enter/Space-
+activatable: it reveals (force-opens) the anchor's group and flashes either
+the named service line's summary row or, when there's no specific line, the
+group's own `<summary>` heading — reusing search.ts's exact
+`.searchMatchActive` persistent-outline class (one small CSS addition in
+`search.css` to also cover a `<summary>` target, since that rule was
+originally `.inspRow`-only). Does **not** touch the PDF-canvas half (needs
+Build 3.4's deferred per-box geometry) or the top warnings banner (which
+stays a `role="status" aria-live="polite"` region — adding interactive
+controls there would be the same live-region-with-interactive-content
+mistake `UI_REQUIREMENTS_v3_queued_features.md` §3 explicitly warns against
+for a future banner redesign this batch doesn't touch).
+
+**3. Keyboard command palette (Ctrl+K).** `src/renderer/features/palette.ts`
++ `palette.css`, a new `#paletteOverlay` dialog. Three sources, fuzzy-
+filtered with the exact `normalizeSearchText`/`matchesSearchQuery` machinery
+Ctrl+F search already built (`features/searchMatch.ts`) — no new matching
+logic:
+  1. Every `.menuPanel [data-action]` button, read LIVE from the DOM and
+     activated by calling `.click()` on that same button — the anti-drift
+     guarantee: there is no second, hand-maintained action list, since the
+     palette is reading (and re-clicking) the real menu.
+  2. A short, explicitly-listed set of toolbar-only controls with no menu
+     item (page/claim steppers, edit-mode toggle, inspector toggle) —
+     same real-`.click()` execution; only the small id list is manually
+     maintained, never the behavior.
+  3. Open tabs (jump to one) and, when the active tab holds an 837 batch,
+     that tab's claims by claim id/patient name (jump to one).
+  Disabled actions (no file open) are listed with a plain-language reason,
+  never hidden. Added `Ctrl+K` to the shortcuts dispatcher (`shortcuts.ts`)
+  and the F1 sheet's View group, plus a `View > Command palette…` menu entry
+  for discoverability.
+
+  **Bug found and fixed during this item's own e2e coverage** (not a
+  pre-existing regression — introduced and caught within this checkpoint):
+  the initial mouse-hover highlight handler called the full `renderResults()`
+  (tearing down and rebuilding every result button) on `mouseenter`, which
+  raced a real click gesture — Playwright's `.click()` is
+  mousemove→mouseenter→mousedown→mouseup→click as separate events on one
+  element, and rebuilding the DOM mid-sequence sometimes replaced the very
+  button the click was headed for. Fixed by adding a highlight-ONLY update
+  (`setActiveIndex`) that toggles classes on the existing DOM nodes instead
+  of rebuilding them. Separately, closing the palette via `closeOverlay`'s
+  normal ~150ms fade-out left `anyOverlayOpen()` true for that whole window,
+  which silently no-op'd `goToClaimIndex`'s (and `reopenLastClosedTab`'s)
+  own `anyOverlayOpen()` guard — added `closeOverlayInstant` (`overlays.ts`)
+  for the specific "close this overlay, then immediately run a guarded
+  action" case the palette needs, leaving every other overlay's animated
+  close untouched.
+
+### Preload/IPC surface changes (rule 7b)
+None in this checkpoint — items 3 and 7 are renderer/model-only; no new
+preload function or IPC handler was added.
+
+### Verification
+- typecheck: pass (all 3 configs)
+- vitest: 433 -> 442 (9 new: 8 anchor-assertion tests in
+  `test/validate.test.ts`, 3 anchor assertions added to existing
+  `test/x12ClaimSource.test.ts` cases, minus the 2 sample-claim tests
+  updated in place for the new `anchor` field)
+- E2E: 76 -> 83 (7 new, all in `e2e/easeOfUse.spec.ts`)
+- `npm run build:app`: clean
+- Full `npm run verify`: green (typecheck + vitest + build:app +
+  all 83 Playwright E2E)
+
 ### Not done yet in this batch (tracked, not forgotten)
-Items 3 (command palette), 5 (deferred-render fast mode), 6 (high-contrast
-render mode) and 7 (clickable warnings — inspector half) are still to come;
-this checkpoint stops here per the "checkpoint after each numbered item or a
-small, related cluster" rule.
+Items 5 (deferred-render fast mode) and 6 (high-contrast render mode) are
+still to come.

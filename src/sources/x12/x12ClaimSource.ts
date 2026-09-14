@@ -783,6 +783,11 @@ function buildClaim(ctx: ClaimCtx, claimSegs: Segment[], delimiters: Delimiters)
         code: 'dental-transaction-type-unknown',
         severity: 'info',
         message: 'ADA box 1 (transaction type) could not be derived from this 837D — no CLM19 or equivalent qualifier was present.',
+        // No dedicated dental claim-level inspector group exists yet
+        // (Build 3's institutional-only 'billing' group has no 837D
+        // counterpart) — Provenance (where claim_form/claimId show) is the
+        // best existing fallback target, same as unsupported-form.
+        anchor: { groupId: 'prov' },
       });
     }
   }
@@ -811,22 +816,27 @@ function buildClaim(ctx: ClaimCtx, claimSegs: Segment[], delimiters: Delimiters)
 
 function checkDateQualifiers(claimLevel: Segment[], lines: Segment[][]): ClaimWarning[] {
   const w: ClaimWarning[] = [];
-  const checkOne = (seg: Segment | undefined, label: string, accepted: readonly string[]): void => {
+  const checkOne = (seg: Segment | undefined, label: string, accepted: readonly string[], anchor?: ClaimWarning['anchor']): void => {
     if (!seg) return;
     const fmt = seg.elements[1] ?? '';
     if (!accepted.includes(fmt)) {
-      w.push({
+      const warning: ClaimWarning = {
         code: 'edi-bad-date-qualifier',
         severity: 'warning',
         message: `${label} (DTP*${seg.elements[0] ?? ''}) uses an unrecognized date-format qualifier "${fmt}" — expected ${accepted.join(' or ')}.`,
-      });
+      };
+      if (anchor) warning.anchor = anchor;
+      w.push(warning);
     }
   };
-  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '434'), 'Statement covers period', ['D8', 'RD8']);
-  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '435'), 'Admission date', ['D8', 'DT']);
-  for (const lineSegs of lines) {
-    checkOne(lineSegs.find((s) => s.id === 'DTP' && s.elements[0] === '472'), 'Service date', ['D8', 'RD8']);
-  }
+  // Statement period / admission date have no dedicated inspector row today
+  // (buildInstitutionalRows doesn't surface either) — 'billing' (the
+  // institutional Billing details group) is the closest existing target.
+  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '434'), 'Statement covers period', ['D8', 'RD8'], { groupId: 'billing' });
+  checkOne(claimLevel.find((s) => s.id === 'DTP' && s.elements[0] === '435'), 'Admission date', ['D8', 'DT'], { groupId: 'billing' });
+  lines.forEach((lineSegs, i) => {
+    checkOne(lineSegs.find((s) => s.id === 'DTP' && s.elements[0] === '472'), 'Service date', ['D8', 'RD8'], { groupId: 'lines', lineNumbers: [i + 1] });
+  });
   return w;
 }
 
@@ -848,6 +858,7 @@ function applyEdiStructuralChecks(tx: Transaction, claims: Claim[]): void {
       code: 'edi-se-count-mismatch',
       severity: 'warning',
       message: `This 837 transaction's SE01 segment count (${tx.se01}) doesn't match the actual number of segments between ST and SE (${actualCount}).`,
+      anchor: { groupId: 'prov' },
     };
     for (const c of claims) c.warnings.push(warning);
   }
@@ -867,6 +878,7 @@ function applyEdiStructuralChecks(tx: Transaction, claims: Claim[]): void {
       code: 'edi-duplicate-claim-id',
       severity: 'warning',
       message: `Claim ID "${id}" appears on ${dupes.length} claims within this 837 transaction.`,
+      anchor: { groupId: 'prov' },
     };
     for (const c of dupes) c.warnings.push(warning);
   }

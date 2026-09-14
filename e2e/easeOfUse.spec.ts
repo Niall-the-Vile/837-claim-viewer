@@ -232,3 +232,172 @@ test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch �
     }
   });
 });
+
+test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch — item 7: clickable warnings (inspector half)', () => {
+  test('clicking (or pressing Enter on) a warning row in the inspector reveals and flashes the field it concerns', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeSampleBtn').click();
+      await page.locator('#samplesList .sampleItem').filter({ hasText: 'bad billing NPI' }).click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      // Open the "Data warnings" inspector group (collapsed by default here
+      // since it's a single warning) via the status bar's warning button.
+      await page.locator('#statusWarnBtn').click();
+      const warnGroup = page.locator('details.inspGroup[data-group-id="warn"]');
+      await expect(warnGroup).toHaveJSProperty('open', true);
+
+      const warningRow = warnGroup.locator('.inspRow.inspRowClickable', { hasText: 'fails the NPI check' });
+      await expect(warningRow).toBeVisible();
+      await expect(warningRow).toHaveAttribute('title', /locate/i);
+
+      // The Providers group is collapsed by default and has no persistent
+      // outline yet.
+      const providersGroup = page.locator('details.inspGroup[data-group-id="providers"]');
+      await expect(providersGroup).toHaveJSProperty('open', false);
+      await expect(page.locator('.searchMatchActive')).toHaveCount(0);
+
+      await warningRow.click();
+
+      await expect(providersGroup).toHaveJSProperty('open', true);
+      await expect(page.locator('.searchMatchActive')).toHaveCount(1);
+      // The flash landed on the Providers group's own heading (no specific
+      // service line for an NPI warning) — a <summary>, not an .inspRow.
+      await expect(page.locator('details[data-group-id="providers"] > summary.searchMatchActive')).toHaveCount(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Enter activates a focused clickable warning row the same way a click does', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeSampleBtn').click();
+      await page.locator('#samplesList .sampleItem').filter({ hasText: 'bad billing NPI' }).click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+
+      await page.locator('#statusWarnBtn').click();
+      const warningRow = page.locator('details.inspGroup[data-group-id="warn"] .inspRow.inspRowClickable', { hasText: 'fails the NPI check' });
+      await warningRow.focus();
+      await page.keyboard.press('Enter');
+
+      await expect(page.locator('details.inspGroup[data-group-id="providers"]')).toHaveJSProperty('open', true);
+      await expect(page.locator('.searchMatchActive')).toHaveCount(1);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+test.describe('837 Claim Viewer — E2E — ease-of-use + accessibility batch — item 3: command palette', () => {
+  test('Ctrl+K with no file open lists real menu actions (read live, not a second list) and activates one', async () => {
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_1500 });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await expect(page.locator('#welcomeScreen')).toBeVisible();
+
+      await page.keyboard.press('Control+k');
+      await expect(page.locator('#paletteOverlay')).toBeVisible();
+      // Focus lands directly in the input, ready to type.
+      await expect(page.locator('#paletteInput')).toBeFocused();
+
+      await page.locator('#paletteInput').fill('open a claim');
+      const openAction = page.locator('.paletteItem', { hasText: 'Open a claim file' });
+      await expect(openAction).toHaveCount(1);
+      await expect(openAction).toContainText('Ctrl+O');
+      await openAction.click();
+
+      await expect(page.locator('#paletteOverlay')).toBeHidden();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('a disabled action (no file open) is listed with its reason, and Enter selects the first ENABLED match instead', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await expect(page.locator('#welcomeScreen')).toBeVisible();
+
+      await page.keyboard.press('Control+k');
+      await page.locator('#paletteInput').fill('export');
+      const exportAction = page.locator('.paletteItem', { hasText: 'Export PDF' });
+      await expect(exportAction).toBeDisabled();
+      await expect(exportAction).toContainText('No file open');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('lists open tabs and jumps to one by (partial) filename', async () => {
+    const FIXTURE_837I = join(repoRoot, 'test', 'fixtures', 'x12', '837I-multi-claim.dat');
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: [FIXTURE_1500, FIXTURE_837I].join(';') });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await page.locator('#openBtn').click();
+      await expect(page.locator('.tab')).toHaveCount(2);
+      // The second file is now active.
+      await expect(page.locator('.tab').nth(1)).toHaveAttribute('aria-selected', 'true');
+
+      await page.keyboard.press('Control+k');
+      await page.locator('#paletteInput').fill('synthetic-1500');
+      const tabItem = page.locator('.paletteItem', { hasText: 'synthetic-1500.json' });
+      await expect(tabItem).toHaveCount(1);
+      await expect(tabItem).toContainText('Tab');
+      await tabItem.click();
+
+      await expect(page.locator('#paletteOverlay')).toBeHidden();
+      await expect(page.locator('.tab').first()).toHaveAttribute('aria-selected', 'true');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('in an 837 batch, lists claims by claim id and jumps to one', async () => {
+    const FIXTURE_837I = join(repoRoot, 'test', 'fixtures', 'x12', '837I-multi-claim.dat');
+    const app = await launchApp({ CLAIM_VIEWER_E2E_OPEN: FIXTURE_837I });
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').click();
+      await expect(page.locator('#workspaceScreen')).toBeVisible();
+      await expect(page.locator('#claimStepLabel')).toHaveText('Claim 1 of 2');
+
+      await page.keyboard.press('Control+k');
+      await page.locator('#paletteInput').fill('claim 2 of 2');
+      const claimItem = page.locator('.paletteItem', { hasText: 'Claim 2 of 2' });
+      await expect(claimItem).toHaveCount(1);
+      await claimItem.click();
+
+      await expect(page.locator('#paletteOverlay')).toBeHidden();
+      await expect(page.locator('#claimStepLabel')).toHaveText('Claim 2 of 2');
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('Esc closes the palette and restores focus to where Ctrl+K was pressed', async () => {
+    const app = await launchApp();
+    try {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#welcomeOpenBtn').focus();
+      await page.keyboard.press('Control+k');
+      await expect(page.locator('#paletteOverlay')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#paletteOverlay')).toBeHidden();
+      await expect(page.locator('#welcomeOpenBtn')).toBeFocused();
+    } finally {
+      await app.close();
+    }
+  });
+});

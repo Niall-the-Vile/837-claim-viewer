@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { FormType, WarningSeverity } from '../src/model/claim.js';
+import type { FormType, WarningSeverity, ClaimWarningAnchor } from '../src/model/claim.js';
 
 /**
  * Frozen, enumerated contextBridge API. The renderer gets exactly the
@@ -126,7 +126,8 @@ export interface ClaimDetailDto {
     sumOfLineCharges: number;
     delta: number;
   };
-  warnings: Array<{ code: string; severity: WarningSeverity; message: string }>;
+  /** `anchor` (ease-of-use + accessibility batch, item 7 — clickable warnings) is optional; see `src/model/claim.ts`'s `ClaimWarningAnchor`. */
+  warnings: Array<{ code: string; severity: WarningSeverity; message: string; anchor?: ClaimWarningAnchor }>;
   rawText: string;
 
   // --- Editable fields (docs/EDITABLE_FIELDS_DESIGN.md) --------------------

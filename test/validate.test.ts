@@ -529,3 +529,100 @@ describe('isValidNpi / fmtCents (moved, unchanged)', () => {
     expect(fmtCents(0)).toBe('$0.00');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ease-of-use + accessibility batch, item 7 (clickable warnings — inspector
+// half): every warning validateClaim emits carries a stable `anchor`
+// (src/model/claim.ts's ClaimWarningAnchor) naming the inspector group (and,
+// where meaningful, the 1-based service-line numbers) src/renderer's
+// features/warningAnchors.ts uses to scroll/focus the offending field. This
+// is a targeted spot-check per rule, not an exhaustive re-run of every test
+// above — those already pin the message/severity; this pins the anchor.
+// ---------------------------------------------------------------------------
+
+const VALID_GROUP_IDS = ['prov', 'patient', 'insured', 'providers', 'billing', 'dx', 'lines', 'recon'];
+
+describe('warning anchors (item 7 — clickable warnings, inspector half)', () => {
+  it('every warning validateClaim can emit carries an anchor with a real inspector group id', () => {
+    // A claim engineered to trip as many rules as possible at once (mirrors
+    // test/fixtures/837P-many-warnings.json's intent, built inline here so
+    // this test owns its own fixture rather than depending on that file's
+    // exact contents).
+    const claim = baseClaim({
+      billingProvider: { name: '', npi: '1111111111', taxId: '', taxIdType: '', address: emptyAddress(), phone: '', taxonomy: '' },
+      renderingProvider: { name: emptyName(), npi: '1111111111', taxonomy: '' },
+      diagnoses: Array.from({ length: 13 }, (_, i) => ({ pointer: i < 12 ? String.fromCharCode(65 + i) : '', ordinal: i + 1, code: 'J020', poa: '' })),
+      serviceLines: [baseLine({ diagPointers: ['Z'] }), baseLine(), baseLine()], // dangling pointer 'Z' + an exact-duplicate pair
+      totals: { totalCharge: 999, amountPaid: 0 }, // won't reconcile against 3x $100 lines
+    });
+    const warnings = validateClaim(claim, '2026-06-01');
+    expect(warnings.length).toBeGreaterThan (5);
+    for (const w of warnings) {
+      expect(w.anchor, `code ${w.code} has no anchor`).toBeDefined();
+      expect(VALID_GROUP_IDS).toContain(w.anchor!.groupId);
+    }
+  });
+
+  it('charge-total-mismatch anchors to Reconciliation', () => {
+    const claim = baseClaim({ totals: { totalCharge: 999, amountPaid: 0 } });
+    const w = validateClaim(claim, '2026-06-01').find((x) => x.code === 'charge-total-mismatch');
+    expect(w?.anchor).toEqual({ groupId: 'recon' });
+  });
+
+  it('billing-npi-invalid and rendering-npi-invalid anchor to Providers', () => {
+    const claim = baseClaim({
+      billingProvider: { name: '', npi: '1111111111', taxId: '990000000', taxIdType: 'E', address: emptyAddress(), phone: '', taxonomy: '207Q00000X' },
+      renderingProvider: { name: emptyName(), npi: '1111111111', taxonomy: '' },
+    });
+    const w = validateClaim(claim, '2026-06-01');
+    expect(w.find((x) => x.code === 'billing-npi-invalid')?.anchor).toEqual({ groupId: 'providers' });
+    expect(w.find((x) => x.code === 'rendering-npi-invalid')?.anchor).toEqual({ groupId: 'providers' });
+  });
+
+  it('dangling-diag-pointer and diag-overflow anchor to Diagnoses', () => {
+    const claim = baseClaim({
+      diagnoses: Array.from({ length: 13 }, (_, i) => ({ pointer: i < 12 ? String.fromCharCode(65 + i) : '', ordinal: i + 1, code: 'J020', poa: '' })),
+      serviceLines: [baseLine({ diagPointers: ['Z'] })],
+    });
+    const w = validateClaim(claim, '2026-06-01');
+    expect(w.find((x) => x.code === 'dangling-diag-pointer')?.anchor).toEqual({ groupId: 'dx' });
+    expect(w.find((x) => x.code === 'diag-overflow')?.anchor).toEqual({ groupId: 'dx' });
+  });
+
+  it('duplicate-service-line anchors to Service lines with the exact 1-based line numbers named in the message', () => {
+    const claim = baseClaim({ serviceLines: [baseLine(), baseLine(), baseLine({ charge: 55 })] });
+    const w = validateClaim(claim, '2026-06-01').find((x) => x.code === 'duplicate-service-line');
+    expect(w?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1, 2] });
+  });
+
+  it('institutional per-line rules (3.1a/b) anchor to Service lines with that line\'s 1-based number', () => {
+    const claim = baseClaim({
+      formType: 'ub04',
+      institutional: baseInstitutional({ statementFrom: '2026-01-01', statementThrough: '2026-01-02' }),
+      serviceLines: [baseLine({ fromDate: '2026-03-01', thruDate: '2026-03-01', procCode: '', revenueCode: '' })],
+    });
+    const w = validateClaim(claim, '2026-06-01');
+    expect(w.find((x) => x.code === 'institutional-line-missing-revenue-or-proc')?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1] });
+    expect(w.find((x) => x.code === 'line-dos-outside-statement-period')?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1] });
+  });
+
+  it('dental tooth/surface rules anchor to Service lines with that line\'s 1-based number', () => {
+    const claim = baseClaim({ formType: 'dental', dental: baseDental(), serviceLines: [baseLine({ toothNumbers: '99', toothSurfaces: 'Q' })] });
+    const w = validateClaim(claim, '2026-06-01');
+    expect(w.find((x) => x.code === 'dental-invalid-tooth-number')?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1] });
+    expect(w.find((x) => x.code === 'dental-invalid-tooth-surface')?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1] });
+  });
+
+  it('billing-taxid-missing and billing-taxonomy-missing anchor to Providers', () => {
+    const claim = baseClaim({ billingProvider: { name: '', npi: '', taxId: '', taxIdType: '', address: emptyAddress(), phone: '', taxonomy: '' } });
+    const w = validateClaim(claim, '2026-06-01');
+    expect(w.find((x) => x.code === 'billing-taxid-missing')?.anchor).toEqual({ groupId: 'providers' });
+    expect(w.find((x) => x.code === 'billing-taxonomy-missing')?.anchor).toEqual({ groupId: 'providers' });
+  });
+
+  it('unsupported-form anchors to Provenance', () => {
+    const claim = baseClaim({ formType: 'unsupported', claimFormRaw: 'weird' });
+    const w = validateClaim(claim, '2026-06-01').find((x) => x.code === 'unsupported-form');
+    expect(w?.anchor).toEqual({ groupId: 'prov' });
+  });
+});

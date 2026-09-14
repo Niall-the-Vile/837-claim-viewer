@@ -4,6 +4,7 @@ import { zoomBy, zoomToActualSize, fitPage, fitWidth, stepPage } from './preview
 import { anyOverlayOpen, openOverlayId, trapTabInOverlay, closeOverlay, openOverlay, openExportDialog, exportCurrentClaimSkipDialog } from './overlays.js';
 import { activeTab } from './tabs.js';
 import { focusSearch } from './features/search.js';
+import { openCommandPalette } from './features/palette.js';
 
 /**
  * The keyboard shortcuts sheet's content (KEY_GROUPS + rendering it + the
@@ -54,6 +55,7 @@ const KEY_GROUPS: Array<{ title: string; items: Array<{ label: string; keys: str
       { label: 'Fit width', keys: 'Ctrl+8' },
       { label: 'Toggle inspector', keys: 'Ctrl+D' },
       { label: 'Find in this claim', keys: 'Ctrl+F' },
+      { label: 'Command palette', keys: 'Ctrl+K' },
       { label: 'Light / dark', keys: 'Ctrl+Shift+L' },
       { label: 'UI text scale — cycle 100/125/150/175%', keys: '—' },
     ],
@@ -209,6 +211,15 @@ export function initShortcuts(deps: ShortcutDeps): void {
         // OS/Chromium default for Ctrl+F either way.
         event.preventDefault();
         focusSearch();
+        break;
+      case 'k':
+        // Ease-of-use + accessibility batch, item 3 — command palette.
+        // Unlike Ctrl+F, this one works with NO file open (it can still
+        // list menu actions like "Open a claim file…"), so there's no
+        // "no file open" no-op guard here; openCommandPalette() itself is a
+        // no-op only while another overlay is already open.
+        event.preventDefault();
+        openCommandPalette();
         break;
       case 'w':
         event.preventDefault();

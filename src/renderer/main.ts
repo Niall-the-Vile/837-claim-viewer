@@ -88,6 +88,7 @@ import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 import { initUiScale, cycleUiScale } from './features/uiScale.js';
 import { initSearch, resetSearch } from './features/search.js';
 import { initSamples, openSamplesDialog } from './features/samples.js';
+import { initPalette, openCommandPalette } from './features/palette.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -1093,6 +1094,9 @@ function runAction(action: string): void {
     case 'openSamples':
       void openSamplesDialog();
       break;
+    case 'openPalette':
+      openCommandPalette();
+      break;
     case 'openForgetDialog':
       openForgetDialog();
       break;
@@ -1299,3 +1303,4 @@ void initSessionRestore();
 void initUiScale();
 initSearch({ jumpToClaim: goToClaimIndex });
 initSamples({ openSample: openSampleById });
+initPalette({ activateTab: activateTabById, jumpToClaim: goToClaimIndex });

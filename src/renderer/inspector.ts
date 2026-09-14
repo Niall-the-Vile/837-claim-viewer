@@ -1,5 +1,5 @@
 import type { ClaimDetailDto, InstitutionalDetailDto } from '../../electron/preload.js';
-import type { FormType } from '../model/claim.js';
+import type { FormType, ClaimWarningAnchor } from '../model/claim.js';
 import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl, clearOverridesBtn } from './dom.js';
 import { state, currentScreen, activeTab, type TabState } from './tabs.js';
 import { copyToClipboard } from './clipboard.js';
@@ -123,6 +123,17 @@ interface InspRow {
    * `value` when omitted.
    */
   editValue?: string;
+  /**
+   * Ease-of-use + accessibility batch, item 7 (clickable warnings — the
+   * inspector/DOM half): set only on a "Data warnings" group row whose
+   * underlying `ClaimWarning` carries a `src/model/claim.ts` `anchor`
+   * (produced by `src/model/validate.ts` / `x12ClaimSource.ts`). Clicking
+   * (or Enter/Space on) a row with this set reveals and flashes the
+   * anchor's target elsewhere in the inspector — see jumpToWarningAnchor
+   * below, which reuses the exact same `.searchMatchActive` persistent-
+   * outline class Ctrl+F search already built (features/search.ts).
+   */
+  anchor?: ClaimWarningAnchor;
 }
 
 /**
@@ -340,7 +351,33 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
       // for the tooltip (docs/AUDIT_BUILD2.md).
       if (row.glyph) {
         const accName = row.decoded ? `${row.key}: ${row.value}, ${row.decoded}` : `${row.key}: ${row.value}`;
-        rowEl.setAttribute('aria-label', accName);
+        rowEl.setAttribute(
+          'aria-label',
+          row.anchor ? `${accName}. Activate to locate the affected field.` : accName,
+        );
+      }
+
+      // Ease-of-use + accessibility batch, item 7 (clickable warnings —
+      // inspector/DOM half): a warning row with a stable anchor is
+      // click/Enter/Space-activatable to reveal and flash the field it
+      // concerns elsewhere in the inspector. Never on an isExplanation
+      // (caption) row — the anchor lives on the warning row itself.
+      if (row.anchor) {
+        const anchor = row.anchor;
+        rowEl.classList.add('inspRowClickable');
+        rowEl.title = 'Click to locate the affected field';
+        // Dataset mirror of `anchor` (rather than only the closure below) so
+        // the delegated keydown listener further down — which only ever
+        // sees a plain DOM element, not this row's original InspRow object —
+        // can activate the SAME anchor via Enter/Space.
+        rowEl.dataset['anchorGroup'] = anchor.groupId;
+        if (anchor.lineNumbers) rowEl.dataset['anchorLines'] = anchor.lineNumbers.join(',');
+        rowEl.addEventListener('click', (event) => {
+          // The per-row copy button (below) already stopPropagation()s its
+          // own click, so this only ever fires for a genuine row click.
+          event.preventDefault();
+          jumpToWarningAnchor(anchor);
+        });
       }
 
       if (!row.isExplanation) {
@@ -411,6 +448,19 @@ inspectorBodyEl.addEventListener('keydown', (event) => {
     // this build. Either way this never picks up the decoded sibling span.
     const value = row.querySelector('.inspRowValRaw')?.textContent ?? row.querySelector('.inspRowVal')?.textContent ?? '';
     copyToClipboard(value, `${key} copied to the clipboard.`);
+    return;
+  }
+
+  // Ease-of-use + accessibility batch, item 7: Enter/Space activates a
+  // clickable warning row (see the anchorGroup dataset written by buildGroup
+  // above) — the same activation keys a native <button> would respond to,
+  // even though this row stays a <div role="listitem"> for the existing
+  // roving-tabindex composite.
+  if ((event.key === 'Enter' || event.key === ' ') && row.dataset['anchorGroup']) {
+    event.preventDefault();
+    const groupId = row.dataset['anchorGroup'] as ClaimWarningAnchor['groupId'];
+    const lineNumbers = row.dataset['anchorLines'] ? row.dataset['anchorLines']!.split(',').map(Number) : undefined;
+    jumpToWarningAnchor(lineNumbers ? { groupId, lineNumbers } : { groupId });
     return;
   }
 
@@ -552,6 +602,9 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
             // `undefined` as distinct from "property omitted" for an optional
             // field, so assigning it directly would fail to typecheck.
             ...(w.severity === 'warning' ? { variant: 'warn' as const } : {}),
+            // Ease-of-use + accessibility batch, item 7: only present when
+            // the rule that emitted this warning attached one.
+            ...(w.anchor ? { anchor: w.anchor } : {}),
           },
         ];
         const explanation = explainWarning(w.code);
@@ -985,17 +1038,60 @@ expandAllBtn.addEventListener('click', () => {
   updateExpandAllLabel();
 });
 
-function revealWarningsInInspector(): void {
+/** Expands the inspector's drawer (if collapsed) and force-opens `groupId`'s `<details>`, returning it (or `null` if that group doesn't exist for this claim — e.g. 'billing' on a non-institutional form). Shared by revealWarningsInInspector (below) and jumpToWarningAnchor (item 7). */
+function revealInspectorGroup(groupId: string): HTMLDetailsElement | null {
   state.inspectorOpen = true;
   updateInspectorVisibility();
-  const warnGroup = inspectorBodyEl.querySelector<HTMLDetailsElement>('details[data-group-id="warn"]');
-  if (warnGroup) {
-    warnGroup.open = true;
-    syncCaret(warnGroup);
-    warnGroup.scrollIntoView({ block: 'nearest' });
-    updateExpandAllLabel();
-  }
+  const group = inspectorBodyEl.querySelector<HTMLDetailsElement>(`details[data-group-id="${groupId}"]`);
+  if (!group) return null;
+  group.open = true;
+  syncCaret(group);
+  updateExpandAllLabel();
+  return group;
+}
+
+function revealWarningsInInspector(): void {
+  const warnGroup = revealInspectorGroup('warn');
+  warnGroup?.scrollIntoView({ block: 'nearest' });
 }
 
 warnReviewBtn.addEventListener('click', revealWarningsInInspector);
 statusWarnBtnEl.addEventListener('click', revealWarningsInInspector);
+
+// ---------------------------------------------------------------------------
+// Ease-of-use + accessibility batch, item 7 — clickable warnings, the
+// inspector/DOM half only (docs/BUILD_QUEUE.md Build 3.5's deferred anchor
+// work; the PDF-canvas-box half needs Build 3.4's per-box geometry, still
+// deferred). Reveals and flashes the field/group a warning's anchor names,
+// reusing search.ts's exact `.searchMatchActive` persistent-outline class —
+// see style.css's `.inspGroup > summary.searchMatchActive` addition for the
+// group-level (no specific line) case, since that CSS rule was originally
+// scoped to `.inspRow` only.
+// ---------------------------------------------------------------------------
+
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+function prefersReducedMotion(): boolean {
+  return reducedMotionQuery.matches;
+}
+
+function jumpToWarningAnchor(anchor: ClaimWarningAnchor): void {
+  const group = revealInspectorGroup(anchor.groupId);
+  if (!group) return;
+
+  // Only one locator outline should ever be visible at a time — clears
+  // search's own stepped-to match (or a previous warning jump) first.
+  document.querySelectorAll<HTMLElement>('.searchMatchActive').forEach((el) => el.classList.remove('searchMatchActive'));
+
+  let target: HTMLElement | null = null;
+  const firstLine = anchor.lineNumbers?.[0];
+  if (firstLine !== undefined) {
+    target = Array.from(group.querySelectorAll<HTMLElement>('.inspRow')).find((r) => r.querySelector('.inspRowKey')?.textContent === `Line ${firstLine}`) ?? null;
+  }
+  // No specific line (or the named line isn't found, e.g. a stale anchor
+  // after an edit changed line count) — flash the group's own heading.
+  if (!target) target = group.querySelector<HTMLElement>('summary');
+  if (!target) return;
+
+  target.classList.add('searchMatchActive');
+  target.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+}

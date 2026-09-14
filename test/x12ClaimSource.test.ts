@@ -412,6 +412,8 @@ describe('3.1(g) — EDI structural defects', () => {
     const patched = patchSeTrailer(inst837IMinimal, { se01: 999 });
     const [claim] = src.parse(patched);
     expect(claim!.warnings.some((w) => w.code === 'edi-se-count-mismatch')).toBe(true);
+    // Ease-of-use + accessibility batch, item 7: anchors to a real inspector group.
+    expect(claim!.warnings.find((w) => w.code === 'edi-se-count-mismatch')?.anchor).toEqual({ groupId: 'prov' });
   });
 
   it('does NOT flag edi-se-count-mismatch on any real, correctly-authored fixture (no false positives)', () => {
@@ -434,6 +436,7 @@ describe('3.1(g) — EDI structural defects', () => {
     expect(claims).toHaveLength(2);
     expect(claims[0]!.warnings.some((w) => w.code === 'edi-duplicate-claim-id')).toBe(true);
     expect(claims[1]!.warnings.some((w) => w.code === 'edi-duplicate-claim-id')).toBe(true);
+    expect(claims[0]!.warnings.find((w) => w.code === 'edi-duplicate-claim-id')?.anchor).toEqual({ groupId: 'prov' });
   });
 
   it('does NOT flag edi-duplicate-claim-id on the real multi-claim fixture (distinct ids)', () => {
@@ -446,6 +449,8 @@ describe('3.1(g) — EDI structural defects', () => {
     const patched = inst837IMinimal.replace('DTP*472*D8*20160911~', 'DTP*472*D6*20160911~');
     const [claim] = src.parse(patched);
     expect(claim!.warnings.some((w) => w.code === 'edi-bad-date-qualifier')).toBe(true);
+    // Ease-of-use + accessibility batch, item 7: the FIRST line-level DTP*472 -> line 1.
+    expect(claim!.warnings.find((w) => w.code === 'edi-bad-date-qualifier')?.anchor).toEqual({ groupId: 'lines', lineNumbers: [1] });
   });
 
   it('accepts DT as a valid admission-date (DTP*435) qualifier — NOT a false positive', () => {

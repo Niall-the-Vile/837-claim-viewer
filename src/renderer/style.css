@@ -3,6 +3,7 @@
    must precede every other rule in a stylesheet (CSS spec), hence it's the
    very first line here, above even this file's own header comment below. */
 @import './features/search.css';
+@import './features/palette.css';
 
 /*
  * Brotherhood chrome for the Claim Viewer, matching
@@ -2163,6 +2164,16 @@ a:focus-visible {
 .welcomeOpenBox .linkBtn {
   margin-top: 6px;
   font-size: 12.5px;
+}
+
+/* Clickable warnings (item 7) — a "Data warnings" row with a stable anchor
+ * (src/renderer/inspector.ts's jumpToWarningAnchor). The persistent-outline
+ * flash itself reuses search.css's `.searchMatchActive` unchanged. */
+.inspRow.inspRowClickable {
+  cursor: pointer;
+}
+.inspRow.inspRowClickable:hover {
+  background: var(--surface-inset);
 }
 
 /* Recent files on the welcome screen (item 2) — the SAME .recentFileItem

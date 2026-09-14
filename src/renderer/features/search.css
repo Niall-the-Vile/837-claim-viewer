@@ -69,7 +69,12 @@
  * but `outline-offset` is drawn a touch further out so the two can be told
  * apart if a stepped-to match also happens to be focused.
  */
-.inspRow.searchMatchActive {
+.inspRow.searchMatchActive,
+/* Ease-of-use + accessibility batch, item 7 (clickable warnings) reuses this
+ * exact class for its group-level fallback target (no specific line — see
+ * src/renderer/inspector.ts's jumpToWarningAnchor), which flashes a
+ * <summary> rather than an .inspRow. */
+.inspGroup > summary.searchMatchActive {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-radius: 3px;

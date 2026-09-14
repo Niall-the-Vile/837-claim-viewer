@@ -172,10 +172,37 @@ export interface OtherInsurance {
 
 export type WarningSeverity = 'info' | 'warning';
 
+/**
+ * The inspector group ids `src/renderer/inspector.ts`'s `buildGroup()` calls
+ * already use verbatim (`buildGroup('providers', ...)` etc.) — declared here,
+ * not duplicated, so a warning's `anchor.groupId` can never name a group the
+ * inspector doesn't actually render. `'warn'`/`'raw'` are deliberately
+ * excluded: a warning never anchors to the warnings group itself (that's
+ * where the clickable row already lives) or to the raw-segments dump (not a
+ * meaningful "the offending field is here" target).
+ */
+export type ClaimWarningGroupId = 'prov' | 'patient' | 'insured' | 'providers' | 'billing' | 'dx' | 'lines' | 'recon';
+
+/**
+ * Ease-of-use + accessibility batch, item 7 (clickable warnings — the
+ * inspector/DOM half; docs/BUILD_QUEUE.md Build 3.5's deferred anchor work).
+ * Optional and additive: every existing warning shape/consumer (the warning
+ * banner, the copy-warnings/reconciliation formatter, every rule's own test)
+ * keeps working unchanged whether or not a given warning carries one.
+ * `lineNumbers`, when present, are 1-based `ServiceLine` positions (matching
+ * every existing warning MESSAGE's own "Service line N" wording) — never a
+ * 0-based array index.
+ */
+export interface ClaimWarningAnchor {
+  groupId: ClaimWarningGroupId;
+  lineNumbers?: number[];
+}
+
 export interface ClaimWarning {
   code: string;
   severity: WarningSeverity;
   message: string;
+  anchor?: ClaimWarningAnchor;
 }
 
 export interface Claim {

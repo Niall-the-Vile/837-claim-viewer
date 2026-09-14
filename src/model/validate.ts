@@ -140,6 +140,7 @@ function checkDuplicateLines(claim: Claim, w: ClaimWarning[]): void {
       code: 'duplicate-service-line',
       severity: 'info',
       message: `Service lines ${formatLineList(lineNumbers)} appear to be exact duplicates (same dates, code, modifiers, units and charge).`,
+      anchor: { groupId: 'lines', lineNumbers },
     });
   }
 }
@@ -184,6 +185,7 @@ function checkDentalToothSurfaces(claim: Claim, w: ClaimWarning[]): void {
           code: 'dental-invalid-tooth-number',
           severity: 'warning',
           message: `Service line ${i + 1} has an invalid tooth number: ${bad.join(', ')}.`,
+          anchor: { groupId: 'lines', lineNumbers: [i + 1] },
         });
       }
     }
@@ -199,6 +201,7 @@ function checkDentalToothSurfaces(claim: Claim, w: ClaimWarning[]): void {
           code: 'dental-invalid-tooth-surface',
           severity: 'warning',
           message: `Service line ${i + 1} has an invalid tooth surface: ${bad.join(', ')}.`,
+          anchor: { groupId: 'lines', lineNumbers: [i + 1] },
         });
       }
     }
@@ -223,12 +226,14 @@ function checkInstitutionalLines(claim: Claim, w: ClaimWarning[]): void {
         code: 'institutional-line-missing-revenue-or-proc',
         severity: 'info',
         message: `Service line ${i + 1} has neither a revenue code nor a procedure code.`,
+        anchor: { groupId: 'lines', lineNumbers: [i + 1] },
       });
     } else if (rev !== '' && !/^\d{4}$/.test(rev)) {
       w.push({
         code: 'institutional-line-revenue-code-not-4-digits',
         severity: 'info',
         message: `Service line ${i + 1}'s revenue code "${rev}" is not 4 digits.`,
+        anchor: { groupId: 'lines', lineNumbers: [i + 1] },
       });
     }
   });
@@ -256,6 +261,7 @@ function checkDatesOfService(claim: Claim, w: ClaimWarning[], today: string): vo
           code: 'line-dos-outside-statement-period',
           severity: 'warning',
           message: `Service line ${i + 1}'s date of service (${span}) falls outside the claim's statement period (${inst.statementFrom} to ${inst.statementThrough}).`,
+          anchor: { groupId: 'lines', lineNumbers: [i + 1] },
         });
       }
     });
@@ -276,6 +282,7 @@ function checkDatesOfService(claim: Claim, w: ClaimWarning[], today: string): vo
           code: 'line-dos-in-future',
           severity: 'warning',
           message: `Service line ${i + 1}'s date of service (${from}) is in the future.`,
+          anchor: { groupId: 'lines', lineNumbers: [i + 1] },
         });
       }
     });
@@ -288,13 +295,14 @@ function checkDatesOfService(claim: Claim, w: ClaimWarning[], today: string): vo
 
 function checkProvider(claim: Claim, w: ClaimWarning[]): void {
   if (claim.billingProvider.taxId === '') {
-    w.push({ code: 'billing-taxid-missing', severity: 'warning', message: 'Billing provider tax ID is not present.' });
+    w.push({ code: 'billing-taxid-missing', severity: 'warning', message: 'Billing provider tax ID is not present.', anchor: { groupId: 'providers' } });
   }
   if (claim.billingProvider.taxonomy === '') {
     w.push({
       code: 'billing-taxonomy-missing',
       severity: 'info',
       message: 'Billing provider taxonomy is not present (situational — many payers do not require it).',
+      anchor: { groupId: 'providers' },
     });
   }
 }
@@ -321,6 +329,7 @@ export function validateClaim(claim: Claim, today: string = todayIso()): ClaimWa
       code: 'charge-total-mismatch',
       severity: 'warning',
       message: `Line charges (${fmtCents(sumCents)}) don't match the claim total (${fmtCents(totalCents)}).`,
+      anchor: { groupId: 'recon' },
     });
   }
 
@@ -333,6 +342,11 @@ export function validateClaim(claim: Claim, today: string = todayIso()): ClaimWa
           code: 'dangling-diag-pointer',
           severity: 'warning',
           message: `Diagnosis pointer ${p} on a service line has no matching diagnosis.`,
+          // Anchors to Diagnoses (where the fix belongs — add the missing
+          // diagnosis) rather than the service line — the message doesn't
+          // identify which line, so a 'lines' anchor would be an unfounded
+          // guess; the diagnoses group is the one honest, always-correct target.
+          anchor: { groupId: 'dx' },
         });
       }
     }
@@ -340,19 +354,19 @@ export function validateClaim(claim: Claim, today: string = todayIso()): ClaimWa
 
   // NPI sanity (billing + rendering).
   if (claim.billingProvider.npi !== '' && !isValidNpi(claim.billingProvider.npi)) {
-    w.push({ code: 'billing-npi-invalid', severity: 'warning', message: `Billing NPI ${claim.billingProvider.npi} fails the NPI check.` });
+    w.push({ code: 'billing-npi-invalid', severity: 'warning', message: `Billing NPI ${claim.billingProvider.npi} fails the NPI check.`, anchor: { groupId: 'providers' } });
   }
   if (claim.renderingProvider.npi !== '' && !isSentinelNpi(claim.renderingProvider.npi) && !isValidNpi(claim.renderingProvider.npi)) {
-    w.push({ code: 'rendering-npi-invalid', severity: 'warning', message: `Rendering NPI ${claim.renderingProvider.npi} fails the NPI check.` });
+    w.push({ code: 'rendering-npi-invalid', severity: 'warning', message: `Rendering NPI ${claim.renderingProvider.npi} fails the NPI check.`, anchor: { groupId: 'providers' } });
   }
 
   // More than 12 diagnoses can't all be pointed to on a paper CMS-1500.
   if (claim.diagnoses.some((d) => d.ordinal > 12)) {
-    w.push({ code: 'diag-overflow', severity: 'info', message: 'Claim has more than 12 diagnoses; CMS-1500 shows A–L only.' });
+    w.push({ code: 'diag-overflow', severity: 'info', message: 'Claim has more than 12 diagnoses; CMS-1500 shows A–L only.', anchor: { groupId: 'dx' } });
   }
 
   if (claim.formType === 'unsupported') {
-    w.push({ code: 'unsupported-form', severity: 'warning', message: `claim_form "${claim.claimFormRaw}" has no form renderer yet.` });
+    w.push({ code: 'unsupported-form', severity: 'warning', message: `claim_form "${claim.claimFormRaw}" has no form renderer yet.`, anchor: { groupId: 'prov' } });
   }
 
   // --- New in Build 3.1 ---

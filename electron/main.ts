@@ -6,7 +6,7 @@ import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { dirname, join, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
-import type { Claim, FormType, WarningSeverity } from '../src/model/claim.js';
+import type { Claim, FormType, WarningSeverity, ClaimWarningAnchor } from '../src/model/claim.js';
 import { loadClaims, renderClaim, claimSummary } from '../src/app/claimService.js';
 import { ClaimParseError } from '../src/sources/claimSource.js';
 import { composeName, composeAddressLine } from '../src/render/text.js';
@@ -495,7 +495,8 @@ interface ClaimDetailDto {
     /** totalCharge - sumOfLineCharges, in dollars; 0 when they reconcile. */
     delta: number;
   };
-  warnings: Array<{ code: string; severity: WarningSeverity; message: string }>;
+  /** `anchor` (ease-of-use + accessibility batch, item 7) is optional and carried through verbatim from `src/model/validate.ts` — see that module's `ClaimWarningAnchor` doc comment; the renderer uses it to scroll/focus the offending inspector field when a warning is clicked. */
+  warnings: Array<{ code: string; severity: WarningSeverity; message: string; anchor?: ClaimWarningAnchor }>;
   /** Pretty-printed `claim.raw` — the source's original key/values, for the inspector's "Raw JSON fields" / "Raw 837 segments" view. */
   rawText: string;
 
@@ -605,7 +606,7 @@ function buildClaimDetail(claim: Claim): ClaimDetailCore {
       sumOfLineCharges: sumCents / 100,
       delta: (totalCents - sumCents) / 100,
     },
-    warnings: claim.warnings.map((w) => ({ code: w.code, severity: w.severity, message: w.message })),
+    warnings: claim.warnings.map((w) => (w.anchor ? { code: w.code, severity: w.severity, message: w.message, anchor: w.anchor } : { code: w.code, severity: w.severity, message: w.message })),
     rawText: JSON.stringify(claim.raw, null, 2),
   };
 }

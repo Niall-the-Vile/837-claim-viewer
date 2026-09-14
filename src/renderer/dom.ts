@@ -157,6 +157,12 @@ export const samplesOverlayEl = requireEl<HTMLDivElement>('samplesOverlay');
 export const samplesListEl = requireEl<HTMLDivElement>('samplesList');
 export const welcomeSampleBtn = requireEl<HTMLButtonElement>('welcomeSampleBtn');
 
+// Command palette (ease-of-use + accessibility batch, item 3).
+export const paletteOverlayEl = requireEl<HTMLDivElement>('paletteOverlay');
+export const paletteInputEl = requireEl<HTMLInputElement>('paletteInput');
+export const paletteResultsEl = requireEl<HTMLDivElement>('paletteResults');
+export const paletteEmptyEl = requireEl<HTMLDivElement>('paletteEmpty');
+
 // File menu's dynamically-populated recent-files list (docs/TABS_BUILD_PLAN.md §2e).
 export const recentFilesListEl = requireEl<HTMLDivElement>('recentFilesList');
 export const recentFilesEmptyEl = requireEl<HTMLDivElement>('recentFilesEmpty');

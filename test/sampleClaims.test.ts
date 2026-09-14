@@ -74,6 +74,7 @@ describe('bundled sample claims (Open Sample Claim)', () => {
         code: 'dental-transaction-type-unknown',
         severity: 'info',
         message: expect.any(String),
+        anchor: { groupId: 'prov' },
       },
     ]);
     expect(claim.serviceLines[0]!.toothNumbers).toBe('3');
@@ -89,6 +90,7 @@ describe('bundled sample claims (Open Sample Claim)', () => {
         code: 'billing-npi-invalid',
         severity: 'warning',
         message: expect.stringContaining('fails the NPI check'),
+        anchor: { groupId: 'providers' },
       },
     ]);
   });
