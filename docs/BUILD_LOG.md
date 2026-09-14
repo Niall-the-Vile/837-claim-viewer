@@ -2028,3 +2028,5 @@ commit (checkpoint 2 — e2e coverage + docs). Tag: `build-6-green`.
 ### Golden/goldens regenerated
 - None — this build touches no rendered-PDF layout/golden fixtures.
 
+Final commit: `39d16e1`. Tag: `build-6-green`.
+
