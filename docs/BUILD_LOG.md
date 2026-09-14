@@ -1740,3 +1740,291 @@ section, and no Build 6 (notes/audit) or Build 7 (installation) work was
 started.
 
 Final commit: `c59d528`. Tag: `build-ease-of-use-green`.
+
+---
+
+## Build 6 — Notes & audit
+STATUS: GREEN
+
+Scope: `docs/CLAUDE_CODE_NEXT_SESSION.md`'s "Build 6 — Notes & audit" section,
+which is `docs/BUILD_QUEUE.md`'s older "Build 5 — Notes & audit" spec read WITH
+that session's decision 2 applied — **session-scoped per-line notes/flags are
+NEVER persisted**, overriding BUILD_QUEUE.md 5.1's original "make this
+persistent, keyed to source file + claim id under `userData`" plan. The audit
+log (5.2) is unchanged from BUILD_QUEUE.md's spec: local, append-only,
+metadata-only, viewable from About.
+
+Start: 2026-09-14   End: 2026-09-14
+Commit: `48eaba5` (checkpoint 1 — implementation + unit tests), then this
+commit (checkpoint 2 — e2e coverage + docs). Tag: `build-6-green`.
+
+### What shipped
+
+**6.1 — Session-scoped per-line notes, dispute/verify/OK flags, check-off marks.**
+- `src/model/annotations.ts` (new): pure, DOM-free model — `LineAnnotation {
+  note, flag, checked }`, keyed by `annotationKey(claimIndex, lineIndex)` =
+  `${claimIndex}::line[${lineIndex}]`, deliberately the same addressing
+  *spirit* as `src/model/editableFields.ts`'s `${claimIndex}::${fieldPath}`
+  scheme (reused, not reinvented — the task's own instruction). Flag cycle
+  None -> OK -> Verify -> Dispute -> None; glyph + explicit word for every
+  value (never colour alone, same posture as the existing warning-severity
+  rule). `summarizeAnnotations`/`summaryLine` produce the exact
+  "N of M lines flagged · K disputed" claim-level summary the UI spec calls
+  for.
+- **This is the ONE genuinely load-bearing architectural decision in this
+  build**: `TabState` (`src/renderer/tabState.ts`) gains an `annotations:
+  Map<string, LineAnnotation>` field with the EXACT SAME lifecycle as its
+  existing `pdfDoc`/`zoom`/`pageNum` fields — created empty in
+  `tabs.ts`'s `createTab`, and requiring NO explicit teardown on `closeTab`
+  at all, because it lives on the `TabState` object itself and is garbage
+  collected the instant that object is (same as `pdfDoc` would be, if
+  `setActivePdfDoc` didn't need to explicitly `destroy()` a live pdf.js
+  resource first — a plain `Map` needs no such step). A restored tab
+  (session restore, app relaunch) always goes through `createTab` fresh, so
+  it starts empty there too, automatically, with zero extra code. Most
+  importantly: **no `claimApi.*` method anywhere takes or returns a
+  `LineAnnotation`** — grepped and confirmed (`grep -rn annotation
+  electron/main.ts electron/preload.ts` returns nothing but one doc
+  comment) — so this data structurally cannot cross the contextBridge, and
+  therefore cannot reach `userData`, `sessionStore.ts`,
+  `correctedClaimStore.ts`, or any export IPC call, by construction rather
+  than by discipline.
+- `src/renderer/inspector.ts`: new **"Notes & flags"** inspector group,
+  inserted right after "Service lines". Deliberately a *dedicated* group
+  built by hand (not through `buildGroup`/`InspRow`) rather than icons woven
+  into the existing service-lines grid — that grid's rows are a composite,
+  multi-field-per-row shape driven by roving-tabindex/click-to-copy
+  machinery (see inspector.ts's own header comment on why a composite row
+  can't carry a single `fieldKey`); reusing it for a completely different
+  interaction model (glyph-cycle button, checkbox, expanding textarea) would
+  have meant either fighting that machinery or quietly breaking it. The new
+  group's rows use their own `.annoRow`/`.annoFlagBtn`/etc. classes,
+  entirely outside `.inspRow`'s keyboard/copy contract.
+  - Per line: a flag-cycle button (glyph + word, `data-flag` attribute for
+    styling/testing), a "Checked" checkbox, and a "Note" toggle that expands
+    an inline `<textarea>` — autosaves on blur (no Save button, no modal,
+    no toast-per-keystroke; a quiet, auto-fading "Saved" hint instead, per
+    spec).
+  - A `Show: all lines / flagged only / disputed only` filter (`<select>`),
+    hiding/showing `.annoRow` elements directly — a simpler, purpose-built
+    analogue of Ctrl+F search's hide/show pattern (`features/search.ts`),
+    not a literal reuse of it: the two operate on different axes (free-text
+    query vs. annotation state) and search's own machinery is keyed to
+    `InspRow`'s `data-search-*` attributes, which these rows don't have.
+  - The group's own `<summary>` tag shows a live count and turns "warn"-
+    colored once any line is disputed, so annotations are findable even
+    while the group itself is collapsed — mirroring the "Data warnings"
+    group's own tag-count convention.
+  - The group re-renders from scratch on every `renderInspector()` call
+    (claim step, tab switch, an edit) exactly like every other group — since
+    state lives on `tab.annotations`, not on the DOM, this is always a
+    faithful redraw, never a stale one.
+
+**6.2 — Extend copy machinery to carry annotations.**
+- `clipboardFormat.ts`'s `formatServiceLinesTsv` gains an OPTIONAL second
+  argument (`annotationsByLine?: ReadonlyMap<number, LineAnnotation>`).
+  Byte-for-byte identical output to before this build when omitted, or when
+  every passed annotation is empty — Note/Flag columns appear only once at
+  least one line actually has one, appended to every row (blank where a
+  line has none). Existing golden-string tests untouched and still pass
+  unmodified; new tests added for the annotated case.
+- New, explicitly SEPARATE `formatAnnotationsWorksheet` + "Copy annotations
+  worksheet" action (a small icon button in the new group's `<summary>`,
+  `.annoGroupCopyBtn` — a distinct class from the service-lines group's
+  `.inspGroupCopyBtn`; see "Audit findings" below for why that mattered).
+  Titled "Session notes & flags (not saved — cleared when this tab
+  closes)" so the output is self-documenting even pasted somewhere without
+  this app's own context. Never folded into `formatClaimSummary` — verified
+  by a dedicated e2e test that copies both in sequence and asserts the
+  summary never contains the note text.
+
+**6.3 — Annotations excluded from every export by default.**
+- No code change was needed to keep annotations OUT of PDF/CSV/JSON/X12 —
+  see 6.1's "structurally cannot cross the bridge" note above; this item's
+  actual work was the on-screen indicator. `overlays.ts`'s
+  `updateExportDialogForSelection` now computes
+  `countActiveAnnotations(tab, scope)` (new `src/renderer/annotations.ts`
+  helper) and shows/hides a new `#exportAnnotationsNotice` line ("N session
+  notes — not included in export.") — present for every format (PDF
+  included), not gated behind the PDF-batch-only `exportManifestEl` hide
+  logic, since the notice's relevance doesn't depend on whether the claim
+  manifest itself is shown.
+
+**6.4 — Explicit "session-only, not saved" affordance.**
+- `title` tooltip on both the note-toggle button and the textarea itself:
+  "Not saved — cleared when this tab closes." A caption line at the top of
+  the "Notes & flags" group states the same thing in full sentences. The
+  About screen's own data-policy prose was extended to say the same thing
+  plainly (`index.html`'s `#aboutOverlay`).
+- **Deferred: the optional confirm-on-close dialog for a tab with unsaved
+  notes.** The task explicitly marks this "optionally" (unlike the
+  mandatory tooltip). A native `window.confirm()` would fight this app's
+  own custom-overlay/focus-trap system (every other dialog in this app is a
+  purpose-built `.overlay`, never a blocking native dialog) and would need
+  Playwright's `page.on('dialog')` handling wired into every OTHER e2e
+  spec's tab-close path to keep them from hanging — a real cost for an
+  explicitly optional, low-severity affordance (the tooltip + group caption
+  already state the constraint before a user ever types a note, and the
+  worst case of skipping it is a lost scratch note, not a data-safety
+  problem). Left undone rather than done half-heartedly; a future session
+  can revisit with an in-house confirm overlay if this becomes a real
+  complaint.
+
+**6.5 — Local, append-only, metadata-only audit log.**
+- `src/app/persistence/auditLogStore.ts` (new): Electron-free, same
+  `baseDir`-argument shape as `sessionStore.ts`/`correctedClaimStore.ts`
+  (rule 12). JSON LINES format (`audit-log.jsonl`), not one JSON document —
+  a deliberate departure from this app's other two `userData` writers'
+  read-modify-write-then-atomic-rename pattern, because an audit log is
+  append-far-more-often-than-restructured; every write here is a plain
+  `appendFile` (see the module's header for the full reasoning).
+- **Rotation/cap policy (as required, documented explicitly): capped at
+  `ROTATE_AFTER_ENTRIES = 200` entries in the active file.** Once an append
+  would exceed that, the WHOLE active file is renamed to exactly ONE
+  archived generation (`audit-log.old.jsonl`, overwriting any previous one)
+  and a fresh active file starts with just the new entry. Two, statically-
+  named files, never an unbounded/timestamped series — chosen specifically
+  so `test/persisted-artifacts.test.ts`'s `ALLOWED_USERDATA_FILES` allowlist
+  (a `Record<string, predicate>` keyed by literal filename) can still name
+  every possible file this feature ever writes. Bounds total on-disk size
+  to roughly 2 x 200 x ~200 bytes ≈ 80 KB — generous for a single
+  reviewer's daily use. Tested directly (`test/auditLogStore.test.ts`):
+  round-trip, corrupt/partial-line defensive parsing, "does not rotate
+  before the cap", "rotates exactly once at the cap, active file left with
+  just the new entry", and "a SECOND rotation overwrites the old file
+  rather than accumulating a third".
+- `electron/main.ts`: new `logAudit(action, sourcePath, claimIdentifyingValue,
+  destinationPath)` helper — hashes `claimIdentifyingValue` with
+  `createHash('sha256')` RIGHT THERE, before `auditLogStore.appendEntry`
+  ever sees it (that module's one interface has no field a raw claim id
+  could be assigned to, structurally). Fire-and-forget (`void logAudit(...)`)
+  from every relevant call site, wrapped in its own try/catch that only
+  ever logs a console warning — an audit-log write failure must never block
+  the action it's recording. Call sites: `openClaimAtPath` (both the
+  reused-session and newly-parsed branches — "opened claim"),
+  `dialog:exportPdf` ("exported PDF"), `export:batch` (ONE entry per batch
+  run, not per claim — a 400-claim batch must not write 400 near-identical
+  rows into a 200-entry-capped log; `claimBatchIdentity` already folds
+  every claim id into the hash, so this still identifies exactly which
+  claims were involved), `exportStructured` ("exported CSV"/"exported
+  JSON"), `dialog:exportX12` ("exported X12").
+- New IPC: `audit:list` (-> `claimApi.getAuditLog()`) and `audit:openFolder`
+  (-> `claimApi.openAuditLogFolder()`, `shell.openPath(userDataDir())` —
+  there's no single "last export" path to reuse the way
+  `shell:openExport` does). Added to `electron/preload.ts`,
+  `electron/main.ts`, `src/renderer/global.d.ts` (via the `ClaimApi` type
+  inference — no direct edit needed there), and `e2e/app.spec.ts`'s sorted
+  `apiKeys` array, in the same commit.
+- New **About screen "View audit log…" button** (footer, not the main
+  toolbar — per spec, "an occasional compliance tool") opening a new
+  read-only `#auditLogOverlay` dialog: a newest-first table (timestamp,
+  user, action, source file, destination, truncated hashed claim id, app
+  version), "Open log folder" and "Copy visible rows" actions, no
+  delete-from-UI at all.
+- **The single most important test in this build**
+  (`test/persisted-artifacts.test.ts`'s new "Build 6 — audit log" describe
+  block): drives `appendEntry` the exact way `electron/main.ts`'s
+  `logAudit`/`claimBatchIdentity` build an entry (hash computed BEFORE the
+  call, same as production), using a claim-identifying string
+  ADVERSARIALLY WIDENED beyond what real code ever builds (path + claim id
+  + patient name + the SSN canary, all three), then reads the raw on-disk
+  JSONL bytes and asserts: the existing PHI-canary check passes, the
+  claim's own plain-text claim id never appears, the exact raw string that
+  was hashed never appears, and the resulting sha256 digest — and ONLY
+  that — does appear. A companion rotation test proves the same "canary-
+  free" guarantee holds for both the active and archived files after a
+  real rotation.
+
+### Verification
+- typecheck: pass (all 3 configs — `tsconfig.json`, `tsconfig.renderer.json`,
+  `tsconfig.e2e.json`)
+- vitest: 442 -> 485 (+43: 17 `annotations.test.ts`, 7
+  `rendererAnnotations.test.ts`, 10 `auditLogStore.test.ts`, 7 new
+  `clipboardFormat.test.ts` cases, 2 new `persisted-artifacts.test.ts`
+  cases — 17+7+10+7+2 = 43; the `tabState.test.ts` fixture fix for the new
+  required `TabState.annotations` field added no new case)
+- E2E: 89 -> 94 (+5, all in the new `e2e/notesAudit.spec.ts`: claim-step
+  persistence + tab-close clearing; never-survives-a-relaunch against a
+  profile whose session.json DOES restore the tab itself; all-four-formats
+  export exclusion with the on-screen notice; the copy-worksheet action
+  staying separate from copy-summary; and the audit-log viewer showing real
+  entries with no claim content, on-screen and in its own "copy visible
+  rows" clipboard payload)
+- One PRE-EXISTING e2e test broken then immediately fixed within this same
+  checkpoint (see "Audit findings" below) — never left red, never
+  compounded.
+- `npm run build:app`: clean
+- Full `npm run verify`: green — typecheck + 530 vitest + build:app + 94
+  Playwright E2E, twice (once before this doc-and-e2e checkpoint, once
+  after, both fully green)
+
+### Preload/IPC surface changes (rule 7b)
+- `getAuditLog` / `openAuditLogFolder` — preload.ts (y), main.ts (y),
+  global.d.ts (y, via `ClaimApi` type inference), e2e/app.spec.ts's sorted
+  `apiKeys` array (y, same commit). No other IPC surface changed — session-
+  scoped notes/flags add NOTHING to the bridge at all, by design (see 6.1).
+
+### Audit findings (adversarial self-audit, as required before calling this done)
+
+1. **Can annotation data EVER reach `sessionStore.ts`, the corrected-claims
+   artifact, or any export format? — REFUTED (no path exists).** Verified
+   two ways: (a) structurally, `grep -rn annotation electron/main.ts
+   electron/preload.ts` returns nothing but one doc comment in
+   `auditLogStore.ts`'s header — no IPC method, DTO, or main-process
+   variable named or shaped like a `LineAnnotation` exists anywhere main
+   can read from; (b) behaviorally, `e2e/notesAudit.spec.ts`'s export test
+   sets a note ("reviewer scratch note — upcoded, dispute this line") and
+   a Dispute flag, exports all FOUR formats (PDF/CSV/JSON/X12) to real
+   files, then reads every file's raw bytes and asserts neither the note
+   text nor the word "Dispute" appears in any of them. A second e2e test
+   proves the SAME annotation is gone after either closing the tab or
+   relaunching the app against a userData profile whose `session.json`
+   DOES restore the tab itself — proving the "never persisted" half
+   specifically, not just "never exported".
+2. **Does the audit log EVER contain claim content under any code path,
+   including error messages/stack traces that might accidentally
+   interpolate claim data? — REFUTED, verified deliberately adversarially.**
+   `logAudit`'s only two failure paths are (a) `readBuildInfo()` throwing
+   (impossible — it has its own internal try/catch and returns `null`) and
+   (b) `auditLogStore.appendEntry` throwing a filesystem error (ENOSPC,
+   EACCES, etc.) — `(err as Error).message` in that case is Node's own fs
+   error text, never anything derived from `claim`. No call site ever
+   passes a `Claim`/`ClaimDetailDto` object, template-interpolated field,
+   or caught application error into any of `logAudit`'s four string
+   arguments — `sourcePath` is always `session.filePath`/`resolvedPath`
+   (already-disclosed, same posture as `sessionStore.ts`),
+   `claimIdentifyingValue` is always built by the narrow, reviewed
+   `claimBatchIdentity` helper (path + claim ids, nothing else), and
+   `destinationPath` is always a `filePath`/`destFolder` the user's own
+   save dialog just returned. The dedicated content-scan test (6.5's "most
+   important test", described above) additionally widens the hashed input
+   to include the patient name and SSN canary — values NO real code path
+   ever feeds into it — specifically to prove the one-way hash can't leak
+   even a deliberately worse input than production ever constructs.
+3. **A real regression, caught and fixed within this same checkpoint (not
+   swept under a later one, per the "never compound a failure" rule):**
+   the new "Copy annotations worksheet" button initially reused the
+   service-lines group's `.inspGroupCopyBtn` class for its visual style,
+   which made `e2e/copy.spec.ts`'s pre-existing `page.locator('.inspGroupCopyBtn')`
+   locator ambiguous (2 matches instead of 1) and failed that test. Fixed
+   by giving the new button its own `.annoGroupCopyBtn` class (style.css's
+   selector list extended to cover both classes, so the visual treatment
+   is unchanged) rather than touching the pre-existing test's locator —
+   the pre-existing test's assumption (exactly one `.inspGroupCopyBtn` in
+   the DOM) was correct and is now true again. Full `npm run verify` was
+   re-run afterward and confirmed 100% green before this build was called
+   done.
+
+### Unverified
+- None — every scenario in this build's task brief has a corresponding
+  automated test (unit and/or e2e); nothing required a human/display to
+  check.
+
+### Deferred / failed
+- The optional confirm-on-close-with-unsaved-notes dialog (6.4) — see that
+  section above for the reasoning. Not a "failed" item; an explicit,
+  documented scope call within what the task itself marked optional.
+
+### Golden/goldens regenerated
+- None — this build touches no rendered-PDF layout/golden fixtures.
+

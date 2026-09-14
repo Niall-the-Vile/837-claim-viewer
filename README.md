@@ -162,3 +162,29 @@ Every export is validated by round-tripping it back through this app's own X12 p
 `docs/BUILD_LOG.md`'s Build 5 section for the full design writeup, including the EDI-native
 "EDITED" equivalent (a `K3` free-text segment, since X12 has no visual-watermark concept) and the
 control-number generation scheme.
+
+### Session-scoped notes/flags, and a metadata-only audit log (Build 6)
+
+The inspector's **"Notes & flags"** group lets you add a free-text note, a Dispute/Verify/OK
+triage mark, and a check-off to any service line. **These are never written to disk, in any
+form.** They live only in this window's memory for as long as the tab stays open — closing the
+tab or the app (or stepping to a different claim in a batch file, which is a different claim
+index) clears them — and they are never sent across the app's internal renderer/main-process
+bridge at all, so no export (PDF, CSV, JSON, or X12) and no persisted artifact can ever contain
+them. The export dialog tells you up front, e.g. "2 session notes — not included in export.", so
+this is never a silent surprise. A dedicated **"Copy annotations worksheet"** clipboard action
+(separate from "Copy claim summary", which represents the parsed claim, not your scratch notes)
+lets you carry them out of the app yourself when you want to.
+
+Separately, this app keeps a local, append-only, **metadata-only audit log**
+(`%AppData%\837 Claim Viewer\audit-log.jsonl`, rotating to one archived generation,
+`audit-log.old.jsonl`, after 200 entries) for HIPAA accounting-of-disclosures purposes. Each entry
+records a timestamp, your Windows username, a short action label ("opened claim", "exported PDF",
+etc.), the source file's path, a **SHA-256 hash** of a claim-identifying value (never the raw
+claim id), the export destination (if any), and the app version. **Claim content is never
+recorded** — no patient names, codes, or amounts. It's viewable (read-only; there is no
+delete-from-UI) from Help → About Claim Viewer → "View audit log…", with "Open log folder" and
+"Copy visible rows" actions. See `src/app/persistence/auditLogStore.ts` for the rotation policy
+and `test/persisted-artifacts.test.ts` for the test that inspects the log file's raw bytes and
+asserts no claim content — patient name, member ID, procedure codes, charges, or even the plain
+claim id — ever lands in it.
