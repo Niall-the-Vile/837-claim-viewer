@@ -119,6 +119,10 @@ export const manifestTotalEl = requireEl<HTMLSpanElement>('manifestTotal');
 export const manifestWarningsEl = requireEl<HTMLSpanElement>('manifestWarnings');
 export const exportManifestEl = requireEl<HTMLDivElement>('exportManifest');
 export const exportPhiNoticeEl = requireEl<HTMLDivElement>('exportPhiNotice');
+// Build 6, 6.3: "N session notes — not included in export" indicator —
+// separate from exportManifestEl so it stays visible even when the manifest
+// itself is hidden for a PDF batch (see overlays.ts's updateExportDialogForSelection).
+export const exportAnnotationsNoticeEl = requireEl<HTMLDivElement>('exportAnnotationsNotice');
 export const exportDialogFooterEl = requireEl<HTMLDivElement>('exportDialogFooter');
 export const exportGhostBtn = requireEl<HTMLButtonElement>('exportGhostBtn');
 export const exportConfirmBtn = requireEl<HTMLButtonElement>('exportConfirmBtn');
@@ -159,6 +163,16 @@ export const shortcutsGridEl = requireEl<HTMLDivElement>('shortcutsGrid');
 export const aboutOverlayEl = requireEl<HTMLDivElement>('aboutOverlay');
 export const aboutVersionEl = requireEl<HTMLSpanElement>('aboutVersion');
 export const aboutBuildDateEl = requireEl<HTMLSpanElement>('aboutBuildDate');
+export const aboutViewAuditLogBtn = requireEl<HTMLButtonElement>('aboutViewAuditLogBtn');
+
+// Audit log viewer (Build 6, 6.5) — reachable only from About, per
+// docs/UI_REQUIREMENTS_v3_queued_features.md §8 ("reachable from About, not
+// the main toolbar — it's an occasional compliance tool").
+export const auditLogOverlayEl = requireEl<HTMLDivElement>('auditLogOverlay');
+export const auditLogTableBodyEl = requireEl<HTMLTableSectionElement>('auditLogTableBody');
+export const auditLogEmptyEl = requireEl<HTMLDivElement>('auditLogEmpty');
+export const auditLogOpenFolderBtn = requireEl<HTMLButtonElement>('auditLogOpenFolderBtn');
+export const auditLogCopyBtn = requireEl<HTMLButtonElement>('auditLogCopyBtn');
 
 // "Forget open tabs & recent files" confirm dialog (docs/TABS_BUILD_PLAN.md §2e).
 export const forgetOverlayEl = requireEl<HTMLDivElement>('forgetOverlay');

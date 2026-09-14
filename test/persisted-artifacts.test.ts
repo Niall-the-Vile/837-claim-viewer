@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { loadClaims, renderClaim } from '../src/app/claimService.js';
 import { addRecentFile, loadSession, saveOpenTabs } from '../src/app/persistence/sessionStore.js';
 import { setFieldOverride, getArtifact } from '../src/app/persistence/correctedClaimStore.js';
+import { appendEntry, readEntries, AUDIT_LOG_FILE_NAME, AUDIT_LOG_OLD_FILE_NAME, ROTATE_AFTER_ENTRIES, type AuditLogEntry } from '../src/app/persistence/auditLogStore.js';
 
 /**
  * Verification for every `userData` writer (docs/BUILD_QUEUE.md rule 12).
@@ -89,6 +91,21 @@ function noCanary(text: string): boolean {
  * fieldOverrides map whose values are always plain strings -- never a
  * nested object, since this store only ever persists the flat field values
  * the user typed.
+ *
+ * Build 6 (Notes & audit) APPENDS TWO more rows: `audit-log.jsonl` (active)
+ * and `audit-log.old.jsonl` (one archived generation, only present once the
+ * active file has rotated at least once — see
+ * src/app/persistence/auditLogStore.ts's header for the rotation policy).
+ * Both are JSON LINES, not one JSON document like every other row here — the
+ * predicate below parses every non-blank line and requires each to carry
+ * exactly the metadata-only shape `AuditLogEntry` defines: a non-empty
+ * timestamp/user/action/sourcePath/hashedClaimId/appVersion string, plus a
+ * destinationPath that's either `null` or a string. Build 6's OTHER new
+ * userData-shaped concept — session-scoped per-line notes/flags
+ * (src/model/annotations.ts) — deliberately adds NOTHING to this allowlist:
+ * it never touches `userData` at all (see that file's header for the
+ * "session-only, never persisted" constraint), so there is no row for it to
+ * add here, ever.
  */
 export const ALLOWED_USERDATA_FILES: Record<string, (content: string) => boolean> = {
   'session.json': (content) => {
@@ -121,7 +138,40 @@ export const ALLOWED_USERDATA_FILES: Record<string, (content: string) => boolean
       return Object.values(a['fieldOverrides'] as Record<string, unknown>).every((v) => typeof v === 'string');
     });
   },
+  [AUDIT_LOG_FILE_NAME]: isValidAuditLogJsonl,
+  [AUDIT_LOG_OLD_FILE_NAME]: isValidAuditLogJsonl,
 };
+
+/** Every non-blank line of a JSONL audit-log file must parse to an object with exactly the metadata-only `AuditLogEntry` shape — no claim content field exists on this type at all, so this predicate structurally cannot pass anything shaped like a `Claim`. */
+function isValidAuditLogJsonl(content: string): boolean {
+  const lines = content.split('\n').filter((l) => l.trim() !== '');
+  if (lines.length === 0) return false;
+  return lines.every((line) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return false;
+    }
+    if (typeof parsed !== 'object' || parsed === null) return false;
+    const e = parsed as Record<string, unknown>;
+    return (
+      typeof e['timestamp'] === 'string' &&
+      e['timestamp'] !== '' &&
+      typeof e['user'] === 'string' &&
+      e['user'] !== '' &&
+      typeof e['action'] === 'string' &&
+      e['action'] !== '' &&
+      typeof e['sourcePath'] === 'string' &&
+      e['sourcePath'] !== '' &&
+      typeof e['hashedClaimId'] === 'string' &&
+      e['hashedClaimId'] !== '' &&
+      (e['destinationPath'] === null || typeof e['destinationPath'] === 'string') &&
+      typeof e['appVersion'] === 'string' &&
+      e['appVersion'] !== ''
+    );
+  });
+}
 
 describe('Persisted userData artifacts (docs/BUILD_QUEUE.md rule 12)', () => {
   it('open -> export -> close: only allowlisted files land in userData, none contain the PHI canary, and session.json proves the feature actually recorded the fixture path', async () => {
@@ -231,6 +281,115 @@ describe('Editable fields: corrected-claims.json (docs/EDITABLE_FIELDS_DESIGN.md
       const artifact = await getArtifact(userDataDir, fixturePath);
       expect(artifact?.fieldOverrides).toEqual({ '0::billingProvider.taxId': correctedTaxId });
       expect(artifact?.sourceFileHash).toBe(sourceHash);
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Build 6 — audit log: audit-log.jsonl (docs/CLAUDE_CODE_NEXT_SESSION.md Build 6, 6.5)', () => {
+  /**
+   * THE SINGLE MOST IMPORTANT TEST IN BUILD 6. Simulates a few real actions
+   * (open, export PDF, export CSV, export X12) the exact way
+   * electron/main.ts's `logAudit`/`claimBatchIdentity` build an entry —
+   * hashing the claim-identifying value BEFORE it ever reaches
+   * `appendEntry` — then inspects the raw on-disk file content and asserts
+   * NO claim content (patient name, member ID, procedure codes, charges,
+   * the canary SSN, or even the claim's own plain-text claim id) ever
+   * appears, anywhere, in any form other than its one-way sha256 digest.
+   */
+  it('open -> export PDF -> export CSV -> export X12: audit-log.jsonl is allowlisted, carries no PHI canary, and the hashed claim id is provably a hash — never the raw identifier', async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-userdata-test-'));
+    try {
+      const text = syntheticClaimJson();
+      const { claims } = loadClaims(text);
+      const claim = claims[0]!;
+      expect(claim.billingProvider.taxId).toBe(SSN_CANARY_DIGITS); // sanity: canary actually made it into the model
+      expect(claim.claimId).toBe('phi-canary-1');
+
+      const fixturePath = join(userDataDir, '..', 'phi-canary-fixture-source', 'phi-canary-fixture.json');
+
+      // Mirrors electron/main.ts's claimBatchIdentity/logAudit EXACTLY: the
+      // claim-identifying value (path + claim id) is hashed HERE, before
+      // auditLogStore.appendEntry ever sees it — that module has no idea
+      // what a "claim" is and performs no hashing of its own (see its
+      // header). Adversarially widened beyond just the claim id (folding in
+      // the patient name and SSN canaries too) to prove that EVEN a much
+      // more claim-identifying input than the real code ever builds still
+      // cannot leak through a one-way digest.
+      const claimIdentity = `${fixturePath}|${claim.claimId}|${claim.patient.name}|${claim.billingProvider.taxId}`;
+      const hashedClaimId = createHash('sha256').update(claimIdentity, 'utf8').digest('hex');
+      const appVersion = '0.0.1-test';
+      const base = { timestamp: new Date().toISOString(), user: 'test-user', sourcePath: fixturePath, hashedClaimId, appVersion };
+
+      await appendEntry(userDataDir, { ...base, action: 'opened claim', destinationPath: null });
+      await appendEntry(userDataDir, { ...base, action: 'exported PDF', destinationPath: join(userDataDir, '..', 'export.pdf') });
+      await appendEntry(userDataDir, { ...base, action: 'exported CSV', destinationPath: join(userDataDir, '..', 'export.csv') });
+      await appendEntry(userDataDir, { ...base, action: 'exported X12', destinationPath: join(userDataDir, '..', 'export.837') });
+
+      // --- Assertions ---------------------------------------------------
+      const entries = readdirSync(userDataDir);
+      expect(entries).toContain(AUDIT_LOG_FILE_NAME);
+      for (const entry of entries) {
+        expect(Object.keys(ALLOWED_USERDATA_FILES)).toContain(entry);
+      }
+
+      const content = readFileSync(join(userDataDir, AUDIT_LOG_FILE_NAME), 'utf8');
+
+      // The canary check every other userData writer in this file gets —
+      // plus, specifically, the claim's own plain claim id and the exact
+      // raw string that was hashed must never appear in the clear. Only the
+      // resulting digest may.
+      expect(noCanary(content)).toBe(true);
+      expect(content.includes(claim.claimId)).toBe(false);
+      expect(content.includes(claimIdentity)).toBe(false);
+      expect(content.includes(hashedClaimId)).toBe(true);
+      expect(ALLOWED_USERDATA_FILES[AUDIT_LOG_FILE_NAME]!(content)).toBe(true);
+
+      // Proves the feature actually ran (not merely that nothing leaked):
+      // four real entries, in order, each carrying the SAME hash (same
+      // claim, four actions) and each hash shaped like a real sha256 hex
+      // digest.
+      const stored = await readEntries(userDataDir);
+      expect(stored).toHaveLength(4);
+      expect(stored.map((e) => e.action)).toEqual(['opened claim', 'exported PDF', 'exported CSV', 'exported X12']);
+      for (const e of stored) {
+        expect(e.hashedClaimId).toBe(hashedClaimId);
+        expect(e.hashedClaimId).toMatch(/^[0-9a-f]{64}$/);
+      }
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rotates the active file into audit-log.old.jsonl once it reaches the cap — both files stay allowlisted and canary-free, and every entry survives the rotation', async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'claim-viewer-userdata-test-'));
+    try {
+      const entry: AuditLogEntry = {
+        timestamp: new Date().toISOString(),
+        user: 'test-user',
+        action: 'opened claim',
+        sourcePath: 'C:\\claims\\rotation-fixture.json',
+        hashedClaimId: 'a'.repeat(64),
+        destinationPath: null,
+        appVersion: '0.0.1-test',
+      };
+      for (let i = 0; i < ROTATE_AFTER_ENTRIES + 1; i++) {
+        await appendEntry(userDataDir, entry);
+      }
+
+      const dirEntries = readdirSync(userDataDir);
+      expect(dirEntries).toContain(AUDIT_LOG_FILE_NAME);
+      expect(dirEntries).toContain(AUDIT_LOG_OLD_FILE_NAME);
+      for (const name of dirEntries) {
+        expect(Object.keys(ALLOWED_USERDATA_FILES)).toContain(name);
+        const content = readFileSync(join(userDataDir, name), 'utf8');
+        expect(noCanary(content)).toBe(true);
+        expect(ALLOWED_USERDATA_FILES[name]!(content)).toBe(true);
+      }
+
+      const all = await readEntries(userDataDir);
+      expect(all).toHaveLength(ROTATE_AFTER_ENTRIES + 1); // nothing lost across the rotation
     } finally {
       rmSync(userDataDir, { recursive: true, force: true });
     }

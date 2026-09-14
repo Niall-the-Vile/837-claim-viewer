@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy, PDFDocumentLoadingTask } from 'pdfjs-dist';
 import type { ClaimSummaryDto, ClaimDetailDto, CorrectedClaimStatusDto } from '../../electron/preload.js';
+import type { LineAnnotation } from '../model/annotations.js';
 
 /**
  * The `Screen`/`ZoomMode`/`TabState` type definitions live here (moved out
@@ -71,6 +72,22 @@ export interface TabState {
    * the setting itself.
    */
   pendingRender: boolean;
+
+  /**
+   * Build 6 — Notes & audit: session-scoped per-service-line notes,
+   * dispute/verify/OK flags and check-off marks, keyed by
+   * `src/model/annotations.ts`'s `annotationKey(claimIndex, lineIndex)`.
+   * Lives ONLY here — the exact same lifecycle as `pdfDoc`/`zoom`/`pageNum`
+   * above: created empty when the tab is (tabs.ts's `createTab`), and
+   * dropped for free the instant the `TabState` object itself is
+   * garbage-collected on tab close (tabs.ts's `closeTab` never has to
+   * explicitly clear this — there is no separate store to clear). Restoring
+   * a tab on relaunch (session restore) always calls `createTab` fresh, so
+   * this is empty again after every app restart too — see
+   * src/model/annotations.ts's header for the full non-negotiable
+   * "never persisted, never crosses the contextBridge" constraint.
+   */
+  annotations: Map<string, LineAnnotation>;
 }
 
 /**

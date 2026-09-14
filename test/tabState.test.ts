@@ -74,6 +74,7 @@ function makeFakeTab(overrides: Partial<TabState> = {}): TabState {
     correctedClaimStatus: 'none',
     isSample: false,
     pendingRender: false,
+    annotations: new Map(),
     ...overrides,
   };
 }

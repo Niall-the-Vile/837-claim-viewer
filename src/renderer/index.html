@@ -491,6 +491,9 @@
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
               <span id="exportPhiNoticeText"><b>This file is unencrypted PHI.</b> Store it on a BitLocker volume only, and delete it when the negotiation is closed.</span>
             </div>
+            <!-- Build 6, 6.3: session notes/flags never travel with any
+                 export — this just tells the user so up front. -->
+            <div class="annoExportNotice" id="exportAnnotationsNotice" hidden></div>
             </div>
             <!-- /#exportConfirmView -->
 
@@ -575,12 +578,68 @@
                 submits it anywhere). A file or folder name can
                 be PHI-adjacent &mdash; use
                 <span class="mono">File &rarr; Forget open tabs &amp; recent files</span> to clear
-                that trail at any time. Runs fully offline; nothing ever leaves this machine.
+                that trail at any time. Session notes/flags you add on service lines (the
+                <span class="mono">Notes &amp; flags</span> inspector group) are <b>never</b> saved
+                anywhere &mdash; they live only in this window's memory and are gone the moment you
+                close the tab or the app, and they never appear in any export. A separate, local,
+                metadata-only <b>audit log</b> records when a claim was opened or exported (who, when,
+                which file, where to) for HIPAA accounting-of-disclosures purposes &mdash; it never
+                records claim content (no names, codes, or amounts) and only ever grows on this
+                machine.
+                Runs fully offline; nothing ever leaves this machine.
               </span>
             </div>
           </div>
           <div class="dialogFooter">
+            <button id="aboutViewAuditLogBtn" class="btn btnGhost" type="button">View audit log&hellip;</button>
+            <div class="toolSpacer"></div>
             <button class="btn btnGhost" type="button" data-close="about">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit log viewer (Build 6, 6.5 —
+           docs/UI_REQUIREMENTS_v3_queued_features.md §8): reachable only
+           from About. Read-only, newest-first table; no delete-from-UI. -->
+      <div id="auditLogOverlay" class="overlay" hidden>
+        <div class="dialog dialogWide" role="dialog" aria-modal="true" aria-labelledby="auditLogDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="auditLogDialogTitle">Audit log</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="auditLog" aria-label="Close" title="Close (Esc)">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div class="dialogBody">
+            <p class="auditLogPolicy">
+              Local, append-only, metadata-only record of when a claim was opened or exported &mdash;
+              never claim content. The active log is capped and automatically rotated once it holds
+              too many entries (see <span class="mono">src/app/persistence/auditLogStore.ts</span>);
+              nothing here can be deleted from this window.
+            </p>
+            <div class="auditLogTableWrap">
+              <table class="auditLogTable">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Source file</th>
+                    <th>Destination</th>
+                    <th>Claim (hash)</th>
+                    <th>App version</th>
+                  </tr>
+                </thead>
+                <tbody id="auditLogTableBody"></tbody>
+              </table>
+              <div id="auditLogEmpty" class="inspEmpty" hidden>No audit-log entries yet.</div>
+            </div>
+          </div>
+          <div class="dialogFooter">
+            <button id="auditLogOpenFolderBtn" class="btn btnGhost" type="button">Open log folder</button>
+            <button id="auditLogCopyBtn" class="btn btnGhost" type="button">Copy visible rows</button>
+            <div class="toolSpacer"></div>
+            <button class="btn btnGhost" type="button" data-close="auditLog">Close</button>
           </div>
         </div>
       </div>

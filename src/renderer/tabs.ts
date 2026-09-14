@@ -189,6 +189,7 @@ export function createTab(input: NewTabInput = {}, opts: { activate?: boolean } 
     correctedClaimStatus: input.correctedClaimStatus ?? 'none',
     isSample: input.isSample ?? false,
     pendingRender: false,
+    annotations: new Map(),
   };
   state.tabs.push(tab);
   if (opts.activate) state.activeTabId = tab.tabId;

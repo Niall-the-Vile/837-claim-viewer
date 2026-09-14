@@ -185,6 +185,12 @@ test.describe('837 Claim Viewer — E2E', () => {
       // onBatchProgress (batch PDF export + combined-PDF option) and
       // exportCsv/exportJson (structured export) added by the Build 4
       // export suite, docs/BUILD_QUEUE.md Build 4.)
+      // getAuditLog/openAuditLogFolder added by Build 6's local, metadata-only
+      // audit log (docs/BUILD_LOG.md Build 6 section) — see
+      // src/app/persistence/auditLogStore.ts. Session-scoped notes/flags
+      // (also Build 6) add NOTHING here: they are deliberately renderer-only,
+      // in-memory state that never crosses this bridge at all (see
+      // src/model/annotations.ts's header).
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
       expect(apiKeys).toEqual([
         'cancelBatchExport',
@@ -198,12 +204,14 @@ test.describe('837 Claim Viewer — E2E', () => {
         'exportX12',
         'forgetSession',
         'getAppInfo',
+        'getAuditLog',
         'getDetail',
         'getPathForFile',
         'getPdf',
         'getSampleClaims',
         'getSessionRestoreState',
         'onBatchProgress',
+        'openAuditLogFolder',
         'openClaim',
         'openExport',
         'openSampleClaim',

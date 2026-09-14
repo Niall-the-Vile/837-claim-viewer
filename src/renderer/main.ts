@@ -1,4 +1,4 @@
-import type { OpenClaimResultDto, ClaimSummaryDto, ClaimDetailDto, StoredFileRefDto } from '../../electron/preload.js';
+import type { OpenClaimResultDto, ClaimSummaryDto, ClaimDetailDto, StoredFileRefDto, AuditLogEntryDto } from '../../electron/preload.js';
 import {
   titlebarFileNameEl,
   tabStripEl,
@@ -49,6 +49,11 @@ import {
   warnCopyBtn,
   aboutVersionEl,
   aboutBuildDateEl,
+  aboutViewAuditLogBtn,
+  auditLogTableBodyEl,
+  auditLogEmptyEl,
+  auditLogOpenFolderBtn,
+  auditLogCopyBtn,
   forgetConfirmBtn,
   recentFilesListEl,
   recentFilesEmptyEl,
@@ -92,6 +97,7 @@ import { errorMessage, showToast, anyOverlayOpen, focusableEls, openExportDialog
 import { renderShortcuts, openShortcuts, initShortcuts } from './shortcuts.js';
 import { copyToClipboard } from './clipboard.js';
 import { formatServiceLinesTsv, formatClaimSummary, formatWarningsAndReconciliation } from './clipboardFormat.js';
+import { annotationsForClaimByLineIndex } from './annotations.js';
 import { severityWord } from './format.js';
 import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 import { initUiScale, cycleUiScale } from './features/uiScale.js';
@@ -1040,6 +1046,52 @@ function openForgetDialog(): void {
   openOverlay('forget');
 }
 
+// ---------------------------------------------------------------------------
+// Build 6, 6.5 — audit log viewer. Reachable only from About (per
+// docs/UI_REQUIREMENTS_v3_queued_features.md §8), read-only, newest-first.
+// ---------------------------------------------------------------------------
+
+/** Truncates a hashed claim id for display (§8: "the hashed claim id displays truncated") — the full hash is still a hash, never the raw identifier; this is purely a readability trim for a 64-hex-char SHA-256 string in a table cell. */
+function truncateHash(hash: string): string {
+  return hash.length <= 12 ? hash : `${hash.slice(0, 10)}…`;
+}
+
+function renderAuditLogTable(entries: AuditLogEntryDto[]): void {
+  auditLogTableBodyEl.innerHTML = '';
+  auditLogEmptyEl.hidden = entries.length > 0;
+  // Newest first (§8) — readEntries resolves oldest-first (append order).
+  for (const entry of [...entries].reverse()) {
+    const row = document.createElement('tr');
+    const cells = [entry.timestamp, entry.user, entry.action, entry.sourcePath, entry.destinationPath ?? '—', truncateHash(entry.hashedClaimId), entry.appVersion];
+    for (const text of cells) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      td.title = text;
+      row.append(td);
+    }
+    auditLogTableBodyEl.append(row);
+  }
+}
+
+let cachedAuditLog: AuditLogEntryDto[] = [];
+
+async function openAuditLogDialog(): Promise<void> {
+  openOverlay('auditLog');
+  try {
+    cachedAuditLog = await window.claimApi.getAuditLog();
+  } catch {
+    cachedAuditLog = [];
+  }
+  renderAuditLogTable(cachedAuditLog);
+}
+
+/** "Copy visible rows" (§8) — the same newest-first, tab-delimited shape the table shows, so a paste into a spreadsheet matches the screen exactly. */
+function copyAuditLogRows(): void {
+  const header = ['Timestamp', 'User', 'Action', 'Source file', 'Destination', 'Claim (hash)', 'App version'].join('\t');
+  const rows = [...cachedAuditLog].reverse().map((e) => [e.timestamp, e.user, e.action, e.sourcePath, e.destinationPath ?? '—', e.hashedClaimId, e.appVersion].join('\t'));
+  copyToClipboard([header, ...rows].join('\n'), 'Audit log rows copied to the clipboard.');
+}
+
 /** Forget dialog's "Forget" button: clears the on-disk session + recent list (does NOT touch tabs open in this window right now — see the dialog's own copy in index.html). */
 async function confirmForgetSession(): Promise<void> {
   forgetConfirmBtn.disabled = true;
@@ -1270,6 +1322,12 @@ exportBtn.addEventListener('click', openExportDialog);
 exportConfirmBtn.addEventListener('click', () => void confirmExport());
 forgetConfirmBtn.addEventListener('click', () => void confirmForgetSession());
 
+aboutViewAuditLogBtn.addEventListener('click', () => void openAuditLogDialog());
+auditLogOpenFolderBtn.addEventListener('click', () => {
+  window.claimApi.openAuditLogFolder().catch((err: unknown) => showToast(errorMessage(err), true));
+});
+auditLogCopyBtn.addEventListener('click', () => copyAuditLogRows());
+
 errorCopyBtn.addEventListener('click', () => {
   copyToClipboard(errorDetailEl.textContent ?? '', 'Error details copied to the clipboard.');
 });
@@ -1285,7 +1343,11 @@ errorCopyBtn.addEventListener('click', () => {
 function copyServiceLinesTsv(): void {
   const tab = activeTab();
   if (!tab?.detail) return;
-  copyToClipboard(formatServiceLinesTsv(tab.detail), 'Service lines copied to the clipboard.');
+  // Build 6, 6.2: Note/Flag columns are appended automatically whenever
+  // this claim actually has an annotation — see formatServiceLinesTsv's own
+  // header for why an unannotated claim's TSV is byte-for-byte unchanged.
+  const annotationsByLine = annotationsForClaimByLineIndex(tab, tab.currentIndex);
+  copyToClipboard(formatServiceLinesTsv(tab.detail, annotationsByLine), 'Service lines copied to the clipboard.');
 }
 
 copySummaryBtn.addEventListener('click', () => {

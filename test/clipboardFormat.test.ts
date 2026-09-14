@@ -6,7 +6,9 @@ import {
   formatWarningsAndReconciliation,
   formatDosSpan,
   reconciliationVerdict,
+  formatAnnotationsWorksheet,
 } from '../src/renderer/clipboardFormat.js';
+import type { LineAnnotation } from '../src/model/annotations.js';
 
 /**
  * Fixture-in / exact-string-out tests for the clipboard/copy suite's pure
@@ -150,6 +152,60 @@ describe('formatServiceLinesTsv', () => {
     detail.serviceLines[0]!.units = '';
     const tsv = formatServiceLinesTsv(detail);
     expect(tsv.split('\n')[1]).toBe('1\t2026-05-07\t11\t99213\t\t1\t100.00\tA\t1234567893');
+  });
+
+  // Build 6, 6.2 — optional annotation columns.
+  it('is BYTE-FOR-BYTE identical to the no-annotations output when the second argument is omitted', () => {
+    expect(formatServiceLinesTsv(baseDetail())).toBe(formatServiceLinesTsv(baseDetail(), undefined));
+  });
+
+  it('adds no Note/Flag columns when every passed-in annotation is empty', () => {
+    const allEmpty = new Map<number, LineAnnotation>([
+      [0, { note: '', flag: null, checked: false }],
+      [1, { note: '   ', flag: null, checked: true }], // checked-only, no note/flag — still not a Note/Flag trigger
+    ]);
+    expect(formatServiceLinesTsv(baseDetail(), allEmpty)).toBe(formatServiceLinesTsv(baseDetail()));
+  });
+
+  it('appends Note/Flag columns to every row once at least one line has a note or flag', () => {
+    const annotations = new Map<number, LineAnnotation>([[1, { note: 'confirm modifier', flag: 'dispute', checked: false }]]);
+    const tsv = formatServiceLinesTsv(baseDetail(), annotations);
+    const lines = tsv.split('\n');
+    expect(lines[0]).toBe('Line\tDOS\tPOS/Rev\tCPT/HCPCS\tModifiers\tUnits\tCharge\tDx Pointers\tRendering NPI\tNote\tFlag');
+    expect(lines[1]).toBe('1\t2026-05-07\t11\t99213\t\t1\t100.00\tA\t1234567893\t\t'); // line 0 has no annotation — blank trailing columns
+    expect(lines[2]).toBe('2\t2026-05-07\t11\t73721\t26\t1\t40.00\tAB\t1234567893\tconfirm modifier\tDispute');
+  });
+
+  it('collapses tabs/newlines inside a note so the TSV grid never breaks', () => {
+    const annotations = new Map<number, LineAnnotation>([[0, { note: 'line one\tline two\nline three', flag: null, checked: false }]]);
+    const tsv = formatServiceLinesTsv(baseDetail(), annotations);
+    expect(tsv.split('\n')[1]!.split('\t').length).toBe(11); // 9 base columns + Note + Flag, no extras from the embedded tab/newline
+  });
+});
+
+describe('formatAnnotationsWorksheet', () => {
+  it('says so plainly when there is nothing to copy yet', () => {
+    expect(formatAnnotationsWorksheet([])).toBe(['Session notes & flags (not saved — cleared when this tab closes)', '', 'No lines have notes or flags yet.'].join('\n'));
+  });
+
+  it('always titles the worksheet as session-only, never saved', () => {
+    const out = formatAnnotationsWorksheet([{ line: 1, flag: 'ok', note: '', checked: true }]);
+    expect(out.split('\n')[0]).toBe('Session notes & flags (not saved — cleared when this tab closes)');
+  });
+
+  it('produces one tab-delimited row per annotated line, Checked as Yes/No text (never a raw boolean)', () => {
+    const out = formatAnnotationsWorksheet([
+      { line: 3, flag: 'dispute', note: 'upcoded — ask for chart notes', checked: false },
+      { line: 5, flag: null, note: '', checked: true },
+    ]);
+    const lines = out.split('\n');
+    expect(lines).toEqual([
+      'Session notes & flags (not saved — cleared when this tab closes)',
+      '',
+      'Line\tFlag\tChecked\tNote',
+      '3\tDispute\tNo\tupcoded — ask for chart notes',
+      '5\tNo flag\tYes\t',
+    ]);
   });
 });
 

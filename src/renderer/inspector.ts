@@ -3,9 +3,24 @@ import type { FormType, ClaimWarningAnchor } from '../model/claim.js';
 import { inspectorEl, inspectorToggleBtn, inspectorToggleLabelEl, expandAllBtn, inspectorBodyEl, warnReviewBtn, statusWarnBtnEl, clearOverridesBtn } from './dom.js';
 import { state, currentScreen, activeTab, type TabState } from './tabs.js';
 import { copyToClipboard } from './clipboard.js';
-import { formatServiceLinesTsv, reconciliationVerdict } from './clipboardFormat.js';
+import { formatServiceLinesTsv, formatAnnotationsWorksheet, reconciliationVerdict, type AnnotationWorksheetRow } from './clipboardFormat.js';
+import { annotationsForClaimByLineIndex } from './annotations.js';
 import { explainWarning } from './warningExplanations.js';
 import { ICON_COPY, ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE, ICON_EDIT, ICON_REVERT } from './icons.js';
+import {
+  annotationKey,
+  emptyAnnotation,
+  isEmptyAnnotation,
+  nextFlag,
+  flagGlyph,
+  flagWord,
+  summarizeAnnotations,
+  summaryLine as annotationSummaryLine,
+  annotationMatchesFilter,
+  type AnnotationFilterMode,
+  type AnnotationFlag,
+  type LineAnnotation,
+} from '../model/annotations.js';
 
 /**
  * Inspector drawer rendering. Pure-moved out of main.ts — see
@@ -550,7 +565,7 @@ function buildInstitutionalRows(inst: InstitutionalDetailDto): InspRow[] {
 }
 
 /** The "Copy service lines as TSV" button placed in the service-lines group's <summary> (§2f item 1) — also used by the Ctrl+Shift+C shortcut (shortcuts.ts/main.ts call formatServiceLinesTsv directly, so this button and the shortcut share the exact same formatter). */
-function buildLinesCopyBtn(detail: ClaimDetailDto): HTMLButtonElement {
+function buildLinesCopyBtn(tab: TabState, detail: ClaimDetailDto): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'inspGroupCopyBtn';
@@ -563,9 +578,264 @@ function buildLinesCopyBtn(detail: ClaimDetailDto): HTMLButtonElement {
     // button copies without also collapsing/expanding the group.
     event.preventDefault();
     event.stopPropagation();
-    copyToClipboard(formatServiceLinesTsv(detail), 'Service lines copied to the clipboard.');
+    // Build 6, 6.2: Note/Flag columns are appended automatically whenever
+    // this claim actually has an annotation — see formatServiceLinesTsv.
+    const annotationsByLine = annotationsForClaimByLineIndex(tab, tab.currentIndex);
+    copyToClipboard(formatServiceLinesTsv(detail, annotationsByLine), 'Service lines copied to the clipboard.');
   });
   return btn;
+}
+
+// ---------------------------------------------------------------------------
+// Build 6 — Notes & audit, 6.1: session-scoped per-service-line notes,
+// dispute/verify/OK flags and check-off marks. A DEDICATED inspector group
+// (rather than icons woven into the existing "Service lines" group's
+// composite per-field InspRow grid — see this file's header on why that
+// grid mixes several raw fields into one string per row and is driven by
+// click-to-copy/keyboard-roving-tabindex machinery this feature must not
+// disturb) — one row per service line, entirely custom markup (no
+// `.inspRow` class, so none of that machinery ever touches it). See
+// src/model/annotations.ts's header for the hard "session-only, never
+// persisted, never crosses the contextBridge" constraint this group's
+// state (`tab.annotations`) is built on.
+// ---------------------------------------------------------------------------
+
+/** Reads (without creating) the current annotation for one line, or a fresh empty one if none exists yet — never mutates `tab.annotations`. */
+function readAnnotation(tab: TabState, claimIndex: number, lineIndex: number): LineAnnotation {
+  return tab.annotations.get(annotationKey(claimIndex, lineIndex)) ?? emptyAnnotation();
+}
+
+/** Writes `a` back into `tab.annotations`, DELETING the Map entry entirely once every field is back to empty — keeps the Map from accumulating dead entries for lines a user touched and then un-touched (flagged, then flagged back to none; typed a note, then cleared it). */
+function commitAnnotation(tab: TabState, claimIndex: number, lineIndex: number, a: LineAnnotation): void {
+  const key = annotationKey(claimIndex, lineIndex);
+  if (isEmptyAnnotation(a)) tab.annotations.delete(key);
+  else tab.annotations.set(key, a);
+}
+
+/** Every currently-non-empty annotation for one claim, in line order — feeds both the "Copy annotations worksheet" action and (indirectly, via annotationsForClaimByLineIndex) the service-lines TSV's optional Note/Flag columns. */
+function annotationWorksheetRows(tab: TabState, claimIndex: number, lineCount: number): AnnotationWorksheetRow[] {
+  const rows: AnnotationWorksheetRow[] = [];
+  for (let i = 0; i < lineCount; i++) {
+    const a = tab.annotations.get(annotationKey(claimIndex, i));
+    if (a && !isEmptyAnnotation(a)) rows.push({ line: i + 1, flag: a.flag, note: a.note, checked: a.checked });
+  }
+  return rows;
+}
+
+/**
+ * One service line's triage control (glyph + word, never colour alone —
+ * cycles None -> OK -> Verify -> Dispute -> None on click), check-off box,
+ * and inline expanding note textarea (autosaves on blur, quiet "Saved"
+ * affordance — never a modal, never a toast per keystroke, per
+ * docs/UI_REQUIREMENTS_v3_queued_features.md §7).
+ */
+function buildAnnotationRow(tab: TabState, claimIndex: number, lineIndex: number, onChange: () => void): HTMLDivElement {
+  const rowEl = document.createElement('div');
+  rowEl.className = 'annoRow';
+  rowEl.dataset['annoLine'] = String(lineIndex);
+
+  const lineLabel = document.createElement('span');
+  lineLabel.className = 'annoLineLabel';
+  lineLabel.textContent = `Line ${lineIndex + 1}`;
+  rowEl.append(lineLabel);
+
+  const initial = readAnnotation(tab, claimIndex, lineIndex);
+
+  const flagBtn = document.createElement('button');
+  flagBtn.type = 'button';
+  flagBtn.className = 'annoFlagBtn';
+  function paintFlag(flag: AnnotationFlag): void {
+    flagBtn.textContent = `${flagGlyph(flag)} ${flagWord(flag)}`;
+    flagBtn.setAttribute('aria-label', `Line ${lineIndex + 1} triage mark: ${flagWord(flag)}. Activate to change.`);
+    flagBtn.dataset['flag'] = flag ?? 'none';
+  }
+  paintFlag(initial.flag);
+  flagBtn.addEventListener('click', () => {
+    const a = readAnnotation(tab, claimIndex, lineIndex);
+    a.flag = nextFlag(a.flag);
+    commitAnnotation(tab, claimIndex, lineIndex, a);
+    paintFlag(a.flag);
+    onChange();
+  });
+  rowEl.append(flagBtn);
+
+  const checkLabel = document.createElement('label');
+  checkLabel.className = 'annoCheckLabel';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'annoCheckbox';
+  checkbox.checked = initial.checked;
+  checkbox.setAttribute('aria-label', `Line ${lineIndex + 1} checked off`);
+  checkbox.addEventListener('change', () => {
+    const a = readAnnotation(tab, claimIndex, lineIndex);
+    a.checked = checkbox.checked;
+    commitAnnotation(tab, claimIndex, lineIndex, a);
+    onChange();
+  });
+  const checkText = document.createElement('span');
+  checkText.textContent = 'Checked';
+  checkLabel.append(checkbox, checkText);
+  rowEl.append(checkLabel);
+
+  const noteToggle = document.createElement('button');
+  noteToggle.type = 'button';
+  noteToggle.className = 'annoNoteToggle';
+  noteToggle.setAttribute('aria-expanded', 'false');
+  // 6.4 — explicit "session-only, not saved" affordance, right on the
+  // control that opens the note editor.
+  noteToggle.title = 'Not saved — cleared when this tab closes';
+  function paintNoteToggle(hasNote: boolean): void {
+    noteToggle.textContent = hasNote ? 'Note •' : 'Note';
+    noteToggle.setAttribute('aria-label', hasNote ? `Line ${lineIndex + 1} has a note. Activate to view or edit it.` : `Add a note to line ${lineIndex + 1}`);
+  }
+  paintNoteToggle(initial.note !== '');
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'annoNoteText';
+  textarea.hidden = true;
+  textarea.rows = 2;
+  textarea.value = initial.note;
+  textarea.title = 'Not saved — cleared when this tab closes. Saves automatically when you click away.';
+  textarea.placeholder = 'Add a note for this line… (not saved to disk)';
+
+  const savedHint = document.createElement('span');
+  savedHint.className = 'annoSavedHint';
+  savedHint.textContent = 'Saved';
+  savedHint.hidden = true;
+  let savedHintTimer: number | undefined;
+
+  noteToggle.addEventListener('click', () => {
+    const willOpen = textarea.hidden;
+    textarea.hidden = !willOpen;
+    noteToggle.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) textarea.focus();
+  });
+
+  textarea.addEventListener('blur', () => {
+    const a = readAnnotation(tab, claimIndex, lineIndex);
+    if (a.note === textarea.value) return; // no-op blur (opened, typed nothing, clicked away) — no spurious "Saved" flash
+    a.note = textarea.value;
+    commitAnnotation(tab, claimIndex, lineIndex, a);
+    paintNoteToggle(a.note !== '');
+    onChange();
+    savedHint.hidden = false;
+    if (savedHintTimer !== undefined) window.clearTimeout(savedHintTimer);
+    savedHintTimer = window.setTimeout(() => {
+      savedHint.hidden = true;
+    }, 1500);
+  });
+
+  rowEl.append(noteToggle, textarea, savedHint);
+  return rowEl;
+}
+
+/** The "Notes & flags" group (6.1) — claim-level summary + filter control + one buildAnnotationRow per service line, plus its own "Copy annotations worksheet" action (6.2). Built by hand (not via buildGroup) since its rows are entirely custom, not InspRow-shaped. */
+function buildAnnotationsGroup(tab: TabState, detail: ClaimDetailDto): HTMLDetailsElement {
+  const claimIndex = tab.currentIndex;
+  const lineCount = detail.serviceLines.length;
+
+  const details = document.createElement('details');
+  details.className = 'inspGroup';
+  details.dataset['groupId'] = 'annotations';
+  details.open = false;
+
+  const summaryEl = document.createElement('summary');
+  const caret = document.createElement('span');
+  caret.className = 'inspGroupCaret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = '▸';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'inspGroupLabel';
+  labelEl.textContent = 'Notes & flags';
+  const tagEl = document.createElement('span');
+  tagEl.className = 'inspGroupTag';
+  summaryEl.append(caret, labelEl, tagEl);
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  // Deliberately its OWN class, not .inspGroupCopyBtn — e2e/copy.spec.ts's
+  // "copy service lines as TSV" test locates that class expecting exactly
+  // one match (the service-lines group's own copy button); a second
+  // same-classed button here made that locator ambiguous. Same visual
+  // treatment via a shared selector in style.css.
+  copyBtn.className = 'annoGroupCopyBtn';
+  copyBtn.title = 'Copy annotations worksheet';
+  copyBtn.setAttribute('aria-label', 'Copy annotations worksheet');
+  copyBtn.innerHTML = ICON_COPY;
+  copyBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rows = annotationWorksheetRows(tab, claimIndex, lineCount);
+    copyToClipboard(formatAnnotationsWorksheet(rows), rows.length > 0 ? 'Annotations worksheet copied to the clipboard.' : 'No notes or flags to copy yet.');
+  });
+  summaryEl.append(copyBtn);
+  details.append(summaryEl);
+  details.addEventListener('toggle', () => {
+    syncCaret(details);
+    updateExpandAllLabel();
+  });
+
+  const body = document.createElement('div');
+  body.className = 'inspGroupBody annoGroupBody';
+
+  const sessionNote = document.createElement('div');
+  sessionNote.className = 'annoSessionNote';
+  sessionNote.textContent = 'Session-only — never saved to disk. Cleared when this tab closes or the app restarts.';
+  body.append(sessionNote);
+
+  const controlsRow = document.createElement('div');
+  controlsRow.className = 'annoControlsRow';
+  const summarySpan = document.createElement('span');
+  summarySpan.className = 'annoSummaryLine';
+  const filterSelect = document.createElement('select');
+  filterSelect.className = 'annoFilterSelect';
+  filterSelect.setAttribute('aria-label', 'Filter service lines by annotation');
+  const filterOptions: Array<[AnnotationFilterMode, string]> = [
+    ['all', 'Show: all lines'],
+    ['flagged', 'Show: flagged only'],
+    ['disputed', 'Show: disputed only'],
+  ];
+  for (const [value, label] of filterOptions) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    filterSelect.append(opt);
+  }
+  controlsRow.append(summarySpan, filterSelect);
+  body.append(controlsRow);
+
+  function refreshSummary(): void {
+    const counts = summarizeAnnotations(tab.annotations, claimIndex, lineCount);
+    summarySpan.textContent = annotationSummaryLine(counts);
+    tagEl.textContent = String(counts.flaggedCount + counts.notedCount + counts.checkedCount);
+    tagEl.classList.toggle('isWarn', counts.disputedCount > 0);
+  }
+  refreshSummary();
+
+  function applyAnnotationFilter(): void {
+    const mode = filterSelect.value as AnnotationFilterMode;
+    for (const rowEl of Array.from(body.querySelectorAll<HTMLElement>('.annoRow'))) {
+      const lineIdx = Number(rowEl.dataset['annoLine']);
+      const a = tab.annotations.get(annotationKey(claimIndex, lineIdx));
+      rowEl.hidden = !annotationMatchesFilter(a, mode);
+    }
+  }
+  filterSelect.addEventListener('change', applyAnnotationFilter);
+
+  if (lineCount === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'inspEmpty';
+    empty.textContent = 'No service lines on this claim.';
+    body.append(empty);
+  } else {
+    for (let i = 0; i < lineCount; i++) {
+      body.append(buildAnnotationRow(tab, claimIndex, i, refreshSummary));
+    }
+  }
+  applyAnnotationFilter();
+
+  details.append(body);
+  return details;
 }
 
 export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
@@ -786,7 +1056,12 @@ export function renderInspector(tab: TabState, detail: ClaimDetailDto): void {
 
     return [summaryRow, ...subRows];
   });
-  inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false, buildLinesCopyBtn(detail)));
+  inspectorBodyEl.append(buildGroup('lines', 'Service lines', tags.lines, false, lineRows, false, buildLinesCopyBtn(tab, detail)));
+
+  // Build 6, 6.1 — session-scoped per-line notes/flags/check-offs. See this
+  // group's own header comment above (just below buildLinesCopyBtn) for why
+  // it's a dedicated group rather than icons on the composite rows above.
+  inspectorBodyEl.append(buildAnnotationsGroup(tab, detail));
 
   // Reconciliation (§2f item 5: the existing figures plus an explicit
   // signed delta — unchanged from before — and a plain-language verdict row

@@ -206,6 +206,25 @@ export interface StoredFileRefDto {
 export const UI_SCALE_VALUES = [100, 125, 150, 175] as const;
 export type UiScaleValue = (typeof UI_SCALE_VALUES)[number];
 
+/**
+ * Build 6, 6.5 — one audit-log entry, metadata only. Structurally identical
+ * to `src/app/persistence/auditLogStore.ts`'s `AuditLogEntry` — declared
+ * again here for the same reason as every other DTO in this file (no
+ * main-process import in the renderer's type surface). Every field here is
+ * plain metadata; there is no field a `Claim`/`ClaimDetailDto` could ever
+ * be assigned to, by construction.
+ */
+export interface AuditLogEntryDto {
+  timestamp: string;
+  user: string;
+  action: string;
+  sourcePath: string;
+  /** Hex SHA-256 of a claim-identifying value — never the raw identifier. */
+  hashedClaimId: string;
+  destinationPath: string | null;
+  appVersion: string;
+}
+
 export interface SessionRestoreStateDto {
   tabs: StoredFileRefDto[];
   activeIndex: number;
@@ -320,6 +339,12 @@ const claimApi = Object.freeze({
    * canceled.
    */
   exportX12: (sessionId: string, index: number, options: StructuredExportOptionsDto): Promise<string | null> => ipcRenderer.invoke('dialog:exportX12', sessionId, index, options),
+
+  // --- Build 6: audit log (docs/BUILD_LOG.md Build 6 section) --------------
+  /** Every recorded audit-log entry (both the active and, if present, archived generation), oldest first — feeds the About screen's read-only viewer (docs/UI_REQUIREMENTS_v3_queued_features.md §8). Metadata only; see AuditLogEntryDto. */
+  getAuditLog: (): Promise<AuditLogEntryDto[]> => ipcRenderer.invoke('audit:list'),
+  /** Reveals the userData folder the audit-log files live in (there is no per-claim "last exported" path to reuse here, unlike shell:openExport). */
+  openAuditLogFolder: (): Promise<void> => ipcRenderer.invoke('audit:openFolder'),
 });
 
 export type ClaimApi = typeof claimApi;

@@ -10,6 +10,7 @@ import {
   manifestWarningsEl,
   exportManifestEl,
   exportPhiNoticeEl,
+  exportAnnotationsNoticeEl,
   exportDialogFooterEl,
   exportGhostBtn,
   exportConfirmBtn,
@@ -40,6 +41,7 @@ import {
   forgetOverlayEl,
   samplesOverlayEl,
   paletteOverlayEl,
+  auditLogOverlayEl,
   toastEl,
   toastMessageEl,
   toastActionsEl,
@@ -50,6 +52,7 @@ import {
 import { activeTab } from './tabs.js';
 import type { TabState } from './tabState.js';
 import { formatMoney, formTypeText } from './inspector.js';
+import { countActiveAnnotations } from './annotations.js';
 import type { BatchExportProgressDto, BatchExportOptionsDto, StructuredExportOptionsDto } from '../../electron/preload.js';
 
 /**
@@ -100,7 +103,15 @@ function prefersReducedMotion(): boolean {
  * invariant explicit rather than relying on one shared variable never being
  * clobbered by the wrong caller.
  */
-const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null, samples: null, palette: null };
+const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = {
+  export: null,
+  shortcuts: null,
+  about: null,
+  forget: null,
+  samples: null,
+  palette: null,
+  auditLog: null,
+};
 
 /**
  * The scrim + dialog fade/scale out on close (spec requirement 4) rather
@@ -120,8 +131,8 @@ const OVERLAY_EXIT_MS = 150; // keep in sync with .overlay.isClosing / .dialog's
  * one-line addition to OVERLAY_IDS/overlayElFor instead of touching every
  * function in this file.
  */
-export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget' | 'samples' | 'palette';
-const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget', 'samples', 'palette'];
+export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget' | 'samples' | 'palette' | 'auditLog';
+const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget', 'samples', 'palette', 'auditLog'];
 const overlayCloseTimers: Record<OverlayId, number | undefined> = {
   export: undefined,
   shortcuts: undefined,
@@ -129,6 +140,7 @@ const overlayCloseTimers: Record<OverlayId, number | undefined> = {
   forget: undefined,
   samples: undefined,
   palette: undefined,
+  auditLog: undefined,
 };
 
 function overlayElFor(id: OverlayId): HTMLDivElement {
@@ -145,6 +157,8 @@ function overlayElFor(id: OverlayId): HTMLDivElement {
       return samplesOverlayEl;
     case 'palette':
       return paletteOverlayEl;
+    case 'auditLog':
+      return auditLogOverlayEl;
   }
 }
 
@@ -341,6 +355,14 @@ function updateExportDialogForSelection(): void {
   const claimLabel = summary?.claimId || 'claim';
   const claimCount = tab?.summaries.length ?? 1;
   const formatWord = format === 'csv' ? 'CSV' : format === 'json' ? 'JSON' : format === 'x12' ? 'X12 837' : 'PDF';
+
+  // Build 6, 6.3: annotations (session-scoped notes/flags, src/model/annotations.ts)
+  // stay OUT of every export format by construction — no export IPC call
+  // anywhere takes annotation data. This is purely an on-screen heads-up so
+  // a reviewer never assumes their scratch notes travelled with the file.
+  const annotationCount = tab ? countActiveAnnotations(tab, scope) : 0;
+  exportAnnotationsNoticeEl.hidden = annotationCount === 0;
+  exportAnnotationsNoticeEl.textContent = annotationCount === 0 ? '' : `${annotationCount} session note${annotationCount === 1 ? '' : 's'} — not included in export.`;
 
   if (format === 'pdf') {
     exportDialogTitleEl.textContent = scope === 'all' ? 'Batch export claims as PDF' : 'Export claim as PDF';
@@ -562,7 +584,15 @@ for (const id of OVERLAY_IDS) {
   });
 }
 function isOverlayId(value: string | undefined): value is OverlayId {
-  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget' || value === 'samples' || value === 'palette';
+  return (
+    value === 'export' ||
+    value === 'shortcuts' ||
+    value === 'about' ||
+    value === 'forget' ||
+    value === 'samples' ||
+    value === 'palette' ||
+    value === 'auditLog'
+  );
 }
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((btn) => {
   btn.addEventListener('click', () => {

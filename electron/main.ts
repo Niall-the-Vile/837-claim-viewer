@@ -6,6 +6,7 @@ import { readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { dirname, join, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
+import { userInfo } from 'node:os';
 import type { Claim, FormType, WarningSeverity, ClaimWarningAnchor } from '../src/model/claim.js';
 import { loadClaims, renderClaim, claimSummary } from '../src/app/claimService.js';
 import { ClaimParseError } from '../src/sources/claimSource.js';
@@ -14,6 +15,7 @@ import type { RenderProvenance } from '../src/render/provenance.js';
 import * as sessionStore from '../src/app/persistence/sessionStore.js';
 import type { StoredFileRef } from '../src/app/persistence/sessionStore.js';
 import * as correctedClaimStore from '../src/app/persistence/correctedClaimStore.js';
+import * as auditLogStore from '../src/app/persistence/auditLogStore.js';
 import { applyFieldOverrides, findEditableField, editableFieldsForClaim, cloneClaim } from '../src/model/editableFields.js';
 import { defaultExportFileName, batchExportFileName, uniqueFileName, sanitizeFileNamePart } from '../src/app/export/exportNaming.js';
 import { buildCsvExport, buildJsonExport } from '../src/app/export/structuredExport.js';
@@ -144,6 +146,48 @@ async function recordRecentFile(filePath: string, fileName: string): Promise<voi
     await sessionStore.addRecentFile(userDataDir(), { filePath, fileName });
   } catch (err) {
     console.warn(`[session] failed to record recent file: ${(err as Error).message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build 6, 6.5 — local, append-only, METADATA-ONLY audit log
+// (src/app/persistence/auditLogStore.ts). For HIPAA accounting-of-
+// disclosures purposes: WHO (OS username) did WHAT (a short fixed action
+// label) to WHICH FILE (already-disclosed path, same posture as
+// sessionStore.ts) and WHERE (an export destination, when applicable),
+// WHEN, on WHICH APP VERSION.
+// ---------------------------------------------------------------------------
+
+/**
+ * Records one audit-log entry. `claimIdentifyingValue` is hashed RIGHT HERE
+ * — auditLogStore.ts never receives (or could receive; its one interface
+ * has no field for it) a raw claim id/control number. Best-effort by
+ * design, same posture as recordRecentFile above: a failed write (disk
+ * full, permissions) is logged to the console and never propagated —
+ * recording history of an action must never block the action itself, and
+ * every call site below is a fire-and-forget `void logAudit(...)`, never
+ * awaited on the user-visible open/export path.
+ */
+/** A single string that identifies "which claim(s) a file/action concerns", for logAudit's hashing input — never itself stored, only ever passed through createHash there. Combines the resolved path with every claim id in the file so an accidental hash collision would require both to match. */
+function claimBatchIdentity(resolvedPath: string, claims: Claim[]): string {
+  return `${resolvedPath}|${claims.map((c) => c.claimId).join(',')}`;
+}
+
+async function logAudit(action: string, sourcePath: string, claimIdentifyingValue: string, destinationPath: string | null): Promise<void> {
+  try {
+    const buildInfo = readBuildInfo();
+    const entry: auditLogStore.AuditLogEntry = {
+      timestamp: new Date().toISOString(),
+      user: userInfo().username,
+      action,
+      sourcePath,
+      hashedClaimId: createHash('sha256').update(claimIdentifyingValue, 'utf8').digest('hex'),
+      destinationPath,
+      appVersion: buildInfo?.version ?? app.getVersion(),
+    };
+    await auditLogStore.appendEntry(userDataDir(), entry);
+  } catch (err) {
+    console.warn(`[audit-log] failed to record "${action}": ${(err as Error).message}`);
   }
 }
 
@@ -790,6 +834,7 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
       // §2e) — fire-and-forget-with-logging via recordRecentFile, never
       // awaited on the hot path of an already-open file.
       void recordRecentFile(resolvedPath, existing.fileName);
+      void logAudit('opened claim', resolvedPath, claimBatchIdentity(resolvedPath, existing.claims), null);
       return {
         sessionId,
         filePath: resolvedPath,
@@ -848,6 +893,7 @@ async function openClaimAtPath(filePath: string): Promise<OpenClaimResult> {
 
     sessions.set(sessionId, { filePath: resolvedPath, fileName, source: loaded.source, claims: loaded.claims, sourceSha256, correctedClaimStatus });
     await recordRecentFile(resolvedPath, fileName);
+    void logAudit('opened claim', resolvedPath, claimBatchIdentity(resolvedPath, loaded.claims), null);
     return {
       sessionId,
       filePath: resolvedPath,
@@ -1189,6 +1235,7 @@ function registerIpcHandlers(): void {
     const bytes = await renderClaim(effective, provenance);
     await writeFileAtomic(filePath, Buffer.from(bytes));
     lastExportedPath = filePath;
+    void logAudit('exported PDF', session.filePath, claimBatchIdentity(session.filePath, [original]), filePath);
     return filePath;
   });
 
@@ -1319,6 +1366,15 @@ function registerIpcHandlers(): void {
     if (combinedPdfFileName) lastExportedPath = join(destFolder, combinedPdfFileName);
     else if (lastSuccess?.fileName) lastExportedPath = join(destFolder, lastSuccess.fileName);
 
+    // One audit-log entry per BATCH run (not per claim) — a 400-claim batch
+    // must not write 400 near-identical entries into a log capped at 500
+    // (auditLogStore.ts's ROTATE_AFTER_ENTRIES). `claimBatchIdentity` already
+    // folds every claim id into the hash, so this still identifies exactly
+    // which claims were involved without needing one row each.
+    if (results.some((r) => r.status === 'success')) {
+      void logAudit('exported batch PDF', session.filePath, claimBatchIdentity(session.filePath, session.claims), lastExportedPath);
+    }
+
     return {
       canceled,
       destinationFolder: destFolder,
@@ -1386,6 +1442,8 @@ function registerIpcHandlers(): void {
       format === 'csv' ? buildCsvExport(effectiveClaims, { includeIdentifiers }) : buildJsonExport(effectiveClaims, { includeIdentifiers }, new Date());
     await writeFileAtomic(filePath, Buffer.from(content, 'utf8'));
     lastExportedPath = filePath;
+    const auditedClaims = scope === 'all' ? session.claims : [singleClaim];
+    void logAudit(format === 'csv' ? 'exported CSV' : 'exported JSON', session.filePath, claimBatchIdentity(session.filePath, auditedClaims), filePath);
     return filePath;
   }
 
@@ -1446,6 +1504,8 @@ function registerIpcHandlers(): void {
     const content = serializeClaimsToX12(effectiveClaims, new Date(), nextX12ExportSeq());
     await writeFileAtomic(filePath, Buffer.from(content, 'utf8'));
     lastExportedPath = filePath;
+    const auditedClaims = scope === 'all' ? session.claims : [singleClaim];
+    void logAudit('exported X12', session.filePath, claimBatchIdentity(session.filePath, auditedClaims), filePath);
     return filePath;
   });
 
@@ -1494,6 +1554,21 @@ function registerIpcHandlers(): void {
       version: buildInfo?.version ?? app.getVersion(),
       buildDate: buildInfo?.buildDate ?? 'unknown (unbuilt dev checkout)',
     };
+  });
+
+  // Build 6, 6.5 — audit log viewer (About screen only, per
+  // docs/UI_REQUIREMENTS_v3_queued_features.md §8). Read-only: there is no
+  // delete/clear handler — "an audit log the app can silently erase is not
+  // an audit log" (same doc). `audit:openFolder` reveals the userData
+  // folder itself (there is no single "last exported" path to reuse here,
+  // unlike shell:openExport above).
+  ipcMain.handle('audit:list', async (): Promise<auditLogStore.AuditLogEntry[]> => {
+    return auditLogStore.readEntries(userDataDir());
+  });
+
+  ipcMain.handle('audit:openFolder', async (): Promise<void> => {
+    const err = await shell.openPath(userDataDir());
+    if (err) throw new Error(err);
   });
 
   // Session restore (docs/TABS_BUILD_PLAN.md §2e): what the renderer should

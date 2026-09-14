@@ -1,5 +1,6 @@
 import type { ClaimDetailDto } from '../../electron/preload.js';
 import { formatMoney, formTypeText, severityWord } from './format.js';
+import { flagWord, type AnnotationFlag, type LineAnnotation } from '../model/annotations.js';
 
 /**
  * Pure text formatters for the clipboard/copy suite (docs/TABS_BUILD_PLAN.md
@@ -20,7 +21,8 @@ import { formatMoney, formTypeText, severityWord } from './format.js';
 // Item 1 — copy service lines as TSV
 // ---------------------------------------------------------------------------
 
-const TSV_HEADER = ['Line', 'DOS', 'POS/Rev', 'CPT/HCPCS', 'Modifiers', 'Units', 'Charge', 'Dx Pointers', 'Rendering NPI'].join('\t');
+const TSV_HEADER_PARTS = ['Line', 'DOS', 'POS/Rev', 'CPT/HCPCS', 'Modifiers', 'Units', 'Charge', 'Dx Pointers', 'Rendering NPI'];
+const TSV_HEADER = TSV_HEADER_PARTS.join('\t');
 
 /**
  * Header row + one tab-delimited row per service line, columns per
@@ -44,11 +46,25 @@ const TSV_HEADER = ['Line', 'DOS', 'POS/Rev', 'CPT/HCPCS', 'Modifiers', 'Units',
  * per-line rendering NPI field — CMS-1500/UB-04/ADA all carry one rendering
  * provider for the whole claim), so the same value repeats on every row;
  * that mirrors what the inspector's Providers group already shows.
+ *
+ * `annotationsByLine` (Build 6, 6.2 — "extend copy machinery to carry
+ * annotations") is OPTIONAL and keyed by zero-based service-line index
+ * (the array-index counterpart of src/model/annotations.ts's
+ * `annotationKey`, since this formatter only ever sees ONE claim's already-
+ * sliced `serviceLines` array, never a claim index). When omitted, or when
+ * every line's annotation is empty, the output is BYTE-FOR-BYTE identical
+ * to before this build — no Note/Flag columns at all — so a claim nobody
+ * has annotated copies exactly as it always did. Only once at least one
+ * line actually carries a note or flag do both columns appear, on every
+ * row (blank for an unannotated line), so the column count stays constant
+ * within one paste.
  */
-export function formatServiceLinesTsv(detail: ClaimDetailDto): string {
+export function formatServiceLinesTsv(detail: ClaimDetailDto, annotationsByLine?: ReadonlyMap<number, LineAnnotation>): string {
   const renderingNpi = detail.providers.rendering.npi;
-  const rows = detail.serviceLines.map((line) =>
-    [
+  const hasAnnotations = !!annotationsByLine && Array.from(annotationsByLine.values()).some((a) => a.note.trim() !== '' || a.flag !== null);
+  const header = hasAnnotations ? [...TSV_HEADER_PARTS, 'Note', 'Flag'].join('\t') : TSV_HEADER;
+  const rows = detail.serviceLines.map((line, i) => {
+    const parts = [
       String(line.line),
       line.dates,
       line.revenueCode || line.placeOfService,
@@ -58,9 +74,41 @@ export function formatServiceLinesTsv(detail: ClaimDetailDto): string {
       line.charge.toFixed(2),
       line.diagPointers,
       renderingNpi,
-    ].join('\t'),
-  );
-  return [TSV_HEADER, ...rows].join('\n');
+    ];
+    if (hasAnnotations) {
+      const a = annotationsByLine!.get(i);
+      // Tabs/newlines inside a note would corrupt the TSV grid a
+      // spreadsheet paste depends on — collapsed to spaces, same as any
+      // other free-text-into-TSV formatter would need to.
+      parts.push((a?.note ?? '').replace(/[\t\n\r]+/g, ' ').trim(), a?.flag ? flagWord(a.flag) : '');
+    }
+    return parts.join('\t');
+  });
+  return [header, ...rows].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Build 6, 6.2 — "Copy annotations worksheet": a SEPARATE action/output from
+// every formatter above, deliberately never folded into
+// formatClaimSummary (which represents the parsed claim) — this is
+// reviewer scratch text, clearly labeled as such and as session-only.
+// ---------------------------------------------------------------------------
+
+export interface AnnotationWorksheetRow {
+  line: number;
+  flag: AnnotationFlag;
+  note: string;
+  checked: boolean;
+}
+
+const ANNOTATIONS_WORKSHEET_TITLE = 'Session notes & flags (not saved — cleared when this tab closes)';
+
+/** Plain-text worksheet of every annotated line, for the "Copy annotations worksheet" action. `rows` should already exclude fully-empty lines (see inspector.ts's caller). */
+export function formatAnnotationsWorksheet(rows: AnnotationWorksheetRow[]): string {
+  if (rows.length === 0) return [ANNOTATIONS_WORKSHEET_TITLE, '', 'No lines have notes or flags yet.'].join('\n');
+  const header = ['Line', 'Flag', 'Checked', 'Note'].join('\t');
+  const body = rows.map((r) => [String(r.line), flagWord(r.flag), r.checked ? 'Yes' : 'No', r.note.replace(/[\t\n\r]+/g, ' ').trim()].join('\t'));
+  return [ANNOTATIONS_WORKSHEET_TITLE, '', header, ...body].join('\n');
 }
 
 // ---------------------------------------------------------------------------
