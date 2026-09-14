@@ -1447,3 +1447,82 @@ any IPC/UI wiring was added, then the full `npm run verify` pipeline
 the IPC/UI/e2e wiring landed, and once more after this build's adversarial-
 audit fixes (the two round-trip bugs above) and the README/About-screen
 doc updates — all green at each point checked.
+
+## Ease-of-use + accessibility batch
+
+Scope: `docs/CLAUDE_CODE_NEXT_SESSION.md`'s "Ease-of-use + accessibility
+batch" (7 independent items). Started from `build-5-green` — `npm run
+verify` confirmed green before any change.
+
+### Checkpoint 1 — items 1, 2, 4 (tooltips, welcome-screen recent files, bundled sample claims)
+
+**1. Tooltips with shortcut hints on icon-only toolbar controls.** Added a
+visible `title` alongside the existing `aria-label` (never replacing it) on:
+zoom in/out, prev/next page, prev/next claim, theme toggle, the inspector
+search-clear button, every dialog's icon-only close button (export/
+shortcuts/about/forget/samples), the tab strip's per-tab close button, the
+toast dismiss button, and the inspector's per-row copy/edit/revert buttons.
+`src/renderer/index.html`, `src/renderer/tabs.ts`, `src/renderer/inspector.ts`.
+
+**2. Recent Files on the welcome/empty-state screen.** Reused the existing
+`cachedRecentFiles`/`renderRecentFilesList` machinery (`src/renderer/main.ts`)
+— this is a new rendering TARGET (`#welcomeRecentFiles` /
+`#welcomeRecentFilesList`, populated by the same `buildRecentFileItem` helper
+the File menu's list now shares), not new plumbing. Hidden outright when
+there are no recent files, rather than the File menu's "No recent files"
+empty-state note — an empty welcome screen with a stray note reads worse
+than just omitting the section.
+
+**4. Bundled sample-claim set ("Open Sample Claim").** Four synthetic,
+PHI-free X12 837 fixtures under `src/samples/` (copied to
+`dist/src/samples/` by the new `scripts/copy-samples.mjs`, wired into
+`build:app` — the same "tsc doesn't copy non-`.ts` assets" pattern
+`copy-fonts.mjs` already established; no `package.json` `build.files` change
+needed since `dist/src/**/*` is already listed):
+- `sample-837p-clean.dat` — professional, zero warnings.
+- `sample-837i-clean.dat` — institutional with two revenue-coded service
+  lines (0305, 0730), zero warnings.
+- `sample-837d-clean.dat` — dental, with a tooth number/surface; carries
+  only the pre-existing, unavoidable `dental-transaction-type-unknown` info
+  note every 837D claim in this app gets (837D's `transactionType` has no
+  derivable source in this app's X12 mapping — see `x12ClaimSource.ts`), not
+  a fabricated defect.
+- `sample-837p-defective.dat` — professional with an intentionally invalid
+  billing-provider NPI checksum (`1111111111`), tripping the real, existing
+  `billing-npi-invalid` warning rule from Build 3 — no new warning rule was
+  invented for this.
+  All identifying values use an obvious `SAMPLE`/`SAMPLETOWN` convention;
+  `test/sampleClaims.test.ts` asserts every fixture parses as expected AND
+  greps the raw fixture text for real-looking names, so a future edit can't
+  quietly reintroduce something PHI-shaped.
+  `src/model/sampleClaims.ts` is the single registry (id/fileName/label/
+  description) — main resolves `id` -> path and opens it through the exact
+  same `openClaimAtPath` every other open path uses (native dialog, drag-
+  and-drop, the E2E seam); the renderer only ever receives
+  `{id, label, description}` over the bridge (new IPC:
+  `samples:list`/`dialog:openSampleClaim`, preload's `getSampleClaims`/
+  `openSampleClaim`), so the welcome-screen link, the new `#samplesOverlay`
+  dialog, and the File menu's "Open Sample Claim…" entry can never drift
+  from what main will actually open — one list. The previously "unused,
+  hidden `#sampleChip` stub" (workspace chip row) now shows "Sample data"
+  for any tab opened via this picker (`TabState.isSample`), which is the
+  first honest field to key that stub off.
+
+### Preload/IPC surface changes (rule 7b)
+- `getSampleClaims`, `openSampleClaim` added — `electron/preload.ts` (bridge
+  functions + `SampleClaimDto`), `electron/main.ts` (`samples:list` +
+  `dialog:openSampleClaim` handlers, `SAMPLES_DIR` constant), `e2e/app.spec.ts`'s
+  sorted `apiKeys` array — all in this checkpoint's commit.
+
+### Verification
+- typecheck: pass (all 3 configs)
+- vitest: 427 -> 433 (6 new, `test/sampleClaims.test.ts`)
+- E2E: 70 -> 76 (6 new, `e2e/easeOfUse.spec.ts`)
+- `npm run build:app`: clean, `copy-samples.mjs` copies all 4 fixtures
+- Full `npm run verify`: green
+
+### Not done yet in this batch (tracked, not forgotten)
+Items 3 (command palette), 5 (deferred-render fast mode), 6 (high-contrast
+render mode) and 7 (clickable warnings — inspector half) are still to come;
+this checkpoint stops here per the "checkpoint after each numbered item or a
+small, related cluster" rule.

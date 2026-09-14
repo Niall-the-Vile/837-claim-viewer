@@ -117,6 +117,7 @@ export interface NewTabInput {
   summaries?: ClaimSummaryDto[];
   status?: TabState['status'];
   correctedClaimStatus?: CorrectedClaimStatusDto;
+  isSample?: boolean;
 }
 
 /**
@@ -165,6 +166,7 @@ export function createTab(input: NewTabInput = {}, opts: { activate?: boolean } 
     zoomMode: 'fit-page',
     errorMessage: '',
     correctedClaimStatus: input.correctedClaimStatus ?? 'none',
+    isSample: input.isSample ?? false,
   };
   state.tabs.push(tab);
   if (opts.activate) state.activeTabId = tab.tabId;
@@ -268,6 +270,7 @@ export function renderTabStrip(): void {
     close.type = 'button';
     close.className = 'iconBtn tabClose';
     close.setAttribute('aria-label', `Close ${displayName}`);
+    close.title = 'Close tab (Ctrl+W)';
     // docs/AUDIT_BUILD1.md MUST FIX #4: without this, every tab's close
     // button was a full, native `tabIndex="0"` Tab stop nested inside the
     // `.tab` div, doubling the tab strip's tab-stop count and defeating the

@@ -38,6 +38,7 @@ import {
   shortcutsOverlayEl,
   aboutOverlayEl,
   forgetOverlayEl,
+  samplesOverlayEl,
   toastEl,
   toastMessageEl,
   toastActionsEl,
@@ -98,7 +99,7 @@ function prefersReducedMotion(): boolean {
  * invariant explicit rather than relying on one shared variable never being
  * clobbered by the wrong caller.
  */
-const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null };
+const lastFocusedBeforeOverlay: Record<OverlayId, HTMLElement | null> = { export: null, shortcuts: null, about: null, forget: null, samples: null };
 
 /**
  * The scrim + dialog fade/scale out on close (spec requirement 4) rather
@@ -118,9 +119,9 @@ const OVERLAY_EXIT_MS = 150; // keep in sync with .overlay.isClosing / .dialog's
  * one-line addition to OVERLAY_IDS/overlayElFor instead of touching every
  * function in this file.
  */
-export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget';
-const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget'];
-const overlayCloseTimers: Record<OverlayId, number | undefined> = { export: undefined, shortcuts: undefined, about: undefined, forget: undefined };
+export type OverlayId = 'export' | 'shortcuts' | 'about' | 'forget' | 'samples';
+const OVERLAY_IDS: OverlayId[] = ['export', 'shortcuts', 'about', 'forget', 'samples'];
+const overlayCloseTimers: Record<OverlayId, number | undefined> = { export: undefined, shortcuts: undefined, about: undefined, forget: undefined, samples: undefined };
 
 function overlayElFor(id: OverlayId): HTMLDivElement {
   switch (id) {
@@ -132,6 +133,8 @@ function overlayElFor(id: OverlayId): HTMLDivElement {
       return aboutOverlayEl;
     case 'forget':
       return forgetOverlayEl;
+    case 'samples':
+      return samplesOverlayEl;
   }
 }
 
@@ -521,7 +524,7 @@ for (const id of OVERLAY_IDS) {
   });
 }
 function isOverlayId(value: string | undefined): value is OverlayId {
-  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget';
+  return value === 'export' || value === 'shortcuts' || value === 'about' || value === 'forget' || value === 'samples';
 }
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((btn) => {
   btn.addEventListener('click', () => {

@@ -2118,3 +2118,84 @@ a:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Ease-of-use + accessibility batch -----------------------------------
+ * Bundled sample claims (#samplesList — item 4), the command palette
+ * (#commandPalette — item 3), the deferred-render placeholder card (item 5)
+ * and the high-contrast render toggle (item 6). Built from the same tokens/
+ * patterns already established above (.dialogBody, .batchSummaryFailures li,
+ * .recentFileItem, .stateScreen) rather than a new visual idiom.
+ */
+
+/* Sample-claim list (#samplesOverlay .dialogBody #samplesList) — one button
+ * per src/model/sampleClaims.ts entry, two-line (label + description) like a
+ * menu row rather than the single-line recent-files list. */
+.sampleItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  padding: 9px 12px;
+  margin: 0 0 8px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+.sampleItem:hover,
+.sampleItem:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.sampleItemLabel {
+  display: block;
+  font: 600 13px var(--font-sans);
+}
+.sampleItemDesc {
+  display: block;
+  margin-top: 2px;
+  font: 400 12px var(--font-sans);
+  color: var(--ink-3);
+}
+
+/* Welcome-screen "Open a sample claim…" link, under the primary Open button. */
+.welcomeOpenBox .linkBtn {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+/* Recent files on the welcome screen (item 2) — the SAME .recentFileItem
+ * buttons main.ts already builds for the File menu (style.css's existing
+ * `.menuPanel button.recentFileItem` rule only applies inside a .menuPanel
+ * ancestor), so this gives the button its own base look independent of
+ * that ancestor, then the welcome card supplies its container chrome. */
+.recentFileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 12.5px var(--font-sans);
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.recentFileItem:hover,
+.recentFileItem:focus-visible {
+  background: var(--surface-inset);
+}
+.welcomeRecentFiles {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+.welcomeRecentFiles .menuSectionLabel {
+  padding-left: 8px;
+}

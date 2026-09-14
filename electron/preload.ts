@@ -183,6 +183,13 @@ export interface StructuredExportOptionsDto {
   includeIdentifiers: boolean;
 }
 
+/** Ease-of-use + accessibility batch, item 4 (bundled sample-claim set) — metadata only, structurally identical to `src/model/sampleClaims.ts`'s `SampleClaimInfo` minus `fileName` (main never sends a sample's on-disk filename across the bridge; the renderer only ever names one by its opaque `id`). */
+export interface SampleClaimDto {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export interface AppInfoDto {
   version: string;
   buildDate: string;
@@ -229,6 +236,10 @@ const claimApi = Object.freeze({
    * filesystem paths.
    */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  /** Ease-of-use + accessibility batch, item 4: the fixed set of bundled synthetic sample claims (id/label/description only — see SampleClaimDto). Static for the lifetime of the app; cheap enough to call whenever a menu/dialog needs the list rather than caching it renderer-side. */
+  getSampleClaims: (): Promise<SampleClaimDto[]> => ipcRenderer.invoke('samples:list'),
+  /** Opens the bundled sample claim named by `id` (one of getSampleClaims()'s ids) through the same open-a-file path every other claim open uses. Resolves `null` if `id` isn't recognized. */
+  openSampleClaim: (id: string): Promise<OpenClaimResultDto | null> => ipcRenderer.invoke('dialog:openSampleClaim', id),
   /** Renders the claim at `index` within the given tab's session to PDF bytes, for pdf.js preview. `sessionId` is validated in main exactly like `index` (see electron/main.ts's getSessionClaim). */
   getPdf: (sessionId: string, index: number): Promise<Uint8Array> => ipcRenderer.invoke('claim:getPdf', sessionId, index),
   /** Field-level data for the claim at `index` within the given tab's session, for the inspector drawer (see ClaimDetailDto). */

@@ -45,6 +45,18 @@ export interface TabState {
    * on `detail`.
    */
   correctedClaimStatus: CorrectedClaimStatusDto;
+
+  /**
+   * Ease-of-use + accessibility batch, item 4 (bundled sample-claim set):
+   * true only for a tab opened via `claimApi.openSampleClaim` — drives the
+   * workspace chip row's `#sampleChip` "Sample data" badge (previously an
+   * unused, permanently-hidden stub with no field anywhere to key it off
+   * honestly; this is the first source of that fact). Never set for a real
+   * file, including one that happens to be a copy of a bundled sample —
+   * this is "was this opened through the sample-claim picker", not a
+   * content sniff.
+   */
+  isSample: boolean;
 }
 
 /**

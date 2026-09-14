@@ -52,6 +52,8 @@ import {
   forgetConfirmBtn,
   recentFilesListEl,
   recentFilesEmptyEl,
+  welcomeRecentFilesEl,
+  welcomeRecentFilesListEl,
   editModeToggleBtn,
   editModeToggleLabelEl,
   staleOverridesBannerEl,
@@ -85,6 +87,7 @@ import { severityWord } from './format.js';
 import { ICON_SEVERITY_WARNING, ICON_SEVERITY_NOTE } from './icons.js';
 import { initUiScale, cycleUiScale } from './features/uiScale.js';
 import { initSearch, resetSearch } from './features/search.js';
+import { initSamples, openSamplesDialog } from './features/samples.js';
 
 /**
  * Claim Viewer renderer chrome: title bar, tab strip, menu bar, toolbar
@@ -343,10 +346,10 @@ function renderActiveTabChrome(tab: TabState): void {
   if (!summary || !detail) return;
 
   provenanceChipTextEl.textContent = provenanceText(tab, summary, tab.currentIndex);
-  // No field anywhere in Claim/ClaimSummaryDto/ClaimDetailDto distinguishes
-  // "sample data" from a real claim, so the chip the design shows for demo
-  // data is never shown here — there is nothing to key it off honestly.
-  sampleChipEl.hidden = true;
+  // Ease-of-use + accessibility batch, item 4: the one honest source for
+  // this chip is "was this tab opened via the sample-claim picker" —
+  // tab.isSample, set only by performOpen's 'sample' source kind below.
+  sampleChipEl.hidden = !tab.isSample;
   unsupportedNoteEl.hidden = summary.formType !== 'unsupported';
 
   renderWarnBanner(detail);
@@ -669,7 +672,7 @@ function jumpToTab(oneBasedIndex: number): void {
 // path)
 // ---------------------------------------------------------------------------
 
-function tabInputFromResult(result: OpenClaimResultDto): NewTabInput {
+function tabInputFromResult(result: OpenClaimResultDto, isSample: boolean): NewTabInput {
   return {
     sessionId: result.sessionId,
     fileName: result.fileName,
@@ -677,10 +680,11 @@ function tabInputFromResult(result: OpenClaimResultDto): NewTabInput {
     source: result.source,
     summaries: result.summaries,
     correctedClaimStatus: result.correctedClaimStatus,
+    isSample,
   };
 }
 
-function fillPlaceholder(tab: TabState, result: OpenClaimResultDto): TabState {
+function fillPlaceholder(tab: TabState, result: OpenClaimResultDto, isSample: boolean): TabState {
   tab.sessionId = result.sessionId;
   tab.fileName = result.fileName;
   tab.filePath = result.filePath;
@@ -688,11 +692,13 @@ function fillPlaceholder(tab: TabState, result: OpenClaimResultDto): TabState {
   tab.summaries = result.summaries;
   tab.currentIndex = 0;
   tab.correctedClaimStatus = result.correctedClaimStatus;
+  tab.isSample = isSample;
   renderTabStrip();
   return tab;
 }
 
-type OpenSource = { kind: 'dialog' } | { kind: 'path'; path: string };
+/** `'sample'` (ease-of-use + accessibility batch, item 4): opens one of the bundled synthetic fixtures by id via claimApi.openSampleClaim — main resolves the id to a path, never the renderer. */
+type OpenSource = { kind: 'dialog' } | { kind: 'path'; path: string } | { kind: 'sample'; id: string };
 
 /**
  * The single implementation behind openClaimFlow (Ctrl+O / the Open
@@ -738,8 +744,14 @@ async function performOpen(source: OpenSource): Promise<void> {
   const placeholder = isFirstTab ? createTab({}, { activate: true }) : null;
   if (placeholder) syncScreenUI();
 
+  const isSample = source.kind === 'sample';
   try {
-    const result = source.kind === 'dialog' ? await window.claimApi.openClaim() : await window.claimApi.openClaim(source.path);
+    const result =
+      source.kind === 'dialog'
+        ? await window.claimApi.openClaim()
+        : source.kind === 'sample'
+          ? await window.claimApi.openSampleClaim(source.id)
+          : await window.claimApi.openClaim(source.path);
 
     if (!result) {
       if (placeholder) {
@@ -771,11 +783,11 @@ async function performOpen(source: OpenSource): Promise<void> {
       // had this (or any) session — fillPlaceholder adopts the just-opened
       // session into it exactly like a brand-new placeholder, rather than
       // leaving it stranded while a second tab silently took its session.
-      tab = existing.sessionId === result.sessionId ? existing : fillPlaceholder(existing, result);
+      tab = existing.sessionId === result.sessionId ? existing : fillPlaceholder(existing, result, isSample);
     } else if (placeholder) {
-      tab = fillPlaceholder(placeholder, result);
+      tab = fillPlaceholder(placeholder, result, isSample);
     } else {
-      tab = createTab(tabInputFromResult(result));
+      tab = createTab(tabInputFromResult(result, isSample));
     }
 
     // The loading floor only ever applies to a genuinely new placeholder
@@ -813,6 +825,11 @@ async function openDroppedClaimFile(filePath: string): Promise<void> {
   await performOpen({ kind: 'path', path: filePath });
 }
 
+/** Ease-of-use + accessibility batch, item 4: opens a bundled sample by id (features/samples.ts's SamplesDeps.openSample) — same performOpen path as every other open, so a sample gets the exact same tab/dedupe/loading-floor behavior as a real file. */
+async function openSampleById(id: string): Promise<void> {
+  await performOpen({ kind: 'sample', id });
+}
+
 /**
  * Ctrl+Shift+T (§2b/§2e): reopens the most recently closed tab's file path
  * (kept in renderer memory for the current run). Once nothing's been closed
@@ -841,23 +858,44 @@ async function reopenLastClosedTab(): Promise<void> {
 /** Last-fetched recent-files list, kept around purely so reopenLastClosedTab's fallback (above) has something to read without an extra IPC round-trip on every Ctrl+Shift+T press. Refreshed whenever the File menu opens (see setupMenus below) and right after startup's session restore. */
 let cachedRecentFiles: StoredFileRefDto[] = [];
 
+/** One clickable recent-file row, shared by the File menu's list and the welcome screen's (ease-of-use + accessibility batch, item 2) — same click behavior (`performOpen`'s existing 'path' source), just a different `role` per the container it lands in. */
+function buildRecentFileItem(ref: StoredFileRefDto, role: 'menuitem' | 'listitem'): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.setAttribute('role', role);
+  btn.className = 'recentFileItem';
+  const label = document.createElement('span');
+  label.className = 'tabLabel';
+  label.textContent = ref.fileName;
+  label.title = ref.filePath;
+  btn.append(label);
+  btn.addEventListener('click', () => {
+    void performOpen({ kind: 'path', path: ref.filePath });
+  });
+  return btn;
+}
+
+/**
+ * Ease-of-use + accessibility batch, item 2: renders the SAME recent-files
+ * list into two targets — the File menu's `#recentFilesList` (unchanged
+ * behavior) and the welcome/empty-state screen's `#welcomeRecentFilesList`,
+ * a new rendering target for data this app already tracked, not new
+ * plumbing (cachedRecentFiles / claimApi.getSessionRestoreState below are
+ * unchanged). The welcome-screen section is hidden outright when there are
+ * no recent files, rather than showing an empty-state note like the menu
+ * does — see index.html's comment on #welcomeRecentFiles.
+ */
 function renderRecentFilesList(files: StoredFileRefDto[]): void {
   recentFilesListEl.innerHTML = '';
   recentFilesEmptyEl.hidden = files.length > 0;
   for (const ref of files) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('role', 'menuitem');
-    btn.className = 'recentFileItem';
-    const label = document.createElement('span');
-    label.className = 'tabLabel';
-    label.textContent = ref.fileName;
-    label.title = ref.filePath;
-    btn.append(label);
-    btn.addEventListener('click', () => {
-      void performOpen({ kind: 'path', path: ref.filePath });
-    });
-    recentFilesListEl.append(btn);
+    recentFilesListEl.append(buildRecentFileItem(ref, 'menuitem'));
+  }
+
+  welcomeRecentFilesListEl.innerHTML = '';
+  welcomeRecentFilesEl.hidden = files.length === 0;
+  for (const ref of files) {
+    welcomeRecentFilesListEl.append(buildRecentFileItem(ref, 'listitem'));
   }
 }
 
@@ -1051,6 +1089,9 @@ function runAction(action: string): void {
       break;
     case 'reopenClosedTab':
       void reopenLastClosedTab();
+      break;
+    case 'openSamples':
+      void openSamplesDialog();
       break;
     case 'openForgetDialog':
       openForgetDialog();
@@ -1257,3 +1298,4 @@ syncScreenUI();
 void initSessionRestore();
 void initUiScale();
 initSearch({ jumpToClaim: goToClaimIndex });
+initSamples({ openSample: openSampleById });

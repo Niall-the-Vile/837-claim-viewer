@@ -38,6 +38,7 @@
             <button type="button" role="menuitem" data-action="exportSkipDialog" data-menu-disable="export">Export this claim (skip dialog)<kbd>Ctrl+Shift+E</kbd></button>
             <button type="button" role="menuitem" data-action="close" data-menu-disable="export">Close tab<kbd>Ctrl+W</kbd></button>
             <button type="button" role="menuitem" data-action="reopenClosedTab">Reopen closed tab<kbd>Ctrl+Shift+T</kbd></button>
+            <button type="button" role="menuitem" data-action="openSamples">Open Sample Claim&hellip;</button>
             <div class="menuSep" role="separator"></div>
             <!-- Recent files (docs/TABS_BUILD_PLAN.md §2e): rebuilt from
                  claimApi.getSessionRestoreState() every time this menu
@@ -107,11 +108,11 @@
         <div class="toolGroup toolGroupLabeled" id="zoomGroup" hidden>
           <span class="groupLabel">Zoom</span>
           <div class="navGroup">
-            <button id="zoomOutBtn" class="iconBtn" type="button" aria-label="Zoom out">
+            <button id="zoomOutBtn" class="iconBtn" type="button" aria-label="Zoom out" title="Zoom out (Ctrl+-)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 12h14" /></svg>
             </button>
             <span id="zoomLabel" class="navValue mono">100%</span>
-            <button id="zoomInBtn" class="iconBtn" type="button" aria-label="Zoom in">
+            <button id="zoomInBtn" class="iconBtn" type="button" aria-label="Zoom in" title="Zoom in (Ctrl+=)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
             </button>
             <span class="navDivider" aria-hidden="true"></span>
@@ -123,11 +124,11 @@
         <div class="toolGroup toolGroupLabeled" id="pageGroup" hidden>
           <span class="groupLabel">Pages of this claim</span>
           <div class="navGroup">
-            <button id="prevPageBtn" class="iconBtn" type="button" aria-label="Previous page">
+            <button id="prevPageBtn" class="iconBtn" type="button" aria-label="Previous page" title="Previous page (Ctrl+Left)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
             </button>
             <span id="pageLabel" class="navValue mono">Page 1 of 1</span>
-            <button id="nextPageBtn" class="iconBtn" type="button" aria-label="Next page">
+            <button id="nextPageBtn" class="iconBtn" type="button" aria-label="Next page" title="Next page (Ctrl+Right)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
             </button>
           </div>
@@ -136,11 +137,11 @@
         <div class="toolGroup toolGroupLabeled" id="claimGroup" hidden>
           <span class="groupLabel">Claim in this 837 file</span>
           <div class="navGroup">
-            <button id="prevClaimBtn" class="iconBtn" type="button" aria-label="Previous claim">
+            <button id="prevClaimBtn" class="iconBtn" type="button" aria-label="Previous claim" title="Previous claim (PageUp)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
             </button>
             <span id="claimStepLabel" class="navValue mono">Claim 1 of 1</span>
-            <button id="nextClaimBtn" class="iconBtn" type="button" aria-label="Next claim">
+            <button id="nextClaimBtn" class="iconBtn" type="button" aria-label="Next claim" title="Next claim (PageDown)">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
             </button>
           </div>
@@ -164,7 +165,7 @@
           <kbd>Ctrl+D</kbd>
         </button>
 
-        <button id="themeToggleBtn" class="btn btnGhost" type="button" aria-label="Toggle light/dark theme">
+        <button id="themeToggleBtn" class="btn btnGhost" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme (Ctrl+Shift+L)">
           <span id="themeToggleLabel">Light</span>
         </button>
       </div>
@@ -211,6 +212,24 @@
                   <kbd>Ctrl+O</kbd>
                 </button>
                 <div class="welcomeHint">or use <span class="mono">File &rarr; Open</span></div>
+                <!-- Ease-of-use + accessibility batch, item 4 (bundled
+                     sample-claim set): opens #samplesOverlay, listing every
+                     entry from src/model/sampleClaims.ts (fetched via
+                     claimApi.getSampleClaims()) — see src/renderer/features/samples.ts. -->
+                <button id="welcomeSampleBtn" class="linkBtn" type="button">Open a sample claim&hellip;</button>
+              </div>
+              <!-- Ease-of-use + accessibility batch, item 2: Recent Files
+                   surfaced on the welcome/empty-state screen too, not just
+                   the File menu — reuses the SAME cachedRecentFiles /
+                   renderRecentFilesList machinery (src/renderer/main.ts);
+                   this is a new rendering TARGET, not new plumbing. Hidden
+                   outright when there are none, rather than an empty-state
+                   note (unlike the File menu's #recentFilesEmpty), since an
+                   empty welcome screen with a stray "No recent files" label
+                   reads worse than just not showing the section. -->
+              <div id="welcomeRecentFiles" class="welcomeRecentFiles" hidden>
+                <div class="menuSectionLabel">Recent files</div>
+                <div id="welcomeRecentFilesList" role="list"></div>
               </div>
               <div class="welcomeOffline">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5 11h14v10H5z" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
@@ -300,7 +319,7 @@
                 <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
               </svg>
               <input id="inspectorSearchInput" type="text" autocomplete="off" spellcheck="false" placeholder="Find in this claim… (Ctrl+F)" aria-label="Find in this claim" />
-              <button id="inspectorSearchClearBtn" class="iconBtn" type="button" aria-label="Clear search" hidden>
+              <button id="inspectorSearchClearBtn" class="iconBtn" type="button" aria-label="Clear search" title="Clear search (Esc)" hidden>
                 <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
@@ -349,7 +368,7 @@
           <div class="dialogTitlebar">
             <span id="exportDialogTitle">Export claim as PDF</span>
             <div class="toolSpacer"></div>
-            <button class="iconBtn" type="button" data-close="export" aria-label="Close">
+            <button class="iconBtn" type="button" data-close="export" aria-label="Close" title="Close (Esc)">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
@@ -468,7 +487,7 @@
           <div class="dialogTitlebar">
             <span id="shortcutsDialogTitle">Keyboard shortcuts</span>
             <div class="toolSpacer"></div>
-            <button class="iconBtn" type="button" data-close="shortcuts" aria-label="Close">
+            <button class="iconBtn" type="button" data-close="shortcuts" aria-label="Close" title="Close (Esc)">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
@@ -485,7 +504,7 @@
           <div class="dialogTitlebar">
             <span id="aboutDialogTitle">About 837 Claim Viewer</span>
             <div class="toolSpacer"></div>
-            <button class="iconBtn" type="button" data-close="about" aria-label="Close">
+            <button class="iconBtn" type="button" data-close="about" aria-label="Close" title="Close (Esc)">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
@@ -531,7 +550,7 @@
           <div class="dialogTitlebar">
             <span id="forgetDialogTitle">Forget open tabs &amp; recent files?</span>
             <div class="toolSpacer"></div>
-            <button class="iconBtn" type="button" data-close="forget" aria-label="Close">
+            <button class="iconBtn" type="button" data-close="forget" aria-label="Close" title="Close (Esc)">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
@@ -550,6 +569,33 @@
         </div>
       </div>
 
+      <!-- Bundled sample claims (ease-of-use + accessibility batch, item 4):
+           listed from src/model/sampleClaims.ts via claimApi.getSampleClaims()
+           — src/renderer/features/samples.ts populates #samplesList and opens
+           the chosen one through claimApi.openSampleClaim(id), the same
+           open-a-file path every other claim open uses. -->
+      <div id="samplesOverlay" class="overlay" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="samplesDialogTitle">
+          <div class="dialogTitlebar">
+            <span id="samplesDialogTitle">Open Sample Claim</span>
+            <div class="toolSpacer"></div>
+            <button class="iconBtn" type="button" data-close="samples" aria-label="Close" title="Close (Esc)">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          <div class="dialogBody">
+            <p class="exportIntro">
+              Synthetic, PHI-free claims for training and demos &mdash; every name and identifier is a
+              placeholder. Opens the same way a real file would.
+            </p>
+            <div id="samplesList" role="list"></div>
+          </div>
+          <div class="dialogFooter">
+            <button class="btn btnGhost" type="button" data-close="samples">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Toast (export success / non-fatal notices). After a successful
            export, toastActions surfaces the "open containing folder" /
            "open PDF" done-state actions (design ClaimViewer_v2.dc.html:
@@ -562,7 +608,7 @@
             <button id="toastOpenPdfBtn" class="linkBtn" type="button">Open PDF</button>
           </div>
         </div>
-        <button id="toastCloseBtn" class="iconBtn toastClose" type="button" aria-label="Dismiss">
+        <button id="toastCloseBtn" class="iconBtn toastClose" type="button" aria-label="Dismiss" title="Dismiss">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>

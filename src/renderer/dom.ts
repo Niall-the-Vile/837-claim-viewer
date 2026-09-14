@@ -59,6 +59,10 @@ export const warnCopyBtn = requireEl<HTMLButtonElement>('warnCopyBtn');
 export const welcomeScreenEl = requireEl<HTMLDivElement>('welcomeScreen');
 export const welcomeOpenBtn = requireEl<HTMLButtonElement>('welcomeOpenBtn');
 
+// Recent files on the welcome screen (ease-of-use + accessibility batch, item 2).
+export const welcomeRecentFilesEl = requireEl<HTMLDivElement>('welcomeRecentFiles');
+export const welcomeRecentFilesListEl = requireEl<HTMLDivElement>('welcomeRecentFilesList');
+
 export const loadingScreenEl = requireEl<HTMLDivElement>('loadingScreen');
 export const loadingLabelEl = requireEl<HTMLDivElement>('loadingLabel');
 
@@ -147,6 +151,11 @@ export const aboutBuildDateEl = requireEl<HTMLSpanElement>('aboutBuildDate');
 // "Forget open tabs & recent files" confirm dialog (docs/TABS_BUILD_PLAN.md §2e).
 export const forgetOverlayEl = requireEl<HTMLDivElement>('forgetOverlay');
 export const forgetConfirmBtn = requireEl<HTMLButtonElement>('forgetConfirmBtn');
+
+// Bundled sample claims (ease-of-use + accessibility batch, item 4).
+export const samplesOverlayEl = requireEl<HTMLDivElement>('samplesOverlay');
+export const samplesListEl = requireEl<HTMLDivElement>('samplesList');
+export const welcomeSampleBtn = requireEl<HTMLButtonElement>('welcomeSampleBtn');
 
 // File menu's dynamically-populated recent-files list (docs/TABS_BUILD_PLAN.md §2e).
 export const recentFilesListEl = requireEl<HTMLDivElement>('recentFilesList');

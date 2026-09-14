@@ -31,6 +31,7 @@ import {
   decodeTypeOfBill,
   type CodedValue,
 } from '../src/model/decode.js';
+import { SAMPLE_CLAIMS, findSampleClaim } from '../src/model/sampleClaims.js';
 
 /**
  * Electron main process: window lifecycle, the offline network kill-switch,
@@ -67,6 +68,16 @@ const BUILT_RENDERER_INDEX = join(__dirname, '..', 'renderer', 'index.html');
  * exactly as narrow as it needs to be.
  */
 const IS_DEV = !existsSync(BUILT_RENDERER_INDEX);
+
+/**
+ * Bundled sample-claim fixtures (ease-of-use + accessibility batch, item 4):
+ * `dist/src/samples/`, sibling to `dist/electron/` (see scripts/copy-samples.mjs) —
+ * same `join(__dirname, '..', ...)` pattern BUILT_RENDERER_INDEX above uses
+ * to reach `dist/renderer/`. `src/model/sampleClaims.ts`'s `SAMPLE_CLAIMS`
+ * array is the one place ids/filenames are listed; this constant only
+ * supplies the directory they live under.
+ */
+const SAMPLES_DIR = join(__dirname, '..', 'src', 'samples');
 
 /**
  * Editable-fields feature (docs/EDITABLE_FIELDS_DESIGN.md), invariant 3:
@@ -983,6 +994,33 @@ function registerIpcHandlers(): void {
     // --- end TEST-ONLY SEAM --------------------------------------------------
 
     return openClaimAtPath(filePath);
+  });
+
+  /**
+   * Ease-of-use + accessibility batch, item 4 (bundled sample-claim set):
+   * metadata only — id/label/description, never a filename or path — so the
+   * renderer's menu/welcome-screen list is built entirely from what main is
+   * actually willing to open (src/model/sampleClaims.ts's SAMPLE_CLAIMS is
+   * the one list; nothing here is renderer-owned).
+   */
+  ipcMain.handle('samples:list', (): Array<{ id: string; label: string; description: string }> =>
+    SAMPLE_CLAIMS.map(({ id, label, description }) => ({ id, label, description })),
+  );
+
+  /**
+   * Opens a bundled sample by id through the EXACT same `openClaimAtPath`
+   * every other open path (native dialog, drag-and-drop, the E2E seam) uses
+   * — see this feature's design note in docs/CLAUDE_CODE_NEXT_SESSION.md
+   * ("wire an entry that opens one via the same mechanism drag-and-drop
+   * already uses"). `id` is validated against SAMPLE_CLAIMS rather than
+   * trusted as a path fragment — the renderer never sees or supplies a real
+   * filesystem path for a sample.
+   */
+  ipcMain.handle('dialog:openSampleClaim', async (_event: IpcMainInvokeEvent, id: unknown): Promise<OpenClaimResult | null> => {
+    if (typeof id !== 'string') return null;
+    const sample = findSampleClaim(id);
+    if (!sample) return null;
+    return openClaimAtPath(join(SAMPLES_DIR, sample.fileName));
   });
 
   ipcMain.handle('claim:getPdf', async (_event: IpcMainInvokeEvent, sessionId: unknown, index: unknown): Promise<Uint8Array> => {

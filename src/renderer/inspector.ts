@@ -349,6 +349,7 @@ function buildGroup(id: string, label: string, tag: string, tagWarn: boolean, ro
         copyBtn.className = 'rowCopyBtn';
         copyBtn.tabIndex = -1; // not its own Tab stop — Ctrl+C on the focused row is the keyboard path (see the delegated keydown listener below)
         copyBtn.setAttribute('aria-label', `Copy ${row.key}`);
+        copyBtn.title = `Copy ${row.key} (Ctrl+C)`;
         copyBtn.innerHTML = ICON_COPY;
         copyBtn.addEventListener('click', (event) => {
           event.stopPropagation();
@@ -838,6 +839,7 @@ function decorateEditableRows(tab: TabState, detail: ClaimDetailDto): void {
     editBtn.className = 'rowEditBtn';
     editBtn.tabIndex = -1;
     editBtn.setAttribute('aria-label', `Edit ${keyText}`);
+    editBtn.title = `Edit ${keyText}`;
     editBtn.innerHTML = ICON_EDIT;
     editBtn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -851,6 +853,7 @@ function decorateEditableRows(tab: TabState, detail: ClaimDetailDto): void {
       revertBtn.className = 'rowRevertBtn';
       revertBtn.tabIndex = -1;
       revertBtn.setAttribute('aria-label', `Revert ${keyText} to the original value`);
+      revertBtn.title = `Revert ${keyText} to the original value`;
       revertBtn.innerHTML = ICON_REVERT;
       revertBtn.addEventListener('click', (event) => {
         event.stopPropagation();
