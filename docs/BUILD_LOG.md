@@ -1738,3 +1738,5 @@ None — item 6 is renderer-only.
 Nothing in this batch touched `docs/FEATURE_BACKLOG.md`'s "Out of scope"
 section, and no Build 6 (notes/audit) or Build 7 (installation) work was
 started.
+
+Final commit: `c59d528`. Tag: `build-ease-of-use-green`.
