@@ -2038,8 +2038,7 @@ deployment enhancements" section, read with decision 4 ("check for updates"
 is a manual link only) as a hard constraint throughout.
 
 Start: 2026-09-14   End: 2026-09-14
-Commit: `e4cc360` (checkpoint 1 — About screen additions), then `<checkpoint
-2 SHA — recorded in a follow-up commit per this repo's usual pattern>`
+Commit: `e4cc360` (checkpoint 1 — About screen additions), then `6240678`
 (checkpoint 2 — installer config + docs). Tag: `build-7-green`.
 
 Starting point: `build-6-green` — `npm run verify` confirmed green (485
@@ -2229,5 +2228,5 @@ regression this build introduced.
 ### Golden/goldens regenerated
 - None — this build touches no rendered-PDF layout/golden fixtures.
 
-Final commit: `<recorded in a follow-up commit>`. Tag: `build-7-green`.
+Final commit: `6240678`. Tag: `build-7-green`.
 
