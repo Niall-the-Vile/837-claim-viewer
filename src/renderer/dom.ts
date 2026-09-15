@@ -164,6 +164,8 @@ export const aboutOverlayEl = requireEl<HTMLDivElement>('aboutOverlay');
 export const aboutVersionEl = requireEl<HTMLSpanElement>('aboutVersion');
 export const aboutBuildDateEl = requireEl<HTMLSpanElement>('aboutBuildDate');
 export const aboutViewAuditLogBtn = requireEl<HTMLButtonElement>('aboutViewAuditLogBtn');
+export const aboutCheckReleaseBtn = requireEl<HTMLButtonElement>('aboutCheckReleaseBtn');
+export const aboutChangelogEl = requireEl<HTMLPreElement>('aboutChangelog');
 
 // Audit log viewer (Build 6, 6.5) — reachable only from About, per
 // docs/UI_REQUIREMENTS_v3_queued_features.md §8 ("reachable from About, not

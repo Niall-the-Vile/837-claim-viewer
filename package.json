@@ -19,7 +19,7 @@
     "test:e2e": "playwright test",
     "screenshots": "playwright test --config=playwright.screenshots.config.ts",
     "verify": "npm run typecheck && npm test && npm run build:app && npm run test:e2e",
-    "build:app": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && node scripts/copy-samples.mjs && node scripts/write-build-info.mjs && vite build",
+    "build:app": "tsc && npm run build:preload && node scripts/copy-fonts.mjs && node scripts/copy-samples.mjs && node scripts/copy-changelog.mjs && node scripts/write-build-info.mjs && vite build",
     "build:dist": "electron-builder",
     "verify:release": "npm run verify && npm run build:dist"
   },

@@ -50,6 +50,8 @@ import {
   aboutVersionEl,
   aboutBuildDateEl,
   aboutViewAuditLogBtn,
+  aboutCheckReleaseBtn,
+  aboutChangelogEl,
   auditLogTableBodyEl,
   auditLogEmptyEl,
   auditLogOpenFolderBtn,
@@ -1027,10 +1029,11 @@ async function refreshRecentFilesMenu(): Promise<void> {
   renderRecentFilesList(cachedRecentFiles);
 }
 
-/** Help -> About Claim Viewer (§2c: version + build date; §2e: honest data-policy wording, written directly in index.html's #aboutOverlay markup). */
+/** Help -> About Claim Viewer (§2c: version + build date; §2e: honest data-policy wording, written directly in index.html's #aboutOverlay markup). Build 7 adds the bundled "what's new" changelog fetch alongside the existing version/build-date one — same loading/error pattern, independent try/catch so one failing never blanks the other. */
 async function openAboutDialog(): Promise<void> {
   aboutVersionEl.textContent = 'Loading…';
   aboutBuildDateEl.textContent = 'Loading…';
+  aboutChangelogEl.textContent = 'Loading…';
   openOverlay('about');
   try {
     const info = await window.claimApi.getAppInfo();
@@ -1040,6 +1043,16 @@ async function openAboutDialog(): Promise<void> {
     aboutVersionEl.textContent = 'unavailable';
     aboutBuildDateEl.textContent = errorMessage(err);
   }
+  try {
+    aboutChangelogEl.textContent = await window.claimApi.getChangelog();
+  } catch (err) {
+    aboutChangelogEl.textContent = `Changelog unavailable: ${errorMessage(err)}`;
+  }
+}
+
+/** About screen's "Check for the latest release…" button (Build 7 — docs/CLAUDE_CODE_NEXT_SESSION.md decision 4): hands off to the user's default browser via shell.openExternal and never checks anything itself. */
+function checkForLatestRelease(): void {
+  window.claimApi.openReleasesPage().catch((err: unknown) => showToast(errorMessage(err), true));
 }
 
 function openForgetDialog(): void {
@@ -1323,6 +1336,7 @@ exportConfirmBtn.addEventListener('click', () => void confirmExport());
 forgetConfirmBtn.addEventListener('click', () => void confirmForgetSession());
 
 aboutViewAuditLogBtn.addEventListener('click', () => void openAuditLogDialog());
+aboutCheckReleaseBtn.addEventListener('click', () => checkForLatestRelease());
 auditLogOpenFolderBtn.addEventListener('click', () => {
   window.claimApi.openAuditLogFolder().catch((err: unknown) => showToast(errorMessage(err), true));
 });

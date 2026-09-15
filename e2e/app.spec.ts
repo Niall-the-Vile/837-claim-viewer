@@ -191,6 +191,12 @@ test.describe('837 Claim Viewer — E2E', () => {
       // (also Build 6) add NOTHING here: they are deliberately renderer-only,
       // in-memory state that never crosses this bridge at all (see
       // src/model/annotations.ts's header).
+      // getChangelog/openReleasesPage added by Build 7 — Installation &
+      // deployment enhancements: the bundled local "what's new" changelog
+      // and the About screen's manual "Check for the latest release" link
+      // (shell.openExternal to the GitHub releases page; no network call of
+      // its own — docs/CLAUDE_CODE_NEXT_SESSION.md decision 4,
+      // test/no-updater.test.ts).
       const apiKeys = await page.evaluate(() => Object.keys((window as unknown as { claimApi: object }).claimApi).sort());
       expect(apiKeys).toEqual([
         'cancelBatchExport',
@@ -205,6 +211,7 @@ test.describe('837 Claim Viewer — E2E', () => {
         'forgetSession',
         'getAppInfo',
         'getAuditLog',
+        'getChangelog',
         'getDetail',
         'getPathForFile',
         'getPdf',
@@ -214,6 +221,7 @@ test.describe('837 Claim Viewer — E2E', () => {
         'openAuditLogFolder',
         'openClaim',
         'openExport',
+        'openReleasesPage',
         'openSampleClaim',
         'revertFieldOverride',
         'saveSession',

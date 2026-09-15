@@ -232,6 +232,36 @@ function readBuildInfo(): BuildInfoFile | null {
   }
 }
 
+/**
+ * Reads dist/electron/CHANGELOG.md (copied from the repo-root CHANGELOG.md
+ * by scripts/copy-changelog.mjs as part of `npm run build:app` — same
+ * same-directory-sibling-of-`__dirname` reasoning as readBuildInfo above).
+ * Build 7 — Installation & deployment enhancements, "bundled what's new
+ * changelog" item: purely a local file shipped inside the asar, never a
+ * network fetch. Missing file (e.g. an unbuilt dev checkout) is never
+ * fatal — the About screen just shows a fallback string instead.
+ */
+function readChangelog(): string | null {
+  const target = join(__dirname, 'CHANGELOG.md');
+  if (!existsSync(target)) return null;
+  try {
+    return readFileSync(target, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GitHub releases page for the manual "Check for the latest release" link
+ * (docs/CLAUDE_CODE_NEXT_SESSION.md decision 4 / Build 7). Deliberately a
+ * hardcoded constant, never derived from a fetched/computed value — this
+ * app makes no network call of its own to determine "latest"; it hands the
+ * user's own browser a fixed URL and stops there. See the `shell:
+ * openReleasesPage` handler below and test/no-updater.test.ts, which this
+ * must never make an end run around.
+ */
+const RELEASES_URL = 'https://github.com/Niall-the-Vile/837-claim-viewer/releases';
+
 interface SessionRestoreStateDto {
   /** Tabs to recreate, in order — already re-validated (extension allow-list + existsSync) exactly like a dropped path; a stored path that no longer exists is silently dropped, never surfaced as an error. */
   tabs: StoredFileRef[];
@@ -1554,6 +1584,25 @@ function registerIpcHandlers(): void {
       version: buildInfo?.version ?? app.getVersion(),
       buildDate: buildInfo?.buildDate ?? 'unknown (unbuilt dev checkout)',
     };
+  });
+
+  // Build 7 — Installation & deployment enhancements: bundled "what's new"
+  // changelog for the About screen. Purely a local, build-time file read —
+  // see readChangelog above. Never fatal if missing.
+  ipcMain.handle('app:getChangelog', async (): Promise<string> => {
+    return readChangelog() ?? 'Changelog unavailable (unbuilt dev checkout).';
+  });
+
+  // Build 7 — the ONLY "check for updates" surface this app has
+  // (docs/CLAUDE_CODE_NEXT_SESSION.md decision 4): hands a fixed URL to the
+  // user's own default browser via shell.openExternal and returns. This
+  // makes no HTTP request of any kind from inside this app — shell.openExternal
+  // asks the OS to launch an external application; it does not fetch the URL
+  // itself. There is deliberately no version comparison, no background
+  // check, and no "new version available" badge — see
+  // test/no-updater.test.ts, which this handler must never work around.
+  ipcMain.handle('shell:openReleasesPage', async (): Promise<void> => {
+    await shell.openExternal(RELEASES_URL);
   });
 
   // Build 6, 6.5 — audit log viewer (About screen only, per

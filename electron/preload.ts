@@ -272,6 +272,10 @@ const claimApi = Object.freeze({
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
   /** App version + build-date stamp for the About screen (docs/TABS_BUILD_PLAN.md §2c). */
   getAppInfo: (): Promise<AppInfoDto> => ipcRenderer.invoke('app:getInfo'),
+  /** Build 7: the bundled "what's new" changelog text (CHANGELOG.md, copied into the build at compile time) for the About screen. No network involved — a local file read in main. */
+  getChangelog: (): Promise<string> => ipcRenderer.invoke('app:getChangelog'),
+  /** Build 7: the About screen's "Check for the latest release" link — opens the GitHub releases page in the user's default browser via shell.openExternal. The app makes no network request of its own; this is a manual link only, never real update-checking (docs/CLAUDE_CODE_NEXT_SESSION.md decision 4, test/no-updater.test.ts). */
+  openReleasesPage: (): Promise<void> => ipcRenderer.invoke('shell:openReleasesPage'),
   /** What to restore on launch (docs/TABS_BUILD_PLAN.md §2e): open-tab paths + order + which was active (already re-validated in main — extension allow-list + existsSync, a stored path that's gone is silently dropped), plus the recent-files list. Called once at renderer startup, and again whenever the File menu needs a fresh recent-files list. */
   getSessionRestoreState: (): Promise<SessionRestoreStateDto> => ipcRenderer.invoke('session:getRestoreState'),
   /** Persists the current open-tab list + which one is active (docs/TABS_BUILD_PLAN.md §2e). Every path passed here already came FROM main (openClaim's own result) — never a renderer-invented path. */
