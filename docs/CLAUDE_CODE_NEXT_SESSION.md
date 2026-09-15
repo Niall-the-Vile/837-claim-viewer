@@ -32,17 +32,42 @@ decisions those docs don't cover yet.
 
 ## Status as of this handoff
 
-- ✅ **Build 3 — Data integrity**: shipped, tagged `build-3-green`, pushed, verified green on
-  GitHub Actions CI. 3.1–3.3 (extended structural warnings, CMS-1500 diagnosis-overflow fix,
-  provenance footer) complete. **3.4–3.6 (per-box geometry, clickable warnings, search-highlight
-  on the rendered canvas) were explicitly deferred as a stretch goal** — see `docs/BUILD_LOG.md`'s
-  Build 3 section for why. Pick these up when Build 5's (837 export) or the ease-of-use batch's
-  clickable-warnings item makes them worth doing.
-- 🔄 **Editable fields + corrected-claim export**: in progress as of this handoff. Check
-  `docs/BUILD_LOG.md` and `docs/EDITABLE_FIELDS_DESIGN.md` for whether it landed, and
-  `git log`/`git tag` for `build-editable-fields-green`. If it's incomplete or the working tree
-  is dirty from it, finish and checkpoint it before starting anything else below — do not start
-  Build 4 on top of an unfinished, uncommitted feature.
+**Builds 3 through 7 are all shipped**, in order, each tagged and pushed to `origin/master`
+(`build-3-green`, `build-editable-fields-green`, `build-4-green`, `build-5-green`,
+`build-ease-of-use-green`, `build-6-green`, `build-7-green`) and each verified green via
+`npm run verify` at the time it landed. `docs/BUILD_LOG.md` is the authoritative, detailed record
+of what shipped in each — read that file's per-build sections over this summary if they ever
+disagree.
+
+- ✅ **Build 3 — Data integrity**: 3.1–3.3 (extended structural warnings, CMS-1500
+  diagnosis-overflow fix, provenance footer) shipped. **3.4–3.6 (per-box geometry, clickable
+  warnings, search-highlight on the rendered canvas) were explicitly deferred as a stretch goal**
+  — see `docs/BUILD_LOG.md`'s Build 3 section for why. The DOM/inspector half of clickable
+  warnings (3.4's dependent, item 7 below) has since shipped in the ease-of-use batch; the
+  PDF-canvas-box half (which needs 3.4's per-box geometry) has not.
+- ✅ **Editable fields + corrected-claim export**: shipped, tagged `build-editable-fields-green`.
+  See `docs/EDITABLE_FIELDS_DESIGN.md` for the full design and `docs/BUILD_LOG.md`'s "Editable
+  fields & corrected-claim export" section for what was verified.
+- ✅ **Build 4 — Export suite**: batch export, combined PDF, PHI-minimal-by-default CSV/JSON
+  export all shipped. 4.5 (appended summary pages) was explicitly deferred — see
+  `docs/BUILD_LOG.md`'s Build 4 "Not done and why".
+- ✅ **Build 5 — X12 837 export**: a genuine, submission-shaped X12 5010 837P/837I/837D
+  serializer with round-trip validation and an EDI-native EDITED signal (K3 marker), shipped.
+- ✅ **Ease-of-use + accessibility batch**: all 7 items shipped (tooltips, welcome-screen recent
+  files, command palette, bundled sample claims, deferred-render fast mode, high-contrast render
+  mode, clickable warnings' DOM/inspector half).
+- ✅ **Build 6 — Notes & audit**: session-scoped per-line notes/flags/check-off marks (never
+  persisted, per decision 2 above) and the local metadata-only audit log, both shipped.
+- ✅ **Build 7 — Installation & deployment enhancements**: the manual "Check for the latest
+  release" link (decision 4 — still just a link, never real update-checking), the bundled
+  build-time changelog on the About screen, NSIS silent-install switches for IT-managed rollout
+  (`docs/DEPLOYMENT.md`), and the `oneClick: false` installer-UX change (with reasoning for why,
+  in `docs/BUILD_LOG.md`'s Build 7 section) all shipped. Code signing remains explicitly parked —
+  see "Blocked on a human decision" below.
+
+**Nothing from the build order above remains open.** What's left is only the design-gated and
+human-blocked items in the two sections below — do not start any of those without either a design
+pass (for the design-gated pair) or explicit project-owner sign-off (for the human-blocked items).
 
 ---
 
@@ -172,6 +197,8 @@ implementation code.
 - True 1:1 print (needs a human at a physical printer to verify box registration).
 - Headless CLI mode / tear-off multi-window (only worth it if there's a concrete downstream
   consumer — check before building).
+- Code signing (needs a purchased code-signing certificate and entity verification — a
+  cost/procurement decision; see `docs/BUILD_LOG.md`'s Build 7 section and `docs/DEPLOYMENT.md`).
 - Real update-checking, if ever reconsidered (decision 4 above currently rules this out).
 
 ---

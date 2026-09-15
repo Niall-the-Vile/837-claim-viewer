@@ -2030,3 +2030,204 @@ commit (checkpoint 2 — e2e coverage + docs). Tag: `build-6-green`.
 
 Final commit: `39d16e1`. Tag: `build-6-green`.
 
+## Build 7 — Installation & deployment enhancements
+STATUS: GREEN
+
+Scope: `docs/CLAUDE_CODE_NEXT_SESSION.md`'s "Build 7 — Installation &
+deployment enhancements" section, read with decision 4 ("check for updates"
+is a manual link only) as a hard constraint throughout.
+
+Start: 2026-09-14   End: 2026-09-14
+Commit: `e4cc360` (checkpoint 1 — About screen additions), then `<checkpoint
+2 SHA — recorded in a follow-up commit per this repo's usual pattern>`
+(checkpoint 2 — installer config + docs). Tag: `build-7-green`.
+
+Starting point: `build-6-green` — `npm run verify` confirmed green (485
+vitest, 94 Playwright E2E, typecheck clean across all 3 configs) before any
+change in this section.
+
+### Checkpoint 1 — About screen: manual release-check link + bundled changelog
+
+**Item 1 — "Check for the latest release" link.** New narrow IPC path,
+`shell:openReleasesPage` (main) / `claimApi.openReleasesPage` (preload):
+calls `shell.openExternal('https://github.com/Niall-the-Vile/837-claim-viewer/releases')`
+and returns. No version comparison, no fetch, no background timer, no
+"new version available" badge — the button is functionally identical to any
+other external documentation link this app could have. `electron/preload.ts`,
+`electron/main.ts`, `src/renderer/global.d.ts` (via the `ClaimApi` type
+inference — no direct edit needed there) and the sorted `apiKeys` array in
+`e2e/app.spec.ts` all updated in the same commit, per the repo's IPC-change
+rule.
+
+**Item 4 — bundled "what's new" changelog.** New `CHANGELOG.md` at the repo
+root, summarized from this very file's own build sections (Build 3 through
+Build 6, plus editable fields and the ease-of-use batch) — nothing invented,
+every bullet traceable to an actual shipped item above. Copied into
+`dist/electron/CHANGELOG.md` at build time by new `scripts/copy-changelog.mjs`
+(same "tsc doesn't copy non-`.ts` assets" pattern `copy-fonts.mjs`/
+`copy-samples.mjs` already established, wired into `build:app`), read back by
+a new `app:getChangelog` handler exactly the way `readBuildInfo` already
+reads `build-info.json` as a same-directory sibling of `electron/main.ts`'s
+compiled output. Rendered as plain text in a collapsed-by-default
+`<details>`/`<summary>` on the About screen so it doesn't compete with the
+PHI notice above it. No network fetch anywhere in this path.
+
+New `e2e/deployment.spec.ts`: proves the changelog renders real bundled
+content (not the loading placeholder, not an "unavailable" fallback), and
+proves the release-check button calls `shell.openExternal` with exactly the
+expected URL and nothing else — by intercepting `shell.openExternal` in the
+**main process** via Playwright's `ElectronApplication.evaluate` (which hands
+the callback the real `electron` module, so the mutation lands on the exact
+object `electron/main.ts`'s handler calls through) rather than by ever
+actually spawning a browser during a test run.
+
+### Checkpoint 2 — enterprise/silent install, installer UX, uninstall review
+
+**Item 2 — silent install for IT-managed rollout.** No new dependency and no
+custom NSIS script needed — electron-builder's own assisted-installer NSIS
+templates (`node_modules/app-builder-lib/templates/nsis/multiUser.nsh` /
+`assistedInstaller.nsh`, read directly rather than assumed from external
+docs) already implement `/S` (silent), `/AllUsers` / `/CurrentUser` (install
+mode), and `/D=<path>` (custom directory, must be the last, unquoted
+argument) once the installer is the assisted (non-one-click) type — see item
+3 below for why that flip happened anyway. Documented in full, including
+exactly what an IT admin should expect (or not expect — see the elevation
+caveat) from each switch, in new `docs/DEPLOYMENT.md`.
+
+**Item 3 — installer UX (the `oneClick` question).** Investigated the
+history first, per the task brief's instruction, rather than guessing:
+`git log --oneline --all | grep -i "one-click"` finds commit `799a5be`
+("Ship a one-click installer instead of the portable .exe..."), and its full
+message plus `docs/AUDIT_BUILD2.md`'s "Post-audit" section spell out the
+actual reasoning in detail. It was **entirely about startup performance and
+avoiding UAC**, never about hiding the install-directory/per-user-vs-
+per-machine choice screen itself: the portable `.exe` target was
+re-extracting 366 MB into `%TEMP%` on every single launch (7.5–9.9s
+every time vs. 0.99s installed), and `perMachine: false` + no-elevation was
+chosen so installing needed no admin rights or UAC prompt. Nothing in either
+document argues for hiding the install-mode/directory picker as a
+"one fewer decision" simplicity goal in its own right — that was a side
+effect of `oneClick: true`, not the point of the change. Given no clear
+signal this specific sub-choice was deliberate, flipped `oneClick` to
+`false` (`package.json`'s `build.nsis`): the installer now shows the
+standard multi-page wizard (welcome → install-mode → install-directory →
+install/finish), with `selectPerMachineByDefault: false` keeping **per-user,
+no-admin-required as the default selection** — the one part of the original
+decision (avoid needing admin by default) that clearly *was* deliberate and
+is fully preserved. `allowElevation: true` and
+`allowToChangeInstallationDirectory: true` were added because both are
+required for the install-mode/directory pages to actually function under an
+assisted installer (`allowToChangeInstallationDirectory` throws a build-time
+`InvalidConfigurationError` under `oneClick: true`, confirmed by reading
+`NsisTarget.js` directly — this could not have been added without the
+`oneClick` flip). One traced, verified side effect: per-user default install
+location changes from `%LocalAppData%\Programs\claim-viewer` (the
+`sanitizedName`/package-name form the old one-click config resolved to) to
+`%LocalAppData%\Programs\837 Claim Viewer` (the human-readable
+`productName` form the assisted-installer path resolves to instead) —
+traced directly through `targetUtil.js`'s `getWindowsInstallationDirName`
+and `NsisTarget.js`'s `APP_FILENAME` computation, not observed by running an
+actual install (see `docs/DEPLOYMENT.md`'s honest-verification section for
+what still needs a human to confirm interactively). The portable-vs-
+installed decision itself (the actual fix for the 7-second startup problem)
+is untouched — `win.target` stays `nsis`, not `portable`.
+
+**Item 5 — shortcut/uninstall polish.** Reviewed
+`createDesktopShortcut`/`createStartMenuShortcut`/`shortcutName`/
+`deleteAppDataOnUninstall: false` against the reasoning in `799a5be` and
+`docs/AUDIT_BUILD2.md`: `deleteAppDataOnUninstall: false` is still correct
+(confirmed the option only takes effect when explicitly `true` — read
+`NsisTarget.js`'s `DELETE_APP_DATA_ON_UNINSTALL` define logic directly — so
+it behaves identically under `oneClick: false`, unaffected by item 3's
+change; the corrected-claims artifact, audit log, and session/recent-files
+data are exactly the kind of thing a user would want to survive an
+accidental uninstall/reinstall, matching the original reasoning verbatim).
+No changes made here beyond that confirmation — found no concrete,
+non-speculative reason to touch shortcut naming or uninstaller wording, per
+the task brief's own "don't make speculative changes without a concrete
+reason" instruction.
+
+**Verified, not assumed:** ran a real `npm run build:dist` against the new
+config. It completed successfully (exit 0) and produced a genuine installer,
+`release/837 Claim Viewer Setup 0.0.1.exe` (~93 MB, `oneClick=false
+perMachine=false` in electron-builder's own build log line). Confirmed via
+`Get-AuthenticodeSignature` that it is unsigned (`NotSigned`) — expected and
+unchanged from before this build (see "Code signing" below); this is not a
+regression this build introduced.
+
+### Verification
+- typecheck: pass (all 3 configs)
+- vitest: 485 -> 485 (unchanged — this build added no unit-testable logic;
+  everything shipped here is IPC/UI wiring or build configuration, covered
+  by e2e and a real `build:dist` run instead)
+- E2E: 94 -> 96 (+2, both in new `e2e/deployment.spec.ts` — see checkpoint 1
+  above)
+- `npm run build:app`: clean
+- `npm run build:dist`: clean, verified by actually running it (see
+  checkpoint 2 above) — not merely assumed from a valid-looking config
+- Full `npm run verify`: green — typecheck + 485 vitest + build:app + 96
+  Playwright E2E
+
+### Preload/IPC surface changes (rule 7b)
+- `getChangelog` / `openReleasesPage` — preload.ts (y), main.ts (y),
+  global.d.ts (y, via `ClaimApi` type inference), e2e/app.spec.ts's sorted
+  `apiKeys` array (y, checkpoint 1 commit).
+
+### Adversarial self-audit (required before calling this done)
+1. **Does "check for updates" make any network call from inside the app,
+   under any code path? — REFUTED (no such path exists).** The entire
+   feature is one line, `shell.openExternal(RELEASES_URL)`, where
+   `RELEASES_URL` is a hardcoded string constant — never fetched, never
+   compared against `app.getVersion()`/`readBuildInfo()`, never computed.
+   `shell.openExternal` itself asks the OS to hand a URL to an external
+   application; it does not perform the HTTP request from inside this
+   process. Verified behaviorally too: `e2e/app.spec.ts`'s existing offline
+   kill-switch assertion (blocked `fetch()`) is unchanged and still passes,
+   and the new `e2e/deployment.spec.ts` test proves the button's only effect
+   is exactly one `shell.openExternal` call with exactly the expected URL —
+   nothing else fires alongside it.
+2. **Does `test/no-updater.test.ts` still pass unmodified? — CONFIRMED.**
+   The file itself was not touched (`git diff` over this build's commits
+   shows no change to it), and it passed both before and after every
+   checkpoint's `npm run verify` run, including the dist/-scanning second
+   test (which now also scans the newly-added `dist/electron/CHANGELOG.md`
+   and the new IPC handlers' compiled output — still zero matches for
+   `autoUpdater`/`electron-updater`/`update.electronjs.org`).
+3. **Does the electron-builder config still produce a buildable installer?
+   — CONFIRMED, by actually building it.** `npm run build:dist` was run
+   against the final `oneClick: false` config (not merely typechecked) and
+   produced a real, launchable-shaped `.exe` — see "Verified, not assumed"
+   above.
+4. **Does the new silent-install documentation claim anything not actually
+   traced from real electron-builder source? — REFUTED for the mechanism,
+   with an honest verification gap flagged.** Every switch documented in
+   `docs/DEPLOYMENT.md` was traced directly from
+   `node_modules/app-builder-lib/templates/nsis/{multiUser,assistedInstaller}.nsh`,
+   not copied from external blog posts. What was **not** verified — because
+   it needs a real interactive Windows install run this harness cannot
+   drive — is called out explicitly in that doc's own "Honest verification
+   status" section rather than presented as confirmed.
+
+### Unverified
+- A real, human-driven `/S` (and separately `/S /AllUsers`, from an elevated
+  prompt) install against a clean/disposable Windows machine — see
+  `docs/DEPLOYMENT.md`'s "Honest verification status" section. This
+  environment has no interactive Windows install UI to drive.
+- Exact SmartScreen behavior for a scripted vs. interactive installer launch
+  on a representative target image.
+
+### Deferred / failed
+- **Code signing** — not built, as instructed. Needs a purchased
+  code-signing certificate and entity verification; a cost/procurement
+  decision for the project owner. Self-signing was deliberately not
+  attempted as a substitute (an installer signed with a self-issued
+  certificate is not trusted by SmartScreen/AppLocker any more than an
+  unsigned one is, so it wouldn't actually solve anything).
+- Real update-checking of any kind — out of scope per decision 4, not
+  attempted in any form.
+
+### Golden/goldens regenerated
+- None — this build touches no rendered-PDF layout/golden fixtures.
+
+Final commit: `<recorded in a follow-up commit>`. Tag: `build-7-green`.
+

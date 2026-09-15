@@ -29,21 +29,28 @@ npm test
 
 ## Install / deploy
 
-`npm run build:dist` produces **`release/837 Claim Viewer Setup <version>.exe`** — an unsigned,
-one-click NSIS installer.
+`npm run build:dist` produces **`release/837 Claim Viewer Setup <version>.exe`** — an unsigned NSIS
+installer.
 
-- Installs **per-user** to `%LOCALAPPDATA%\Programs\claim-viewer`. **No admin rights, no UAC
-  prompt**, nothing written to `Program Files` or to machine-wide registry keys.
-- Creates a Start Menu and Desktop shortcut, and launches the app when it finishes.
-- **Updating:** run the newer installer; it replaces the install in place. `session.json` and the
-  recent-files list are deliberately preserved (`deleteAppDataOnUninstall: false`), so open tabs
-  and recents survive an upgrade.
+- As of Build 7, this is electron-builder's **assisted** installer (not one-click): a standard
+  wizard with an install-mode page (per-user vs. per-machine) and an install-directory page.
+  **Per-user is the default selection** — no admin rights or UAC prompt needed unless you
+  explicitly choose per-machine. Per-user installs to `%LOCALAPPDATA%\Programs\837 Claim Viewer`.
+- Creates a Start Menu and Desktop shortcut, and launches the app when it finishes (interactively).
+- **Updating:** run the newer installer; it replaces the install in place. `session.json`, the
+  recent-files list, and any saved editable-fields corrections are deliberately preserved
+  (`deleteAppDataOnUninstall: false`), so open tabs, recents, and corrections survive an upgrade.
 - **Uninstalling:** Settings → Apps, or the bundled `Uninstall 837 Claim Viewer.exe`.
 - Still **unsigned** — SmartScreen will show "Windows protected your PC" the first time. Choose
-  *More info → Run anyway*. Signing is a separate decision (it needs a purchased certificate).
+  *More info → Run anyway*. Signing is a separate, parked decision (it needs a purchased
+  certificate — see `docs/BUILD_LOG.md`'s Build 7 section).
 - No auto-update, by design: there is no `electron-updater` dependency and no `build.publish`
   config, and `test/no-updater.test.ts` fails the build if either appears. The app's network
-  kill-switch would block an update check anyway.
+  kill-switch would block an update check anyway. The About screen's "Check for the latest
+  release…" button is a manual link only — it opens the GitHub releases page in your browser; the
+  app itself never checks anything or makes a network request of its own.
+- **Silent / scripted install for IT-managed rollout** (`/S`, `/AllUsers`, `/CurrentUser`, `/D=`
+  switches): see `docs/DEPLOYMENT.md` for the exact command lines and what to expect.
 
 ### Why an installer rather than a portable .exe
 
@@ -92,6 +99,13 @@ trade-off Niall signed off on. Claim content itself is never part of this file �
 **File → Forget open tabs & recent files…** at any time to clear both lists; the app's own About
 screen (Help → About Claim Viewer) states this same policy and shows the running build's
 version/date.
+
+The **one** deliberate, user-initiated exception to "no network" anywhere in this app: the About
+screen's "Check for the latest release…" button (Build 7) calls `shell.openExternal` to hand a
+fixed GitHub releases URL to your own default browser. The app process itself never makes an HTTP
+request — nothing fires unless you click that specific button, there is no version comparison and
+no background check, and `test/no-updater.test.ts` + the app's own network kill-switch
+(`e2e/app.spec.ts`) both still enforce that the app makes no network call of its own.
 
 ### Editable fields (deliberate exception — claim content is now written to disk)
 
